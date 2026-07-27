@@ -1,0 +1,269 @@
+{
+  "total_samples": 32,
+  "counts": {
+    "Portrait Retouching": 6,
+    "Product Editing": 6,
+    "Background Removal": 5,
+    "Color Correction": 5,
+    "Thumbnail Design": 5,
+    "AI-Assisted Editing": 5
+  },
+  "files": [
+    {
+      "category": "Portrait Retouching",
+      "sample": 1,
+      "original_filename": "Portrait Retouching Sample (1).png",
+      "portfolio_filename": "portrait-retouching-01.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Portrait Retouching",
+      "sample": 2,
+      "original_filename": "Portrait Retouching Sample (2).png",
+      "portfolio_filename": "portrait-retouching-02.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Portrait Retouching",
+      "sample": 3,
+      "original_filename": "Portrait Retouching Sample (3).png",
+      "portfolio_filename": "portrait-retouching-03.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Portrait Retouching",
+      "sample": 4,
+      "original_filename": "Portrait Retouching Sample (4).png",
+      "portfolio_filename": "portrait-retouching-04.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Portrait Retouching",
+      "sample": 5,
+      "original_filename": "Portrait Retouching Sample (5).png",
+      "portfolio_filename": "portrait-retouching-05.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Portrait Retouching",
+      "sample": 6,
+      "original_filename": "Portrait Retouching Sample (6).png",
+      "portfolio_filename": "portrait-retouching-06.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Product Editing",
+      "sample": 1,
+      "original_filename": "Product Editing Sample (1).png",
+      "portfolio_filename": "product-editing-01.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Product Editing",
+      "sample": 2,
+      "original_filename": "Product Editing Sample (2).png",
+      "portfolio_filename": "product-editing-02.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Product Editing",
+      "sample": 3,
+      "original_filename": "Product Editing Sample (3).png",
+      "portfolio_filename": "product-editing-03.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Product Editing",
+      "sample": 4,
+      "original_filename": "Product Editing Sample (4).png",
+      "portfolio_filename": "product-editing-04.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Product Editing",
+      "sample": 5,
+      "original_filename": "Product Editing Sample (5).png",
+      "portfolio_filename": "product-editing-05.png",
+      "width": 1408,
+      "height": 768
+    },
+    {
+      "category": "Product Editing",
+      "sample": 6,
+      "original_filename": "Product Editing Sample (6).png",
+      "portfolio_filename": "product-editing-06.png",
+      "width": 1408,
+      "height": 768
+    },
+    {
+      "category": "Background Removal",
+      "sample": 1,
+      "original_filename": "Background Removal Sample 1 (1).png",
+      "portfolio_filename": "background-removal-01.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Background Removal",
+      "sample": 2,
+      "original_filename": "Background Removal Sample 1 (2).png",
+      "portfolio_filename": "background-removal-02.png",
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "category": "Background Removal",
+      "sample": 3,
+      "original_filename": "Background Removal Sample 1 (3).png",
+      "portfolio_filename": "background-removal-03.png",
+      "width": 1408,
+      "height": 768
+    },
+    {
+      "category": "Background Removal",
+      "sample": 4,
+      "original_filename": "Background Removal Sample 1 (4).png",
+      "portfolio_filename": "background-removal-04.png",
+      "width": 1408,
+      "height": 768
+    },
+    {
+      "category": "Background Removal",
+      "sample": 5,
+      "original_filename": "Background Removal Sample 1 (5).png",
+      "portfolio_filename": "background-removal-05.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Color Correction",
+      "sample": 1,
+      "original_filename": "Color correction sample1 (1).png",
+      "portfolio_filename": "color-correction-01.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Color Correction",
+      "sample": 2,
+      "original_filename": "Color correction sample1 (2).png",
+      "portfolio_filename": "color-correction-02.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Color Correction",
+      "sample": 3,
+      "original_filename": "Color correction sample1 (3).png",
+      "portfolio_filename": "color-correction-03.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Color Correction",
+      "sample": 4,
+      "original_filename": "Color correction sample1 (4).png",
+      "portfolio_filename": "color-correction-04.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Color Correction",
+      "sample": 5,
+      "original_filename": "Color correction sample1 (5).png",
+      "portfolio_filename": "color-correction-05.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Thumbnail Design",
+      "sample": 1,
+      "original_filename": "AI thumbnail (BeforeAfter).png",
+      "portfolio_filename": "thumbnail-design-01.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Thumbnail Design",
+      "sample": 2,
+      "original_filename": "Finance thumbnail (BeforeAfter).png",
+      "portfolio_filename": "thumbnail-design-02.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Thumbnail Design",
+      "sample": 3,
+      "original_filename": "Gaming thumbnail (BeforeAfter).png",
+      "portfolio_filename": "thumbnail-design-03.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Thumbnail Design",
+      "sample": 4,
+      "original_filename": "Productivity thumbnail (BeforeAfter).png",
+      "portfolio_filename": "thumbnail-design-04.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "Thumbnail Design",
+      "sample": 5,
+      "original_filename": "Technology thumbnail (BeforeAfter).png",
+      "portfolio_filename": "thumbnail-design-05.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "AI-Assisted Editing",
+      "sample": 1,
+      "original_filename": "Cinematic mountain.png",
+      "portfolio_filename": "ai-assisted-editing-01.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "AI-Assisted Editing",
+      "sample": 2,
+      "original_filename": "Cyberpunk city.png",
+      "portfolio_filename": "ai-assisted-editing-02.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "AI-Assisted Editing",
+      "sample": 3,
+      "original_filename": "Fantasy castle.png",
+      "portfolio_filename": "ai-assisted-editing-03.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "AI-Assisted Editing",
+      "sample": 4,
+      "original_filename": "Moody forest.png",
+      "portfolio_filename": "ai-assisted-editing-04.png",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "category": "AI-Assisted Editing",
+      "sample": 5,
+      "original_filename": "Sci-fi planet.png",
+      "portfolio_filename": "ai-assisted-editing-05.png",
+      "width": 1672,
+      "height": 941
+    }
+  ]
+}

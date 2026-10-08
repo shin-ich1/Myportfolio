@@ -80,6 +80,11 @@ function startPersistentAdminShell() {
   let liveSessionValidation = null;
   let liveSessionRedirectStarted = false;
   const frameCleanups = new WeakMap();
+  // The shell is the sole owner of per-navigation server approval. An embedded
+  // workspace consumes only the approval assigned to its own iframe.
+  const frameSecurityApprovals = new WeakMap();
+  window.LANAdminAwaitWorkspaceSecurity = (frame) =>
+    frameSecurityApprovals.get(frame) || Promise.reject(new Error("Unregistered Admin workspace navigation."));
 
   async function ensureLiveSecuritySession() {
     if (liveSessionRedirectStarted) return false;
@@ -226,16 +231,26 @@ function startPersistentAdminShell() {
   window.addEventListener("lan:system-health-history-cleared", () => dispatchToWorkspaceFrames("lan:system-health-history-cleared", null));
 
   async function navigate(route, { history: historyMode = "push" } = {}) {
-    if (!await ensureLiveSecuritySession()) return;
     route = normalizeWorkspace(route);
     const revision = ++navigationRevision;
+    // Start the static document load and the mandatory server validation in
+    // parallel. The workspace authorization gate below cannot resolve before
+    // this exact navigation is approved by the Security Gateway.
+    const securityApproval = ensureLiveSecuritySession();
     const next = makeFrame(route, revision);
+    frameSecurityApprovals.set(next, securityApproval);
     host.append(next);
     installWorkspaceFrameContract(next);
-    await new Promise((resolve, reject) => {
-      next.addEventListener("load", resolve, { once: true });
-      next.addEventListener("error", reject, { once: true });
-    }).catch(() => null);
+    const frameLoad = new Promise((resolve) => {
+      next.addEventListener("load", () => resolve(true), { once: true });
+      next.addEventListener("error", () => resolve(false), { once: true });
+    });
+    const [approved, loaded] = await Promise.all([securityApproval, frameLoad]);
+    if (!approved || !loaded) {
+      frameCleanups.get(next)?.();
+      next.remove();
+      return;
+    }
     if (revision !== navigationRevision) {
       frameCleanups.get(next)?.();
       next.remove();

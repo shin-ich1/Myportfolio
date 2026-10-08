@@ -19,3 +19,9 @@ service-account*.json
 
 .DS_Store
 Thumbs.db
+
+# Generated staging output and local emulator diagnostics
+.lan-staging/
+.lan-staging.tmp-*/
+firebase-debug.log
+**/firebase-debug.log

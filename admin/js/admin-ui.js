@@ -4,9 +4,7 @@ import {
   renderSystemIcon,
   resolveModuleAdminIcon
 } from "../../icon-registry.js";
-import { listSections } from "../services/portfolioSectionService.js";
 import { resolveToolIconSource, resolveToolFallbackIcon } from "../../tool-identity.js";
-import { recoverMediaAssetLifecycle } from "../services/mediaAssetLifecycleService.js";
 import { mountAdminPageBand } from "./admin-page-band.js";
 import { initAdminAdaptiveModes } from "./admin-adaptive.js";
 import { decorateRecordCommand } from "./admin-record-actions.js";
@@ -23,7 +21,9 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
   // the same behavior when opened directly.
   if (!isPersistentWorkspace) {
     window.setTimeout(() => {
-      recoverMediaAssetLifecycle().catch((error) => console.warn("Deferred media cleanup is still pending:", error));
+      import("../services/mediaAssetLifecycleService.js")
+        .then(({ recoverMediaAssetLifecycle }) => recoverMediaAssetLifecycle())
+        .catch((error) => console.warn("Deferred media cleanup is still pending:", error));
     }, 1200);
   }
 
@@ -428,6 +428,7 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
 
     let promotedModules = [];
     try {
+      const { listSections } = await import("../services/portfolioSectionService.js");
       promotedModules = (await listSections()).filter((item) => item.lifecycle === "promoted");
     } catch (error) {
       console.warn("Promoted module navigation could not be loaded.", error);
@@ -1404,21 +1405,52 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
     });
   }
 
-  async function hydrateAdminAvatar() {
-    // Give auth-guard time to publish its ready promise, then read the canonical
-    // Home portrait. If Firestore is unavailable, the bundled Hero portrait is
-    // a safe visual fallback; initials remain the final fallback.
-    try {
-      for (let index = 0; index < 40 && !window.__LAN_ADMIN_READY__; index += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      if (window.__LAN_ADMIN_READY__) await window.__LAN_ADMIN_READY__;
-      const { loadHome } = await import("../services/homeService.js");
-      const home = await loadHome();
-      applyAdminAvatar(home?.portrait || "/assets/images/hero.png");
-    } catch (error) {
+  const ADMIN_AVATAR_FALLBACK = "/assets/images/hero.png";
+
+  async function readAdminAvatarSource() {
+    // Only the persistent shell owns the canonical Home portrait read.
+    for (let index = 0; index < 40 && !window.__LAN_ADMIN_READY__; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    if (window.__LAN_ADMIN_READY__) await window.__LAN_ADMIN_READY__;
+    const { loadHome } = await import("../services/homeService.js");
+    const home = await loadHome();
+    return home?.portrait || ADMIN_AVATAR_FALLBACK;
+  }
+
+  let shellAvatarSourcePromise = null;
+  if (isPersistentShell) {
+    shellAvatarSourcePromise = readAdminAvatarSource().catch((error) => {
       console.warn("Admin avatar could not read the saved Hero portrait.", error);
-      applyAdminAvatar("/assets/images/hero.png");
+      return ADMIN_AVATAR_FALLBACK;
+    });
+    window.LANAdminAvatarSource = () => shellAvatarSourcePromise;
+    // The Home editor already owns the save. Update the persistent shell only
+    // after that save succeeds; never re-fetch the same record per iframe.
+    window.addEventListener("lan:admin-home-portrait-saved", (event) => {
+      const source = resolveShellMediaUrl(event.detail?.portrait) || ADMIN_AVATAR_FALLBACK;
+      shellAvatarSourcePromise = Promise.resolve(source);
+      applyAdminAvatar(source);
+    });
+  }
+
+  async function hydrateAdminAvatar() {
+    try {
+      const sourcePromise = isPersistentWorkspace
+        ? window.parent?.LANAdminAvatarSource?.()
+        : isPersistentShell
+          ? shellAvatarSourcePromise
+          : readAdminAvatarSource();
+      if (!sourcePromise || typeof sourcePromise.then !== "function") {
+        throw new Error("Persistent shell avatar source is unavailable.");
+      }
+      const source = await sourcePromise;
+      // A newer Home save wins over an older Home read still in flight.
+      if (isPersistentShell && shellAvatarSourcePromise !== sourcePromise) return;
+      applyAdminAvatar(source);
+    } catch (error) {
+      console.warn("Admin avatar hydration failed:", error);
+      applyAdminAvatar(ADMIN_AVATAR_FALLBACK);
     }
   }
 

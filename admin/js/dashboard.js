@@ -34,8 +34,12 @@
      2. CONSTANT VALUES
      ========================================================= */
   
+  // Published Admin and Public live on the same Hosting origin.
+  // Keep public links environment-derived: staging must never open production.
   const LIVE_PORTFOLIO_URL =
-    "https://rolando-portfolio-3f1a3.web.app";
+    location.protocol === "http:" || location.protocol === "https:"
+      ? new URL("/", location.href).href
+      : new URL("../../index.html", import.meta.url).href;
   
   const ACTIVITY_STORAGE_KEY =
     "lanPortfolioRecentActivity";

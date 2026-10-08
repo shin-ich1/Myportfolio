@@ -1,0 +1,19 @@
+{
+  "firebase": {
+    "authDomain": "lan-portfolio-staging.firebaseapp.com",
+    "projectId": "lan-portfolio-staging",
+    "storageBucket": "lan-portfolio-staging.firebasestorage.app",
+    "messagingSenderId": "571587695468",
+    "appId": "1:571587695468:web:d7d2aac850448574b8d949",
+    "measurementId": "G-DKH1BKF3KV"
+  },
+  "worker": {
+    "name": "lan-portfolio-staging",
+    "telemetryUrl": "https://lan-portfolio-staging.lagmayr2.workers.dev/telemetry",
+    "kvNamespaces": {
+      "PORTFOLIO_MESSAGES": "2802de517de743a6b4b2d1620b097bf7",
+      "SECURITY_STATE": "24224266caf94e6ebe5ba8c8e9010873",
+      "STORAGE_OAUTH": "8cdeb79f52944659a71101381f041152"
+    }
+  }
+}

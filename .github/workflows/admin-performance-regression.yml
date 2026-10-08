@@ -1,0 +1,54 @@
+name: Admin shared-navigation regression
+
+on:
+  pull_request:
+    paths:
+      - "admin/js/**"
+      - "admin/pages/**"
+      - "admin/dashboard.html"
+      - "tests/**"
+      - "scripts/prepare-staging.mjs"
+      - "scripts/staging-targets.json"
+      - "storage-bridge-url.js"
+      - "package.json"
+      - ".github/workflows/admin-performance-regression.yml"
+  push:
+    branches:
+      - "perf/admin-workspace-investigation-20261008"
+    paths:
+      - "admin/js/**"
+      - "admin/pages/**"
+      - "admin/dashboard.html"
+      - "tests/**"
+      - "telemetry-worker/src/**"
+      - "scripts/prepare-staging.mjs"
+      - "scripts/staging-targets.json"
+      - ".github/workflows/admin-performance-regression.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  shared-admin-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check JavaScript syntax
+        run: |
+          node --check admin/js/admin-shell.js
+          node --check admin/js/workspace-host.js
+          node --check admin/js/admin-ui.js
+          node --check admin/js/home.js
+          node --check scripts/prepare-staging.mjs
+          node --check storage-bridge-url.js
+          node --check telemetry-worker/src/index.js
+      - name: Run shared-navigation and staging isolation tests
+        run: node --test tests/admin-shared-navigation-performance.test.mjs tests/admin-workspace-security-gate.test.mjs tests/staging-build-isolation.test.mjs tests/staging-worker-authorization.test.mjs
+      - name: Verify staging manifest has no hardcoded API key
+        run: node -e "if (Object.hasOwn(require('./scripts/staging-targets.json').firebase, 'apiKey')) process.exit(1)"

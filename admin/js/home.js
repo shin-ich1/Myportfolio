@@ -934,6 +934,11 @@ $("homeForm").addEventListener("submit", async (event) => {
     syncRegisteredSectionsFromDom();
     data.portrait = portrait; data.aboutImage = aboutImage; data.sections = combinedHomeSections();
     await saveHome(data);
+    if (window.parent !== window) {
+      window.parent.dispatchEvent(new CustomEvent("lan:admin-home-portrait-saved", {
+        detail: { portrait: resolveAdminMediaSource(data.portrait) }
+      }));
+    }
     $("saveStatus").textContent = "Saved"; $("saveStatus").classList.remove("unsaved","error"); $("saveStatus").classList.add("saved");
     note("Homepage presentation saved.");
   } catch (error) { note(error.message,"error"); }

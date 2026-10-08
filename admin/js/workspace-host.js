@@ -45,7 +45,13 @@ if (window.top === window.self) {
     }, { capture: true });
   }
 
-  window.__LAN_ADMIN_READY__ = Promise.resolve(shellReady).then(async (startupSession) => {
+  const navigationApproval = window.parent?.LANAdminAwaitWorkspaceSecurity?.(window.frameElement);
+  if (!navigationApproval || typeof navigationApproval.then !== "function") {
+    throw new Error("Admin workspace navigation security approval is unavailable.");
+  }
+
+  window.__LAN_ADMIN_READY__ = Promise.all([shellReady, navigationApproval]).then(async ([startupSession, approved]) => {
+    if (!approved) throw new Error("Admin workspace navigation was not approved by the Security Gateway.");
     const liveUser = shellSession.user || null;
     if (!startupSession?.authorized || !liveUser?.uid || startupSession.user?.uid !== liveUser.uid) {
       throw new Error("Persistent Admin shell session is not authorized.");

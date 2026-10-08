@@ -12,6 +12,13 @@ const manifestPath = path.join(repoRoot, 'scripts/staging-targets.json');
 const webExtensions = new Set('.html .htm .js .mjs .css .json .svg .png .jpg .jpeg .webp .avif .gif .ico .woff .woff2 .ttf .otf .eot .mp4 .webm .mp3 .ogg .pdf .webmanifest'.split(' '));
 const textExtensions = new Set('.html .htm .js .mjs .css .json .webmanifest'.split(' '));
 const forbiddenTargets = ['rolando-portfolio-3f1a3', 'lan-cloudinary-telemetry.lagmayr2.workers.dev'];
+// Exact legacy staging-only KV ID permitted once during local config migration.
+// No runtime code may continue using this obsolete security state namespace.
+const legacySecurityStateKvId = '24224266caf94e6ebe5ba8c8e9010873';
+const stagingCoordinator = Object.freeze({
+  durable_objects: { bindings: [{ name: 'SECURITY_COORDINATOR', class_name: 'SecurityCoordinator' }] },
+  exports: { SecurityCoordinator: { type: 'durable-object', storage: 'sqlite' } }
+});
 
 function assertSafe(ok, why) {
   if (!ok) throw new Error(why);
@@ -61,7 +68,7 @@ function validateManifest(target) {
   assertSafe(target.worker.name === 'lan-portfolio-staging', 'Unexpected Worker name.');
   assertSafe(target.worker.telemetryUrl === 'https://lan-portfolio-staging.lagmayr2.workers.dev/telemetry',
     'Refusing non-staging Worker endpoint.');
-  const expectedBindings = ['PORTFOLIO_MESSAGES', 'SECURITY_STATE', 'STORAGE_OAUTH'];
+  const expectedBindings = ['PORTFOLIO_MESSAGES', 'STORAGE_OAUTH'];
   assertSafe(Object.keys(target.worker.kvNamespaces || {}).sort().join() === expectedBindings.sort().join(),
     'Unexpected Worker KV binding names.');
   for (const id of Object.values(target.worker.kvNamespaces)) {
@@ -96,6 +103,7 @@ function workerConfig(target) {
     main: 'src/index.js',
     compatibility_date: '2026-08-15',
     kv_namespaces: Object.entries(target.worker.kvNamespaces).map(([binding, id]) => ({ binding, id })),
+    ...structuredClone(stagingCoordinator),
     vars: { FIREBASE_PROJECT_ID: target.firebase.projectId }
   };
 }
@@ -108,9 +116,22 @@ async function reviewExistingWorker(file, expected) {
   assertSafe(current.main === expected.main, 'Staging Worker entrypoint mismatch.');
   assertSafe(current.vars?.FIREBASE_PROJECT_ID === expected.vars.FIREBASE_PROJECT_ID, 'Staging Worker Firebase project mismatch.');
   const bindings = new Map((current.kv_namespaces || []).map(item => [item.binding, item.id]));
-  assertSafe(bindings.size === expected.kv_namespaces.length, 'Staging Worker KV binding count mismatch.');
+  const legacyBinding = bindings.get('SECURITY_STATE');
+  assertSafe(!legacyBinding || legacyBinding === legacySecurityStateKvId,
+    'Unrecognized old staging security KV binding; no file was overwritten.');
+  assertSafe(bindings.size === expected.kv_namespaces.length + (legacyBinding ? 1 : 0),
+    'Staging Worker KV binding count mismatch.');
   for (const item of expected.kv_namespaces) {
-    assertSafe(bindings.get(item.binding) === item.id, 'Staging Worker KV binding ' + item.binding + ' mismatch.');
+    assertSafe(bindings.get(item.binding) === item.id,
+      'Staging Worker KV binding ' + item.binding + ' mismatch.');
+  }
+  // An older generated staging config may lack the Durable Object declaration;
+  // migrate it only after all existing settings have been verified above.
+  for (const key of ['durable_objects', 'exports']) {
+    if (current[key] !== undefined) {
+      assertSafe(JSON.stringify(current[key]) === JSON.stringify(expected[key]),
+        'Staging Worker Durable Object configuration mismatch.');
+    }
   }
   const allowedVars = new Set(Object.keys(expected.vars));
   for (const name of Object.keys(current.vars || {})) {

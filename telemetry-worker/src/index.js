@@ -2351,6 +2351,83 @@ async function promoteSecuritySessionToTrusted(admin,deviceId,env){
   await securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,admin.session.sessionId,{trustLevel:'trusted',deviceId,lastActivityAt:new Date(now),expiresAt});
   return {customToken,session};
 }
+
+// The initial trusted-device claim and the device document must become visible
+// in ONE Firestore commit. The marker's exists:false precondition ensures that
+// two independent QR challenges cannot both initialize the same security epoch.
+// The epoch changes ONLY after an authenticated emergency recovery or an
+// explicitly verified TOTP reset, never when all devices are merely revoked.
+async function completeTrustedDeviceEnrollment(request,env,admin,body){
+  const deviceId=String(body.deviceId||'');
+  const [existingDevices,recovery]=await Promise.all([
+    securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid]],100),
+    securityGetDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid)
+  ]);
+  const epoch=String(recovery?.deviceBootstrapEpoch||'');
+  // Historical devices from older builds must never reopen unapproved first
+  // enrollment. A new epoch exists only after a verified security reset.
+  const requiresApproval=existingDevices.some(device=>device.active===true) ||
+    (existingDevices.length>0 && !epoch);
+  const enrollment=await consumeSecurityEnrollmentChallenge(
+    env,body.challengeId,admin.uid,deviceId,body.publicKeyJwk,requiresApproval
+  );
+  if(String(enrollment.deviceBootstrapEpoch||'')!==epoch){
+    throw serviceError('Trusted-device enrollment was invalidated by a security reset.',{
+      status:403,code:'security-enrollment-epoch-changed',source:'worker'
+    });
+  }
+  if(enrollment.approved===true){
+    // Revoking the approving device also revokes its outstanding approvals.
+    const approverId=String(enrollment.approvedByDeviceId||'');
+    const approver=approverId
+      ? await securityGetDoc(env,SECURITY_COLLECTIONS.devices,approverId) : null;
+    if(!approver||approver.uid!==admin.uid||approver.active!==true){
+      throw serviceError('The approving trusted device is no longer active.',{
+        status:403,code:'security-enrollment-approver-revoked',source:'worker'
+      });
+    }
+  }
+  const now=new Date().toISOString();
+  const record={
+    deviceId,uid:admin.uid,publicKeyJwk:enrollment.publicKeyJwk,
+    displayName:String(body.displayName||'Trusted device').slice(0,80),
+    browserSummary:String(request.headers.get('User-Agent')||'').slice(0,180),
+    active:true,createdAt:now,lastUsedAt:now
+  };
+  const writes=[];
+  if(enrollment.approved!==true){
+    const markerId=await sha256Text(admin.uid+'|trusted-device-bootstrap|'+(epoch||'initial'));
+    writes.push({
+      update:{
+        name:firestoreDocumentName(env,'adminSecurityDeviceBootstrap',markerId),
+        fields:firestoreFields({uid:admin.uid,epoch:epoch||'initial',deviceId,createdAt:now})
+      },
+      currentDocument:{exists:false}
+    });
+  }
+  writes.push({
+    update:{
+      name:firestoreDocumentName(env,SECURITY_COLLECTIONS.devices,deviceId),
+      fields:firestoreFields(record)
+    },
+    currentDocument:{exists:false}
+  });
+  try{
+    await firestoreAdminCommit(env,writes);
+  }catch(error){
+    if(error?.code==='firestore-precondition-failed'){
+      throw serviceError('Trusted-device bootstrap was already used, or this device ID exists.',{
+        status:409,code:'security-device-bootstrap-already-used',source:'worker'
+      });
+    }
+    throw error;
+  }
+  const promoted=await promoteSecuritySessionToTrusted(admin,deviceId,env);
+  await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-enrolled',
+    deviceId,success:true,sessionId:promoted.session.sessionId});
+  return {ok:true,deviceId,customToken:promoted.customToken,session:promoted.session};
+}
+
 async function createApprovedSessionResponse(request,env,{uid,trustLevel,deviceId=''},context=null){ const session=await createSecuritySession(env,{uid,trustLevel,deviceId,userAgent:request.headers.get('User-Agent')||'',ip:securityIp(request)}); const customToken=await mintSecurityCustomToken({uid,sessionId:session.sessionId,trustLevel,deviceId},env); const type=trustLevel==='temporary'?'new-temporary-login':'login-success'; await writeSecurityEvent(env,{uid,type,success:true,sessionId:session.sessionId,deviceId,ip:securityIp(request),summary:`${trustLevel} administrator session created`},{context,alertOrigin:new URL(request.url).origin}); return {customToken,session}; }
 
 async function verifyDeviceSignature(publicKeyJwk,nonce,signature){ try{ const key=await crypto.subtle.importKey('jwk',publicKeyJwk,{name:'ECDSA',namedCurve:'P-256'},false,['verify']); const normalized=String(signature||'').replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(String(signature||'').length/4)*4,'='); const bytes=Uint8Array.from(atob(normalized),c=>c.charCodeAt(0)); return crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},key,bytes,new TextEncoder().encode(nonce)); }catch{return false;} }
@@ -2470,7 +2547,7 @@ async function handleSecurityRoute(request,env,url,context){
       const hash=await recoveryHmac(key,env),codeHashes=await Promise.all(codes.map(x=>recoveryHmac(x,env)));
       await finishMasterRecoveryKey(env,c.uid,rec,{
         uid:c.uid,active:true,masterKeyHash:hash,backupCodeHashes:codeHashes,
-        createdAt:new Date().toISOString()
+        deviceBootstrapEpoch:securityRandomId(18),createdAt:new Date().toISOString()
       });
       await writeSecurityEvent(env,{uid:c.uid,type:'recovery-reset-complete',success:true,summary:'Fresh security bootstrap and Recovery Kit required.'});
       return json({state:'bootstrap-required',email:replacementEmail||c.email||'',masterKey:key,backupCodes:codes,requireEmailVerification:Boolean(replacementEmail),requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true},200,origin);
@@ -2482,15 +2559,15 @@ async function handleSecurityRoute(request,env,url,context){
     if(path==='/security/session/end'&&method==='POST'){ await securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,admin.session.sessionId,{active:false,revokedAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:admin.uid,type:'session-revoked',sessionId:admin.session.sessionId,success:true}); return json({ok:true},200,origin); }
     if(path==='/security/step-up/start'&&method==='POST'){ const first=await verifyFirebasePassword(admin.email,body.password,env); if(!first.mfaPendingCredential) throw serviceError('Authenticator verification is required for sensitive actions.',{status:400,code:'security-step-up-mfa-required'}); const challengeId=await putSecurityChallenge(env,'step-up',{uid:admin.uid,sessionId:admin.session.sessionId,mfaPendingCredential:first.mfaPendingCredential,mfaInfo:first.mfaInfo}); return json({challengeId},200,origin); }
     if(path==='/security/step-up/complete'&&method==='POST'){ const c=await consumeSecurityChallenge(env,'step-up',body.challengeId); if(c.uid!==admin.uid||c.sessionId!==admin.session.sessionId) throw serviceError('Step-up challenge does not belong to this session.',{status:403,code:'security-step-up-invalid'}); const enrollmentId=String(c.mfaInfo?.find?.(x=>x?.totpInfo)?.mfaEnrollmentId||c.mfaInfo?.[0]?.mfaEnrollmentId||''); const {response}=await identityToolkit('accounts/mfaSignIn:finalize',{mfaPendingCredential:c.mfaPendingCredential,mfaEnrollmentId:enrollmentId,totpVerificationInfo:{verificationCode:String(body.code||'')}},env,'v2'); if(!response.ok) throw serviceError('Authenticator code is invalid or expired.',{status:401,code:'security-step-up-invalid'}); const proofId=securityRandomId(18),expiresAt=new Date(Date.now()+SECURITY_LIFETIMES.stepUp*1000).toISOString(); await securityWriteDoc(env,SECURITY_COLLECTIONS.stepUps,proofId,{proofId,uid:admin.uid,sessionId:admin.session.sessionId,active:true,createdAt:new Date(),expiresAt:new Date(Date.parse(expiresAt))}); return json({proofId,expiresAt},200,origin); }
-    if(path==='/security/device/enrollment/create'&&method==='POST'){ await enforceSecurityRateLimit(request,env,'enrollment'); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const requestingDeviceId=String(body.deviceId||''); if(!requestingDeviceId||!body.publicKeyJwk) throw serviceError('Device public key is required.',{status:400,code:'security-device-key-required'}); const challengeId=await putSecurityChallenge(env,'device-enroll',{uid:admin.uid,requestingDeviceId,publicKeyJwk:body.publicKeyJwk,approved:false}); return json({challengeId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.challenge*1000).toISOString()},200,origin); }
+    if(path==='/security/device/enrollment/create'&&method==='POST'){ await enforceSecurityRateLimit(request,env,'enrollment'); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const requestingDeviceId=String(body.deviceId||''); if(!requestingDeviceId||!body.publicKeyJwk) throw serviceError('Device public key is required.',{status:400,code:'security-device-key-required'}); const recovery=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid); const challengeId=await putSecurityChallenge(env,'device-enroll',{uid:admin.uid,requestingDeviceId,publicKeyJwk:body.publicKeyJwk,deviceBootstrapEpoch:String(recovery?.deviceBootstrapEpoch||''),approved:false}); return json({challengeId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.challenge*1000).toISOString()},200,origin); }
     if(path==='/security/device/enrollment/status'&&method==='POST'){ const c=await readSecurityEnrollmentChallenge(env,body.challengeId,admin.uid); return json({state:c.approved?'approved':'pending',expiresAt:new Date(Number(c.expiresAt)).toISOString()},200,origin); }
     if(path==='/security/device/enrollment/approve'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); await approveSecurityEnrollmentChallenge(env,body.challengeId,admin.uid,admin.session.deviceId||''); return json({ok:true,state:'approved'},200,origin); }
-    if(path==='/security/device/enrollment/complete'&&method==='POST'){ const existingDevices=await securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid],['active','EQUAL',true]],10); const deviceId=String(body.deviceId||''); const c=await consumeSecurityEnrollmentChallenge(env,body.challengeId,admin.uid,deviceId,body.publicKeyJwk,existingDevices.length>0); await securityWriteDoc(env,SECURITY_COLLECTIONS.devices,deviceId,{deviceId,uid:admin.uid,publicKeyJwk:c.publicKeyJwk,displayName:String(body.displayName||'Trusted device').slice(0,80),browserSummary:String(request.headers.get('User-Agent')||'').slice(0,180),active:true,createdAt:new Date().toISOString(),lastUsedAt:new Date().toISOString()}); const promoted=await promoteSecuritySessionToTrusted(admin,deviceId,env); await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-enrolled',deviceId,success:true,sessionId:promoted.session.sessionId}); return json({ok:true,deviceId,customToken:promoted.customToken,session:promoted.session},200,origin); }
+    if(path==='/security/device/enrollment/complete'&&method==='POST'){ return json(await completeTrustedDeviceEnrollment(request,env,admin,body),200,origin); }
     if(path==='/security/device/rename'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); const d=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,String(body.deviceId||'')); if(!d||d.uid!==admin.uid) throw serviceError('Trusted device was not found.',{status:404,code:'security-device-not-found'}); await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,d.deviceId,{displayName:String(body.displayName||'Trusted device').slice(0,80)}); return json({ok:true},200,origin); }
     if(path==='/security/device/revoke'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const d=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,String(body.deviceId||'')); if(!d||d.uid!==admin.uid) throw serviceError('Trusted device was not found.',{status:404,code:'security-device-not-found'}); const currentDeviceRevoked=d.deviceId===admin.session.deviceId; await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,d.deviceId,{active:false,revokedAt:new Date().toISOString()}); const sessions=await securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['deviceId','EQUAL',d.deviceId],['active','EQUAL',true]],100); await Promise.all([...sessions.map(s=>securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()})),removeAdminPushSubscriptionsForDevice(env,d.deviceId)]); await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-revoked',deviceId:d.deviceId,success:true}); return json({ok:true,currentDeviceRevoked},200,origin); }
     if(path==='/security/account/password'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const {response}=await identityToolkit('accounts:update',{idToken:admin.token,password:String(body.newPassword||''),returnSecureToken:false},env); if(!response.ok) throw serviceError('Password could not be changed.',{status:400,code:'security-password-change-failed',source:'firebase'}); await writeSecurityEvent(env,{uid:admin.uid,type:'password-changed',success:true}); return json({ok:true},200,origin); }
     if(path==='/security/totp/reset'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); await Promise.all([revokeUserSecurityState(admin.uid,env),clearFirebaseMfaForRecovery(env,admin.uid)]); await writeSecurityEvent(env,{uid:admin.uid,type:'totp-reset',success:true,summary:'Authenticator enrollment reset; all sessions and trusted devices were revoked.'}); return json({ok:true,bootstrapRequired:true},200,origin); }
-    if(path==='/security/recovery/generate'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const key=recoveryKey(),codes=Array.from({length:8},backupCode),hash=await recoveryHmac(key,env),codeHashes=await Promise.all(codes.map(x=>recoveryHmac(x,env))); await securityWriteDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid,{uid:admin.uid,active:true,masterKeyHash:hash,backupCodeHashes:codeHashes,createdAt:new Date().toISOString()}); return json({masterKey:key,backupCodes:codes},200,origin); }
+    if(path==='/security/recovery/generate'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const key=recoveryKey(),codes=Array.from({length:8},backupCode),hash=await recoveryHmac(key,env),codeHashes=await Promise.all(codes.map(x=>recoveryHmac(x,env))); await securityPatchDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid,{uid:admin.uid,active:true,masterKeyHash:hash,backupCodeHashes:codeHashes,createdAt:new Date().toISOString()}); return json({masterKey:key,backupCodes:codes},200,origin); }
     if(path==='/security/devices'&&method==='GET'){ const devices=await securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid]],100); return json({devices:devices.map(({publicKeyJwk,_updateTime,...d})=>({...d,current:d.deviceId===admin.session.deviceId}))},200,origin); }
     if(path==='/security/access-state'&&method==='GET'){ return json(await buildSecurityAccessState(admin,env),200,origin); }
     if(path==='/security/sessions'&&method==='GET'){ const access=await buildSecurityAccessState(admin,env); return json({sessions:access.sessions},200,origin); }

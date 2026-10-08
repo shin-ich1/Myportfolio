@@ -119,6 +119,71 @@ export class SecurityCoordinator {
       kv.delete("record");
       return json({ ok: true, record });
     }
+    if (op === "puzzle-image-read" || op === "puzzle-check" || op === "puzzle-finalize") {
+      if (scope !== "message-puzzle" || !validChallengeId(id)) {
+        return reject("message-puzzle-invalid", 400, "Verification puzzle is invalid.");
+      }
+      const record = kv.get("record");
+      if (!record || record.scope !== "message-puzzle" ||
+          Number(record.expiresAt) <= now) {
+        if (record && Number(record.expiresAt) <= now) kv.delete("record");
+        return reject("message-puzzle-expired", 410, "Verification puzzle expired. Load a new puzzle.");
+      }
+      if (op === "puzzle-image-read") {
+        // Public image URL is an opaque capability. Never disclose the
+        // solution, binding, Turnstile nonce or other private challenge state.
+        return json({ ok: true, image: record.image, expiresAt: record.expiresAt });
+      }
+      if (op === "puzzle-finalize") {
+        if (!record.verificationNonce ||
+            String(record.verificationNonce) !== String(command.verificationNonce || "")) {
+          return reject("message-puzzle-invalid", 403, "Puzzle verification is not authorized.");
+        }
+        kv.delete("record");
+        return json({ ok: true });
+      }
+      if (record.origin !== command.origin || record.binding !== command.binding) {
+        return reject("message-puzzle-binding", 403, "Puzzle does not belong to this browser session.");
+      }
+      if (record.verificationNonce) {
+        return reject("message-puzzle-in-progress", 409, "Puzzle verification is already in progress.");
+      }
+      const answer = Number(command.answer);
+      const tolerance = Number(command.tolerance);
+      const maxAttempts = Number(command.maxAttempts);
+      if (!Number.isFinite(answer) || answer < 0 || answer > 100 ||
+          !Number.isInteger(tolerance) || tolerance < 0 || tolerance > 10 ||
+          !Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 10) {
+        return reject("message-puzzle-answer", 400, "Complete the puzzle first.");
+      }
+      if (Math.abs(answer - Number(record.targetPercent)) <= tolerance) {
+        const nonce = String(command.verificationNonce || "");
+        if (!validChallengeId(nonce)) {
+          return reject("message-puzzle-invalid", 400, "Puzzle verification nonce is invalid.");
+        }
+        kv.put("record", { ...record, verificationNonce: nonce });
+        return json({ ok: true, outcome: "pending", verificationNonce: nonce });
+      }
+      const attempts = (Number(record.attempts) || 0) + 1;
+      if (attempts >= maxAttempts) {
+        kv.delete("record");
+        return json({ ok: false, outcome: "replace", code: "message-puzzle-reset-required" });
+      }
+      const geometry = command.nextGeometry || {};
+      if (!Number.isInteger(geometry.targetPercent) ||
+          !Number.isInteger(geometry.topPercent) ||
+          !Number.isInteger(geometry.pieceScalePercent) ||
+          geometry.targetPercent < 0 || geometry.targetPercent > 100 ||
+          geometry.topPercent < 0 || geometry.topPercent > 100 ||
+          geometry.pieceScalePercent < 1 || geometry.pieceScalePercent > 100) {
+        return reject("message-puzzle-invalid", 503, "Next puzzle geometry is invalid.");
+      }
+      kv.put("record", { ...record, ...geometry, attempts });
+      return json({
+        ok: false, outcome: "retry", code: "message-puzzle-retry",
+        challenge: geometry, attempts, attemptsRemaining: maxAttempts - attempts
+      });
+    }
     if (op === "rate-clear") {
       kv.delete("record");
       return json({ ok: true });
@@ -128,7 +193,7 @@ export class SecurityCoordinator {
       const policy = command.policy || {};
       const limit = Number(policy.limit), windowMs = Number(policy.windowSeconds) * 1000;
       const cooldownMs = Number(policy.cooldownSeconds || 0) * 1000;
-      if (!["security", "service"].includes(category) ||
+      if (!["security", "service", "message"].includes(category) ||
           !Number.isInteger(limit) || limit < 1 || limit > 10000 ||
           !Number.isFinite(windowMs) || windowMs < 1000 || windowMs > 86400000 ||
           !Number.isFinite(cooldownMs) || cooldownMs < 0 || cooldownMs > 86400000) {
@@ -139,7 +204,7 @@ export class SecurityCoordinator {
       const validWindow = previous && Number(previous.resetAt) > at;
       const state = validWindow
         ? { ...previous }
-        : { count: 0, windowStart: at, resetAt: at + windowMs, blockedUntil: 0 };
+        : { count: 0, windowStart: at, resetAt: at + windowMs, blockedUntil: 0, lastAt: 0 };
       if (category === "security" && Number(state.blockedUntil) > at) {
         return reject("security-rate-limited", 429,
           "Too many security attempts. Try again after the cooldown.",
@@ -150,6 +215,19 @@ export class SecurityCoordinator {
           "Too many service requests. Try again after the rate-limit window.",
           new Date(state.resetAt).toISOString());
       }
+      if (category === "message") {
+        if (cooldownMs > 0 && Number(state.lastAt) > 0 && at - Number(state.lastAt) < cooldownMs) {
+          return reject("message-rate-cooldown", 429,
+            "Please wait a moment before sending another message.",
+            new Date(Number(state.lastAt) + cooldownMs).toISOString());
+        }
+        if (state.count >= limit) {
+          return reject("message-rate-window", 429,
+            "Too many messages were sent. Please try again later.",
+            new Date(state.resetAt).toISOString());
+        }
+      }
+      state.lastAt = at;
       state.count += 1;
       if (category === "security" && state.count > limit) {
         state.blockedUntil = at + cooldownMs;

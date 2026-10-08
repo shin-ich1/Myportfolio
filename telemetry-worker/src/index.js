@@ -428,8 +428,8 @@ function driveConfig(env) {
 }
 
 function randomToken(prefix = "") {
-  const value = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-  return `${prefix}${value}`;
+  // Never fall back to Math.random for OAuth state or upload capabilities.
+  return String(prefix || "") + base64Url(crypto.getRandomValues(new Uint8Array(24)));
 }
 
 function driveRedirectUri(request, env) {
@@ -662,7 +662,10 @@ async function handleDriveConnectStart(request, env) {
     const state = randomToken("drv-");
     const redirectUri = driveRedirectUri(request, env);
     const stateRecord = { profileId, uid, origin, redirectUri, expiresAt: Date.now() + DRIVE_OAUTH_STATE_TTL_MS };
-    await kvJsonPut(env, `oauth-state:${state}`, stateRecord, { expirationTtl: Math.ceil(DRIVE_OAUTH_STATE_TTL_MS / 1000) });
+    await coordinateSecurity(env,securityChallengeOwner("drive-oauth-state",state),{
+      op:"challenge-put",scope:"drive-oauth-state",id:state,
+      record:{...stateRecord,scope:"drive-oauth-state"}
+    });
     const auth = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     auth.searchParams.set("client_id", clientId);
     auth.searchParams.set("redirect_uri", redirectUri);
@@ -686,10 +689,28 @@ async function handleDriveConnectCallback(request, env) {
   const url = new URL(request.url);
   const state = String(url.searchParams.get("state") || "");
   const code = String(url.searchParams.get("code") || "");
-  const stateKey = `oauth-state:${state}`;
-  const stateRecord = state ? await kvJsonGet(env, stateKey) : null;
-  if (state) await storageKv(env).delete(stateKey);
-  if (!stateRecord || Number(stateRecord.expiresAt || 0) <= Date.now()) return new Response("Invalid or expired Google Drive authorization state.", { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+  let stateRecord;
+  try{
+    if(!/^[A-Za-z0-9_-]{20,90}$/.test(state))
+      return new Response("Invalid or expired Google Drive authorization state.",{
+        status:400,headers:{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"}
+      });
+    // The state itself is the opaque one-use capability. Consumption is
+    // strongly consistent across Worker instances and Cloudflare regions.
+    stateRecord=await consumeSecurityChallenge(env,"drive-oauth-state",state);
+  }catch(error){
+    const invalid=["security-challenge-invalid","security-challenge-expired"].includes(error?.code);
+    return new Response(invalid
+      ?"Invalid or expired Google Drive authorization state."
+      :"Google Drive authorization state service is unavailable.",{
+      status:invalid?400:Number(error?.status)||503,
+      headers:{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"}
+    });
+  }
+  if (!stateRecord || Number(stateRecord.expiresAt || 0) <= Date.now())
+    return new Response("Invalid or expired Google Drive authorization state.", {
+      status:400,headers:{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"}
+    });
   if (!code) return new Response("Google Drive authorization code is missing.", { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
   try {
     await enforceAdminServiceRateLimit(request, env, stateRecord.uid, "drive-write");

@@ -82,7 +82,7 @@ async function fixture({ historical = false, recovered = false } = {}) {
     if (path.endsWith("/documents/authorizedAdministrators/"+uid))
       return result({ fields: { active: { booleanValue: true } } });
     if (path.includes("/documents/") && (!options.method || options.method === "GET")) {
-      const name = base + path.split("/documents/")[1];
+      const name = base + "/" + path.split("/documents/")[1];
       const doc = docs.get(name);
       return doc ? result({ name, fields: encFields(doc), updateTime: new Date().toISOString() })
         : result({},404);

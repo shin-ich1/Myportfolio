@@ -99,7 +99,8 @@ async function fixture({ historical = false, recovered = false } = {}) {
         const desired = query.where.fieldFilter.value.booleanValue;
         entries = entries.filter(([,doc])=>doc.active === desired);
       }
-      const snapshot = entries.map(([name,doc]) => ({ document: {name,fields:encFields(doc)} }));
+      const snapshot = entries.slice(0,query.limit||100).map(([name,doc]) =>
+        ({ document: {name,fields:encFields(doc)} }));
       if (simultaneous && coll === "adminSecurityDevices") {
         reads++;
         if (reads === 2) release();
@@ -128,6 +129,18 @@ async function fixture({ historical = false, recovered = false } = {}) {
   return {
     sync() { simultaneous = true; }, get readCount() { return reads; },
     devices() { return [...docs].filter(([name])=>name.includes("/adminSecurityDevices/")); },
+    credentials() { return [...docs].filter(([name])=>name.includes("/adminSecurityDeviceCredentials/")); },
+    bootstrapClaims() { return [...docs].filter(([name])=>name.includes("/adminSecurityDeviceBootstrap/")); },
+    addLegacyDevice(id,publicKeyJwk,{active=true,approver=false}={}){
+      put("adminSecurityDevices",id,{
+        uid,deviceId:id,active,publicKeyJwk,
+        displayName:"Preexisting trusted device"
+      });
+      if(approver){
+        const name=base+"/adminSecuritySessions/s1";
+        docs.set(name,{...docs.get(name),trustLevel:"trusted",deviceId:id});
+      }
+    },
     setRecoveryEpoch(epoch) { put("adminSecurityRecovery",uid,{
       uid,active:true,deviceBootstrapEpoch:epoch
     }); },
@@ -314,6 +327,61 @@ test("verified TOTP reset rotates the bootstrap epoch and permits fresh first en
     const fresh=await createChallenge(f,"s2","device-after-totp-reset",701);
     const completed=await complete(f,fresh);
     assert.equal(completed.status,200,JSON.stringify(completed.body));
+    assert.equal(f.devices().length,2);
+  }finally{f.restore();}
+});
+
+
+test("approved registration migrates historical active credential claims and bootstrap marker",async()=>{
+  const f=await fixture();
+  try{
+    f.addLegacyDevice("preexisting-admin-device",key(200),{approver:true});
+    const next=await createChallenge(f,"s2","newly-approved-device",201);
+    const approved=await f.post("s1","/security/device/enrollment/approve",{
+      proofId:"proof-s1",challengeId:next.challengeId
+    });
+    assert.equal(approved.status,200);
+    const result=await complete(f,next);
+    assert.equal(result.status,200,JSON.stringify(result.body));
+    assert.equal(f.devices().length,2);
+    assert.equal(f.credentials().length,2,
+      "historical and new public keys must have unique authoritative claims");
+    assert.equal(f.bootstrapClaims().length,1,
+      "legacy first-device enrollment must be marked as already used");
+    assert.ok(f.credentials().some(([,doc])=>doc.deviceId==="preexisting-admin-device"));
+  }finally{f.restore();}
+});
+
+test("duplicate cryptographic credentials in historical active devices fail closed",async()=>{
+  const f=await fixture();
+  try{
+    f.addLegacyDevice("historical-a",key(230),{approver:true});
+    f.addLegacyDevice("historical-b",key(230));
+    const next=await createChallenge(f,"s2","legitimate-new-device",231);
+    const approved=await f.post("s1","/security/device/enrollment/approve",{
+      proofId:"proof-s1",challengeId:next.challengeId
+    });
+    assert.equal(approved.status,200);
+    const attempt=await complete(f,next);
+    assert.equal(attempt.status,409);
+    assert.equal(attempt.body.code,"security-device-credential-duplicate");
+    assert.equal(f.devices().length,2);
+  }finally{f.restore();}
+});
+
+test("incomplete historical active device keys block registration instead of silently skipping",async()=>{
+  const f=await fixture();
+  try{
+    f.addLegacyDevice("valid-approver",key(270),{approver:true});
+    f.addLegacyDevice("missing-credential",null);
+    const next=await createChallenge(f,"s2","would-be-device",271);
+    const approved=await f.post("s1","/security/device/enrollment/approve",{
+      proofId:"proof-s1",challengeId:next.challengeId
+    });
+    assert.equal(approved.status,200);
+    const attempt=await complete(f,next);
+    assert.equal(attempt.status,503);
+    assert.equal(attempt.body.code,"security-device-migration-required");
     assert.equal(f.devices().length,2);
   }finally{f.restore();}
 });

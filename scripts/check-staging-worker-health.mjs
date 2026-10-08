@@ -35,12 +35,16 @@ export async function inspectStagingWorkerHealth({ fetchImpl = fetch } = {}) {
   if (payload.firebaseConfigured !== true) {
     throw new Error("Staging Worker is missing Firebase project configuration.");
   }
+  if (payload.securityCoordinatorConfigured !== true) {
+    throw new Error("Staging Worker is missing atomic Security Coordinator binding.");
+  }
   if (payload.storageOAuthConfigured !== true || payload.messagePushConfigured !== true) {
     throw new Error("Staging Worker is missing required staging KV bindings.");
   }
   return Object.freeze({
     canonicalWorkerResponding: true,
     firebaseProjectVariablePresent: true,
+    atomicSecurityCoordinatorBindingPresent: true,
     storageOAuthKvPresent: true,
     portfolioMessagesKvPresent: true,
     serverCredentialPresenceReported: payload.messageSecurityConfigured === true,

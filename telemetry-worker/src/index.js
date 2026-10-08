@@ -1706,7 +1706,7 @@ async function handleMessagePuzzleImage(request, env, challengeId) {
   const cached = cache ? await cache.match(cacheKey) : null;
   if (cached?.ok) {
     const headers = new Headers(cached.headers);
-    headers.set("Cache-Control", \`private, max-age=\${MESSAGE_CHALLENGE_TTL_SECONDS}\`);
+    headers.set("Cache-Control", `private, max-age=${MESSAGE_CHALLENGE_TTL_SECONDS}`);
     return new Response(cached.body, { status: 200, headers });
   }
   const fetched = await fetchPuzzleImageCandidate(image);
@@ -1721,13 +1721,13 @@ async function handleMessagePuzzleImage(request, env, challengeId) {
     status: 200,
     headers: {
       "Content-Type": contentType,
-      "Cache-Control": \`public, max-age=\${MESSAGE_PUZZLE_IMAGE_POOL_TTL_SECONDS}\`,
+      "Cache-Control": `public, max-age=${MESSAGE_PUZZLE_IMAGE_POOL_TTL_SECONDS}`,
       "X-Content-Type-Options": "nosniff"
     }
   });
   if (cache) await cache.put(cacheKey, cacheResponse.clone()).catch(() => {});
   const headers = new Headers(cacheResponse.headers);
-  headers.set("Cache-Control", \`private, max-age=\${MESSAGE_CHALLENGE_TTL_SECONDS}\`);
+  headers.set("Cache-Control", `private, max-age=${MESSAGE_CHALLENGE_TTL_SECONDS}`);
   return new Response(cacheResponse.body, { status: 200, headers });
 }
 

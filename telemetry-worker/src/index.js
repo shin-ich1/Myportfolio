@@ -374,7 +374,6 @@ async function kvJsonPut(env, key, value, options = undefined) {
 function driveTokenKey(profileId) { return `drive-token:${profileId}`; }
 function driveProfileKey(profileId) { return `drive-profile:${profileId}`; }
 function driveAssetKey(profileId, fileId) { return `drive-asset:${profileId}:${fileId}`; }
-function drivePendingKey(profileId, token) { return `drive-pending:${profileId}:${token}`; }
 function driveFolderKey(profileId, parentId, logicalKey) { return `drive-folder:${profileId}:${parentId}:${logicalKey}`; }
 
 function drivePublicCacheKey(profileId, fileId, download = false, variant = "original", format = "source") {
@@ -788,39 +787,82 @@ async function handleDriveUploadSession(request, env) {
     const sessionUrl = create.headers.get("Location") || create.headers.get("location") || "";
     if (!create.ok || !sessionUrl) throw serviceError(`Google Drive resumable upload session failed with HTTP ${create.status}.`, { status: 502, code: "google-drive-upload-session", source: "google-drive" });
     const pendingToken = randomToken("up-");
-    await kvJsonPut(env, drivePendingKey(profileId, pendingToken), { profileId, pendingToken, folderId, name, mimeType, bytes, access, sessionUrl, context: body.context || {}, expiresAt: Date.now() + DRIVE_PENDING_UPLOAD_TTL_MS }, { expirationTtl: Math.ceil(DRIVE_PENDING_UPLOAD_TTL_MS / 1000) });
+    await coordinateSecurity(env,securityChallengeOwner("drive-upload",pendingToken),{
+      op:"challenge-put",scope:"drive-upload",id:pendingToken,
+      record:{
+        scope:"drive-upload",profileId,pendingToken,folderId,name,mimeType,
+        bytes,access,sessionUrl,context:body.context||{},
+        expiresAt:Date.now()+DRIVE_PENDING_UPLOAD_TTL_MS
+      }
+    });
     return json({ profileId, sessionUrl, pendingToken }, 200, origin);
   } catch (error) {
     return json({ error: error?.message || "Google Drive upload could not start.", code: String(error?.code || "internal"), source: String(error?.source || "google-drive") }, Number(error?.status) || 500, origin);
   }
 }
 
-async function driveFinalizePending(profileId, pendingToken, fileId, env) {
-  const pendingKey = drivePendingKey(profileId, pendingToken);
-  const pending = await kvJsonGet(env, pendingKey);
-  if (!pending || Number(pending.expiresAt || 0) <= Date.now()) throw serviceError("Google Drive upload confirmation expired or is invalid.", { status: 409, code: "google-drive-upload-pending", source: "google-drive" });
-  if (!fileId) throw serviceError("Google Drive file ID is missing.", { status: 422, code: "google-drive-file-id", source: "google-drive" });
-  const response = await driveApi(profileId, env, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=${encodeURIComponent("id,name,mimeType,size,webViewLink,parents,trashed,appProperties")}`);
-  const file = await response.json().catch(() => ({}));
-  if (!response.ok || !file?.id) throw serviceError(`Google Drive upload verification failed with HTTP ${response.status}.`, { status: 502, code: "google-drive-upload-verify", source: "google-drive" });
-  if (file.trashed || !Array.isArray(file.parents) || !file.parents.includes(pending.folderId)) throw serviceError("Google Drive upload does not belong to the expected CMS folder.", { status: 409, code: "google-drive-upload-ownership", source: "google-drive" });
-  const asset = {
-    provider: "google-drive",
-    storageProfileId: profileId,
-    assetId: String(file.id),
-    fileId: String(file.id),
-    name: String(file.name || pending.name || ""),
-    mimeType: String(file.mimeType || pending.mimeType || "application/octet-stream"),
-    bytes: Math.max(0, Number(file.size ?? pending.bytes) || 0),
-    access: pending.access,
-    context: pending.context || {},
-    folderId: String(pending.folderId || ""),
-    webViewLink: String(file.webViewLink || ""),
-    createdAt: new Date().toISOString()
-  };
-  await kvJsonPut(env, driveAssetKey(profileId, fileId), asset);
-  await storageKv(env).delete(pendingKey);
-  return asset;
+async function drivePendingOperation(env, profileId, pendingToken, op, extra = {}) {
+  const token = String(pendingToken || "").trim();
+  if(!/^[A-Za-z0-9_-]{20,90}$/.test(token) || !String(profileId||"").trim()) {
+    throw serviceError("Google Drive upload confirmation expired or is invalid.",{
+      status:409,code:"google-drive-upload-pending",source:"google-drive"
+    });
+  }
+  return coordinateSecurity(env,securityChallengeOwner("drive-upload",token),{
+    op,scope:"drive-upload",id:token,profileId,...extra
+  });
+}
+
+async function driveFinalizePending(profileId, pendingToken, fileId, env, uploadFile = null) {
+  // One canonical lease serializes content upload and metadata-only finalize.
+  // Failed upstream operations release it for retry; Worker crashes leave a
+  // bounded lease that can be reclaimed after expiry.
+  const claimId=randomCapability(24);
+  const claim=await drivePendingOperation(env,profileId,pendingToken,"upload-claim",{claimId});
+  const pending=claim.record;
+  try {
+    let verifiedFileId=String(fileId||"").trim();
+    if(uploadFile){
+      verifiedFileId=String(await uploadFile(pending)||"").trim();
+    }
+    if(!verifiedFileId) throw serviceError("Google Drive file ID is missing.",{
+      status:422,code:"google-drive-file-id",source:"google-drive"
+    });
+    const response=await driveApi(profileId,env,
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(verifiedFileId)}?fields=${encodeURIComponent("id,name,mimeType,size,webViewLink,parents,trashed,appProperties")}`);
+    const file=await response.json().catch(()=>({}));
+    if(!response.ok || !file?.id) throw serviceError(
+      `Google Drive upload verification failed with HTTP ${response.status}.`,{
+        status:502,code:"google-drive-upload-verify",source:"google-drive"
+      });
+    if(file.trashed || !Array.isArray(file.parents) ||
+       !file.parents.includes(pending.folderId)){
+      throw serviceError("Google Drive upload does not belong to the expected CMS folder.",{
+        status:409,code:"google-drive-upload-ownership",source:"google-drive"
+      });
+    }
+    const asset={
+      provider:"google-drive",
+      storageProfileId:profileId,
+      assetId:String(file.id),
+      fileId:String(file.id),
+      name:String(file.name||pending.name||""),
+      mimeType:String(file.mimeType||pending.mimeType||"application/octet-stream"),
+      bytes:Math.max(0,Number(file.size??pending.bytes)||0),
+      access:pending.access,
+      context:pending.context||{},
+      folderId:String(pending.folderId||""),
+      webViewLink:String(file.webViewLink||""),
+      createdAt:new Date().toISOString()
+    };
+    await kvJsonPut(env,driveAssetKey(profileId,verifiedFileId),asset);
+    await drivePendingOperation(env,profileId,pendingToken,"upload-consume",{claimId});
+    return asset;
+  }catch(error){
+    await drivePendingOperation(env,profileId,pendingToken,"upload-release",{claimId})
+      .catch(()=>null);
+    throw error;
+  }
 }
 
 async function handleDriveUploadContent(request, env) {
@@ -833,19 +875,37 @@ async function handleDriveUploadContent(request, env) {
     const profileId = String(form.get("profileId") || "").trim();
     const pendingToken = String(form.get("pendingToken") || "").trim();
     const file = form.get("file");
-    const pending = await kvJsonGet(env, drivePendingKey(profileId, pendingToken));
-    if (!pending || Number(pending.expiresAt || 0) <= Date.now()) throw serviceError("Google Drive upload confirmation expired or is invalid.", { status: 409, code: "google-drive-upload-pending", source: "google-drive" });
-    if (!file || typeof file.arrayBuffer !== "function") throw serviceError("Google Drive upload file is missing.", { status: 422, code: "google-drive-upload-file", source: "google-drive" });
-    if (pending.bytes > 0 && Number(file.size || 0) !== Number(pending.bytes)) throw serviceError("Google Drive upload size does not match the prepared upload.", { status: 409, code: "google-drive-upload-size", source: "google-drive" });
-    const session = String(pending.sessionUrl || "").trim();
-    if (!session) throw serviceError("Google Drive upload session is missing.", { status: 409, code: "google-drive-upload-session-missing", source: "google-drive" });
-    const upload = await fetch(session, { method: "PUT", headers: { "Content-Type": pending.mimeType || file.type || "application/octet-stream" }, body: file });
-    const uploaded = await upload.json().catch(() => ({}));
-    if (!upload.ok || !uploaded?.id) throw serviceError(`Google Drive upload failed with HTTP ${upload.status}.`, { status: 502, code: "google-drive-upload-content", source: "google-drive" });
-    const asset = await driveFinalizePending(profileId, pendingToken, String(uploaded.id), env);
-    return json(asset, 200, origin);
+    if(!file || typeof file.arrayBuffer!=="function") throw serviceError(
+      "Google Drive upload file is missing.",{
+        status:422,code:"google-drive-upload-file",source:"google-drive"
+      });
+    const asset=await driveFinalizePending(profileId,pendingToken,"",env,async pending=>{
+      if(pending.bytes>0 && Number(file.size||0)!==Number(pending.bytes)){
+        throw serviceError("Google Drive upload size does not match the prepared upload.",{
+          status:409,code:"google-drive-upload-size",source:"google-drive"
+        });
+      }
+      const session=String(pending.sessionUrl||"").trim();
+      if(!session) throw serviceError("Google Drive upload session is missing.",{
+        status:409,code:"google-drive-upload-session-missing",source:"google-drive"
+      });
+      const upload=await fetch(session,{
+        method:"PUT",
+        headers:{"Content-Type":pending.mimeType||file.type||"application/octet-stream"},
+        body:file
+      });
+      const uploaded=await upload.json().catch(()=>({}));
+      if(!upload.ok || !uploaded?.id) throw serviceError(
+        `Google Drive upload failed with HTTP ${upload.status}.`,{
+          status:502,code:"google-drive-upload-content",source:"google-drive"
+        });
+      return String(uploaded.id);
+    });
+    return json(asset,200,origin);
   } catch (error) {
-    return json({ error: error?.message || "Google Drive upload failed.", code: String(error?.code || "internal"), source: String(error?.source || "google-drive") }, Number(error?.status) || 500, origin);
+    return json({ error: error?.message || "Google Drive upload failed.",
+      code: String(error?.code || "internal"), source: String(error?.source || "google-drive") },
+      Number(error?.status) || 500, origin);
   }
 }
 

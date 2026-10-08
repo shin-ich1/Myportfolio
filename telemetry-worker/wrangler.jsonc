@@ -3,20 +3,20 @@
   "name": "lan-cloudinary-telemetry",
   "main": "src/index.js",
   "compatibility_date": "2026-08-15",
-  "kv_namespaces": [
-    {
-      "binding": "STORAGE_OAUTH",
-      "id": "00000000000000000000000000000000"
-    },
-    {
-      "binding": "PORTFOLIO_MESSAGES",
-      "id": "00000000000000000000000000000000"
-    },
-    {
-      "binding": "SECURITY_STATE",
-      "id": "00000000000000000000000000000000"
-    }
-  ],
+"kv_namespaces": [
+  {
+    "binding": "STORAGE_OAUTH",
+    "id": "0928060fc494486286a6d83f543f679e"
+  },
+  {
+    "binding": "PORTFOLIO_MESSAGES",
+    "id": "ccd7d586b9534d409c036d44137dc29f"
+  },
+  {
+    "binding": "SECURITY_STATE",
+    "id": "39f8e267e0514322ab003f340955bf14"
+  }
+],
   "vars": {
     "FIREBASE_PROJECT_ID": "rolando-portfolio-3f1a3",
     "FIREBASE_WEB_API_KEY": "AIzaSyA25wR_Yi271kAW7KIFzi5WQIX8iLJfW0I",

@@ -7,6 +7,9 @@ on:
       - "admin/pages/**"
       - "admin/dashboard.html"
       - "tests/**"
+      - "telemetry-worker/src/**"
+      - "telemetry-worker/wrangler.jsonc"
+      - "scripts/check-staging-worker-health.mjs"
       - "scripts/prepare-staging.mjs"
       - "scripts/staging-targets.json"
       - "storage-bridge-url.js"
@@ -21,6 +24,8 @@ on:
       - "admin/dashboard.html"
       - "tests/**"
       - "telemetry-worker/src/**"
+      - "telemetry-worker/wrangler.jsonc"
+      - "scripts/check-staging-worker-health.mjs"
       - "scripts/prepare-staging.mjs"
       - "scripts/staging-targets.json"
       - ".github/workflows/admin-performance-regression.yml"
@@ -49,7 +54,16 @@ jobs:
           node --check scripts/check-staging-worker-health.mjs
           node --check storage-bridge-url.js
           node --check telemetry-worker/src/index.js
+          node --check telemetry-worker/src/security-coordinator.js
       - name: Run shared-navigation and staging isolation tests
         run: node --test tests/admin-shared-navigation-performance.test.mjs tests/admin-workspace-security-gate.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-pending-navigation-lifecycle.test.mjs tests/staging-build-isolation.test.mjs tests/staging-worker-authorization.test.mjs tests/staging-worker-health-gate.test.mjs tests/security-coordinator-atomicity.test.mjs
       - name: Verify staging manifest has no hardcoded API key
         run: node -e "if (Object.hasOwn(require('./scripts/staging-targets.json').firebase, 'apiKey')) process.exit(1)"
+
+      - name: Bundle isolated staging Worker without deployment
+        run: |
+          npm ci --prefix telemetry-worker --no-audit --no-fund
+          export LAN_STAGING_FIREBASE_WEB_API_KEY="$(node -e "process.stdout.write('AIza'+'A'.repeat(35))")"
+          node scripts/prepare-staging.mjs
+          cd telemetry-worker
+          ./node_modules/.bin/wrangler deploy --dry-run --config wrangler.staging.jsonc --outdir ../.lan-staging/worker-bundle

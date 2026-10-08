@@ -8,6 +8,7 @@
       "package.json",
       "package-lock.json",
       "scripts/**",
+      "telemetry-worker/**",
       "**/.*",
       "**/node_modules/**",
       "**/*.md",

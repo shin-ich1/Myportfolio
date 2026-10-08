@@ -79,6 +79,9 @@ async function fixture({ historical = false, recovered = false } = {}) {
     const path = url.pathname;
     if (url.hostname === "oauth2.googleapis.com" && path === "/token")
       return result({ access_token: "test-only-access-token", expires_in: 3600 });
+    if (path.endsWith("/accounts:update")) {
+      return result({localId:uid});
+    }
     if (path.endsWith("/documents/authorizedAdministrators/"+uid))
       return result({ fields: { active: { booleanValue: true } } });
     if (path.includes("/documents/") && (!options.method || options.method === "GET")) {
@@ -128,6 +131,17 @@ async function fixture({ historical = false, recovered = false } = {}) {
     setRecoveryEpoch(epoch) { put("adminSecurityRecovery",uid,{
       uid,active:true,deviceBootstrapEpoch:epoch
     }); },
+    get recoveryEpoch() {
+      return docs.get(base+"/adminSecurityRecovery/"+uid)?.deviceBootstrapEpoch || "";
+    },
+    restoreFreshTemporarySession(id) {
+      const name=base+"/adminSecuritySessions/"+id;
+      const record=docs.get(name);
+      if(!record)throw Error("session record absent");
+      docs.set(name,{...record,active:true,trustLevel:"temporary",deviceId:"",
+        createdAt:new Date().toISOString(),
+        expiresAt:new Date(Date.now()+600000).toISOString()});
+    },
     revokeDevice(id) {
       const name=base+"/adminSecurityDevices/"+id;
       const record=docs.get(name);
@@ -280,5 +294,26 @@ test("approval from a now-revoked trusted device cannot authorize enrollment",as
     assert.equal(denied.status,403);
     assert.equal(denied.body.code,"security-enrollment-approver-revoked");
     assert.equal(f.devices().length,1);
+  }finally{f.restore();}
+});
+
+
+test("verified TOTP reset rotates the bootstrap epoch and permits fresh first enrollment",async()=>{
+  const f=await fixture();
+  try{
+    const initial=await createChallenge(f,"s1","device-before-totp-reset",700);
+    assert.equal((await complete(f,initial)).status,200);
+    const reset=await f.post("s1","/security/totp/reset",{proofId:"proof-s1"});
+    assert.equal(reset.status,200,JSON.stringify(reset.body));
+    assert.equal(reset.body.bootstrapRequired,true);
+    assert.ok(f.recoveryEpoch,"TOTP reset must rotate the authoritative first-device epoch");
+    assert.equal(f.devices()[0][1].active,false);
+    // Simulate a *separate*, freshly TOTP-verified temporary session after
+    // Identity Platform MFA re-enrollment. No old session is reused.
+    f.restoreFreshTemporarySession("s2");
+    const fresh=await createChallenge(f,"s2","device-after-totp-reset",701);
+    const completed=await complete(f,fresh);
+    assert.equal(completed.status,200,JSON.stringify(completed.body));
+    assert.equal(f.devices().length,2);
   }finally{f.restore();}
 });

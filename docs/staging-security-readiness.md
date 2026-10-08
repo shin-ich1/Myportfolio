@@ -1,38 +1,48 @@
-# LΛN Staging Security Gateway — Readiness
+# LΛN Staging Security & Access — Readiness Review
 
-**Scope:** investigation branch only. No Cloudflare/Firebase deployment, no live security certification.
+**Scope:** testing branch only. This review records source-level and local Cloudflare runtime evidence. **Staging and production have not been deployed or live-authenticated.**
 
-## Verified isolated work
+## Current staging environment
 
-- Staging Worker still returned "Hello World!" at the last live browser check; the canonical Worker was NOT deployed.
-- Admin one-time challenge and QR approval/consumption now use the canonical SQLite Durable Object in telemetry-worker/src/security-coordinator.js, routed via telemetry-worker/src/index.js. Admin, Cloudinary and Google Drive sensitive rate-limit counters use the same canonical coordinator. The competing SECURITY_STATE KV runtime binding and handlers were removed.
-- The Worker checks Firebase Security Gateway sessions and direct Firestore authorization server-side. No client-only authentication decision was introduced.
-- Wrangler staging configuration declares SECURITY_COORDINATOR with SQLite storage and retains PORTFOLIO_MESSAGES and STORAGE_OAUTH KV bindings. It does not retain the obsolete SECURITY_STATE KV binding.
-- 69 source/regression tests (including Master Recovery Key and first trusted-device concurrent replay) plus 2 actual local Cloudflare workerd SQLite tests passed. In one test, 50 simultaneous challenge redemption attempts yielded exactly 1 success; in another, 36 simultaneous rate-limit calls with limit 4 yielded exactly 4 accepted calls.
-- Pinned Wrangler staging bundle passed deploy --dry-run only. See GitHub Actions run 37827394648.
-- Missing coordinator binding fails closed (HTTP 503), rather than falling back to old KV state. Staging Web API key is local-only for build input and never committed in staging manifest.
+- Last observed deployment of `lan-portfolio-staging.lagmayr2.workers.dev/health` still returned **Hello World!** It is the placeholder, not the canonical gateway.
+- Isolated staging Firebase (`lan-portfolio-staging`) and Identity Platform TOTP configuration were inspected previously. No staging Firebase service-account/IAM setup or end-to-end login was validated.
+- The generated staging Worker configuration uses one `SECURITY_COORDINATOR` SQLite Durable Object and two unrelated KV bindings: `PORTFOLIO_MESSAGES` for nonsecurity message/push/image caches, and `STORAGE_OAUTH` for Drive profile/token/upload metadata. The old `SECURITY_STATE` KV security binding and runtime code have been removed.
+- The Firebase Web API key is not in tracked staging config. No service account private key, recovery secret, OAuth client secret or access token is committed.
 
-## Remaining blockers before staging deployment
+## Canonical ownership after both work pairs
 
-1. **Recovery-key replay race resolved in source and isolated tests, not live staging:** recovery/start now claims the existing Firestore record using its server updateTime as a write precondition. A synchronized five-request Worker HTTP regression failed against the old implementation (5 accepted) and passed after the migration (1 accepted, 4 rejected). Recovery completion checks the matching pending challenge and completed session/device + Firebase MFA reset, then conditionally writes the replacement key against the current Firestore version. **Still requires live Firebase/Firestore testing.** Partial reset failures currently invalidate the old key before the reset finishes, so operational recovery/retry policy must be reviewed without introducing a bypass. Check how recovery Activity logging failures are handled after a replacement key has already been stored.
-2. Public message verification, visitor puzzle, visitor rate limits, and Google Drive OAuth callback state include separate KV read-then-delete/read-modify-write paths. Review and remediate as separate public-message/OAuth canonical owners.
-3. **First-device enrollment concurrency resolved in source-level Worker HTTP tests, not live Firestore:** one Firestore commit now atomically creates the initial bootstrap marker, immutable device document and a unique public-key credential claim using create-if-absent preconditions. A synchronized two-enrollment regression failed before the fix (both devices trusted) and passed after (one trusted, one denied). Revoked historical devices cannot silently reopen first enrollment. Successful emergency recovery changes a server-held bootstrap generation, while normal Recovery Key rotation preserves it. Verified TOTP reset also rotates that generation only after revoking prior sessions/devices and clearing MFA. Pending QR challenges from an earlier generation and approvals from revoked trusted devices are rejected. Distinct approved devices can enroll with unique keys. **Migration of preexisting production device records into credential/marker claims, partial commit/session promotion failure recovery, and real Firebase/Firestore authorization still require separate review.**
-4. Staging-only Firebase server identity, least-privilege IAM, encrypted Worker secrets, Firestore Rules rollout, isolated admin bootstrap, and direct backend authorization have not been verified.
-5. Full live TOTP, device/session revocation, recovery, rate/attack, wide/compact/mobile Admin/Public regression and navigation speed tests have not been run.
+1. **Recovery:** `telemetry-worker/src/index.js` uses Firestore server-side update-time preconditions for the single-use Master Recovery Key. An interrupted Firebase MFA/session reset may resume only with a freshly verified administrator password plus the original key, inside a bounded server-side window and with an exclusive short lease. The key remains inactive during recovery; on successful completion it is replaced. A fresh key's hash and the mandatory Security Activity event share a single atomic Firestore commit so an event-write failure cannot lose an already-issued one-time key.
+2. **Public messaging:** Public puzzle challenge state, attempts and Turnstile finalization nonce, verification-proof redemption, and visitor rate counters are owned by `telemetry-worker/src/security-coordinator.js`, with strongly consistent synchronous Durable Object state. The public Worker route preserves existing UI request/response shape. Message image selection/history caching may still use KV but **not for challenge, verification or rate-limit authority**.
+3. **Google Drive OAuth:** Authorization `state` uses a cryptographically random one-time credential persisted and consumed atomically by the same coordinator. The callback rejects replay, expired state and missing coordinator. `STORAGE_OAUTH` still owns Google refresh-token, profile and upload metadata; it is not an OAuth state authority.
+4. **Trusted-device migration:** Before registering a newly approved device, the canonical backend validates historical active device credentials, idempotently backfills unique cryptographic-key claims, and marks old initial bootstrap as used. Duplicate old credentials and malformed active legacy records fail closed. No historical device is automatically trusted, unrevoked or deleted. New registration still atomically claims a unique key and device ID. Post-recovery/TOTP-reset bootstrap epochs, stale QR rejection and revoked approver checks remain enforced.
 
-## Required release gates
+## Automated evidence
 
-- [x] Atomic Admin challenge and sensitive rate-limit implementation with failing-before/green-after tests
-- [x] Wrangler staging configuration and local workerd runtime concurrency checks
-- [x] Remediate recovery-key concurrent claim and verify deterministic failing-before/green-after Worker HTTP test
-- [x] Atomic first-device claim, unique public-key credential index, and immutable device document (Worker HTTP regressions)
-- [x] Reject stale reset-era QR and approval from a revoked trusted device
-- [x] Preserve new first-device bootstrap after verified TOTP reset
-- [ ] Review partial-failure recovery restart behavior, public-message/OAuth replay, and migration of historical device registrations
-- [ ] Approve staging-only backend credentials and deploy/test staging-only Firestore Rules
-- [ ] Deploy staging Worker ONLY after separate authorization; GET /health must return canonical JSON with securityCoordinatorConfigured true
-- [ ] Live-test complete authentication and revocation flows and unauthorized Firestore/Worker API requests
-- [ ] Measure before/after performance and review final diff
-- [ ] Separate production promotion approval after security audit
+- **81/81** Node regression tests passed on the testing branch, including five parallel Recovery Key claims (one accepted), interrupted-reset recovery, lost-key/audit regression, public puzzle proof/attempt concurrency, 25-way OAuth callback replay (one accepted) and historical trusted-device migration.
+- **4/4** local Cloudflare `workerd` SQLite tests passed: 50-way Admin challenge replay, 36-way Admin rate limits, 40-way public puzzle verification/finalization, and 40-way OAuth state consumption.
+- The generated isolated staging Worker bundle passed `wrangler deploy --dry-run`. **No deployment happened.**
+- CI evidence: https://github.com/shin-ich1/Myportfolio/actions/runs/37830871311
 
-Never deploy, grant privileges, sign in, or declare the service secure based on local tests alone. No production configurations or live resources were deployed by this branch.
+## Remaining blockers before any staging deployment
+
+- **Live Firebase/Cloudflare authorization:** Approve staging-only least-privilege service identity, secure Worker secrets, Firestore Rules and authorized test administrator bootstrap. Run real TOTP, QR trusted-device, session and recovery tests and direct unauthorized Firestore/backend request rejection.
+- **Interrupted completion delivery:** Recovery completion consumes its one-time challenge before the final Firestore/optional account-update operations. If those later operations fail, the challenge is lost and no replacement is issued. Design a crash-safe same-challenge retry protocol with server-validated single-use commit before calling this production-ready. The start/reset retry path is tested, but completion recovery remains an explicit blocker.
+- **Legacy device data migration at scale:** Staging tests cover valid/malformed/duplicate active records and idempotent claims. Historical migrations with 100+ records deliberately fail closed. Production data must be audited for collisions/invalid keys and reviewed before any promotion.
+- **Drive upload pending-token lifecycle:** Resumable upload completion still uses KV read-and-delete; review its idempotency/replay behavior separately from the OAuth authorization state. Do not claim the entire Drive asset pipeline is atomic.
+- **End-to-end messaging and alert delivery:** Real Turnstile, visitor messages, branded security-alert email provider and public media availability were not live-tested. Email delivery must remain **not configured** unless the provider confirms it.
+- **Browser performance and layout:** Re-measure the Admin's navigation/Firestore requests and Photo Editing media loads in isolated staging. Run wide/compact/mobile Admin and frozen Public regressions before promotion.
+
+## Release gates
+
+- [x] Test and remediate Admin challenge replay, rate-limiting and initial trusted-device races in source/local workerd
+- [x] Test Recovery Key concurrent claims and interrupted Firebase reset initiation
+- [x] Migrate public puzzle/proof/rate state, Google OAuth state, and historical trusted-device claims to canonical server owners
+- [x] Run the full source regression list and local Cloudflare Worker dry-run
+- [ ] Resolve interrupted recovery **completion** and Drive upload pending-token replay lifecycle
+- [ ] Approve isolated staging credentials and deploy/test staging Firestore Rules
+- [ ] Explicitly authorize staging Worker deployment; verify `/health` JSON replaces placeholder
+- [ ] Complete live auth/recovery/revocation/attack and unauthorized-access tests
+- [ ] Measure browser performance and Admin/Public layout regression, inspect final diff
+- [ ] Approve a separate production promotion and deliver one audited final ZIP
+
+Never promote on the strength of source/CI tests alone. Do not copy production accounts, sessions, recovery keys or signing credentials to staging.

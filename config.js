@@ -169,7 +169,7 @@ export const portfolioModuleRegistry = Object.freeze([
 ========================================================= */
 export const telemetryBridgeConfig = Object.freeze({
   localUrl: "http://127.0.0.1:8787/telemetry",
-  productionUrl: ""
+  productionUrl: "https://lan-cloudinary-telemetry.lagmayr2.workers.dev/telemetry"
 });
 
 /* =========================================================

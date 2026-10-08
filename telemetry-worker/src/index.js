@@ -2306,7 +2306,47 @@ async function finishMasterRecoveryKey(env, uid, recoveryRecord, replacementReco
       status: 403, code: "security-recovery-not-ready", source: "worker"
     });
   }
-  return writeRecoveryConditional(env, uid, recoveryRecord._updateTime, replacementRecord);
+  const updateTime=String(recoveryRecord._updateTime||"").trim();
+  if(!updateTime || !Number.isFinite(Date.parse(updateTime))){
+    throw serviceError("Recovery version could not be verified.",{
+      status:503,code:"security-recovery-version-missing",source:"firebase"
+    });
+  }
+  // A replacement key is disclosed only if both its secure hash and the audit
+  // event were committed together. An Activity outage cannot strand the admin
+  // with a key already changed but never displayed.
+  const eventId=securityRandomId(18);
+  const writes=[
+    {
+      update:{
+        name:firestoreDocumentName(env,SECURITY_COLLECTIONS.recovery,uid),
+        fields:firestoreFields(replacementRecord)
+      },
+      currentDocument:{updateTime}
+    },
+    {
+      update:{
+        name:firestoreDocumentName(env,SECURITY_COLLECTIONS.events,eventId),
+        fields:firestoreFields({
+          uid,type:"recovery-reset-complete",success:true,sessionId:"",
+          deviceId:"",summary:"Fresh security bootstrap and Recovery Kit required.",
+          ip:"",createdAt:new Date().toISOString()
+        })
+      },
+      currentDocument:{exists:false}
+    }
+  ];
+  try{
+    await firestoreAdminCommit(env,writes);
+  }catch(error){
+    if(error?.code==="firestore-precondition-failed"){
+      throw serviceError("Recovery state changed; the previous challenge is no longer valid.",{
+        status:409,code:"security-recovery-state-changed",source:"worker"
+      });
+    }
+    throw error;
+  }
+  return {eventId};
 }
 
 async function securityQuery(env,collection,filters=[],limit=100){
@@ -2645,7 +2685,7 @@ async function handleSecurityRoute(request,env,url,context){
         uid:c.uid,active:true,masterKeyHash:hash,backupCodeHashes:codeHashes,
         deviceBootstrapEpoch:securityRandomId(18),createdAt:new Date().toISOString()
       });
-      await writeSecurityEvent(env,{uid:c.uid,type:'recovery-reset-complete',success:true,summary:'Fresh security bootstrap and Recovery Kit required.'});
+      // Security Activity was persisted atomically with the replacement key.
       return json({state:'bootstrap-required',email:replacementEmail||c.email||'',masterKey:key,backupCodes:codes,requireEmailVerification:Boolean(replacementEmail),requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true},200,origin);
     }
 

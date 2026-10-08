@@ -1475,10 +1475,6 @@ async function privateMessageClientBinding(request) {
   return sha256Text(`${ip}|${agent}`);
 }
 
-function privateMessageChallengeKey(id) {
-  return `message:challenge:${id}`;
-}
-
 function privateMessageImagePoolKey(queryIndex, page) {
   return `message:puzzle-image-pool:v1:${queryIndex}:${page}`;
 }
@@ -1689,19 +1685,30 @@ function publicPuzzleImageUrl(request, challengeId) {
 }
 
 async function handleMessagePuzzleImage(request, env, challengeId) {
-  if (!/^[A-Za-z0-9_-]{24}$/.test(String(challengeId || ""))) return new Response("Not found.", { status: 404 });
-  const challenge = await pushStore(env).get(privateMessageChallengeKey(challengeId), "json").catch(() => null);
-  if (!challenge || Number(challenge.expiresAt) <= Date.now()) return new Response("Challenge expired.", { status: 410 });
-  const image = challenge?.image || {};
+  if (!/^[A-Za-z0-9_-]{24}$/.test(String(challengeId || "")))
+    return new Response("Not found.", { status: 404 });
+  let image;
+  try {
+    const record = await coordinateSecurity(env,
+      securityChallengeOwner("message-puzzle", challengeId), {
+        op: "puzzle-image-read", scope: "message-puzzle", id: challengeId
+      });
+    image = record.image || {};
+  } catch (error) {
+    return new Response(error?.code === "message-puzzle-expired"
+      ? "Challenge expired." : "Puzzle image unavailable.", {
+      status: error?.code === "message-puzzle-expired" ? 410 : Number(error?.status) || 503,
+      headers: { "Cache-Control": "no-store" }
+    });
+  }
   const cache = globalThis.caches?.default || null;
   const cacheKey = puzzleImageCacheKey(image?.id || challengeId);
   const cached = cache ? await cache.match(cacheKey) : null;
   if (cached?.ok) {
     const headers = new Headers(cached.headers);
-    headers.set("Cache-Control", `private, max-age=${MESSAGE_CHALLENGE_TTL_SECONDS}`);
+    headers.set("Cache-Control", \`private, max-age=\${MESSAGE_CHALLENGE_TTL_SECONDS}\`);
     return new Response(cached.body, { status: 200, headers });
   }
-
   const fetched = await fetchPuzzleImageCandidate(image);
   if (!fetched) {
     return new Response("Verification image is no longer available. Request a new challenge.", {
@@ -1714,18 +1721,20 @@ async function handleMessagePuzzleImage(request, env, challengeId) {
     status: 200,
     headers: {
       "Content-Type": contentType,
-      "Cache-Control": `public, max-age=${MESSAGE_PUZZLE_IMAGE_POOL_TTL_SECONDS}`,
+      "Cache-Control": \`public, max-age=\${MESSAGE_PUZZLE_IMAGE_POOL_TTL_SECONDS}\`,
       "X-Content-Type-Options": "nosniff"
     }
   });
   if (cache) await cache.put(cacheKey, cacheResponse.clone()).catch(() => {});
   const headers = new Headers(cacheResponse.headers);
-  headers.set("Cache-Control", `private, max-age=${MESSAGE_CHALLENGE_TTL_SECONDS}`);
+  headers.set("Cache-Control", \`private, max-age=\${MESSAGE_CHALLENGE_TTL_SECONDS}\`);
   return new Response(cacheResponse.body, { status: 200, headers });
 }
 
-async function privateMessageVerificationKey(token) {
-  return `message:verification:${await sha256Text(token)}`;
+// Verification tokens are never stored raw. Their SHA-256 derived identifiers
+// select exactly one canonical atomic Coordinator record.
+async function privateMessageProofId(token) {
+  return sha256Text(token);
 }
 
 async function handleMessagePuzzleChallenge(request, env) {
@@ -1745,15 +1754,14 @@ async function handleMessagePuzzleChallenge(request, env) {
     const binding = await privateMessageClientBinding(request);
     const image = await chooseOpenversePuzzleImage(env, binding);
     const now = Date.now();
-    await pushStore(env).put(privateMessageChallengeKey(challengeId), JSON.stringify({
-      ...geometry,
-      origin: context.origin,
-      binding,
-      image,
-      attempts: 0,
-      createdAt: now,
-      expiresAt: now + MESSAGE_CHALLENGE_TTL_SECONDS * 1000
-    }), { expirationTtl: MESSAGE_CHALLENGE_TTL_SECONDS });
+    await coordinateSecurity(env,securityChallengeOwner("message-puzzle",challengeId),{
+      op:"challenge-put",scope:"message-puzzle",id:challengeId,
+      record:{
+        scope:"message-puzzle",...geometry,origin:context.origin,binding,
+        image,attempts:0,createdAt:now,
+        expiresAt:now+MESSAGE_CHALLENGE_TTL_SECONDS*1000
+      }
+    });
     return json({
       challengeId,
       ...geometry,
@@ -1783,97 +1791,111 @@ async function handleMessagePuzzleVerify(request, env) {
   try {
     context = messageRequestContext(request, env);
     assertPrivateMessageRelayConfigured(env);
-    const body = await readStrictJsonBody(request, { challengeId: REQUEST_SCHEMA_ANY, answer: REQUEST_SCHEMA_ANY, turnstileToken: REQUEST_SCHEMA_ANY });
+    const body = await readStrictJsonBody(request, {
+      challengeId: REQUEST_SCHEMA_ANY, answer: REQUEST_SCHEMA_ANY,
+      turnstileToken: REQUEST_SCHEMA_ANY
+    });
     const challengeId = String(body?.challengeId || "").trim();
     const answer = Number(body?.answer);
-    const turnstileToken = String(body?.turnstileToken || "").trim();
-    if (!/^[A-Za-z0-9_-]{24}$/.test(challengeId)) throw serviceError("Verification puzzle is invalid.", { status: 400, code: "message-puzzle-invalid", source: "worker" });
-    if (!Number.isFinite(answer) || answer < 0 || answer > 100) throw serviceError("Complete the verification puzzle first.", { status: 400, code: "message-puzzle-answer", source: "worker" });
-    const store = pushStore(env);
-    const key = privateMessageChallengeKey(challengeId);
-    const challenge = await store.get(key, "json");
-    if (!challenge || Number(challenge.expiresAt) <= Date.now()) {
-      if (challenge) await store.delete(key);
-      throw serviceError("Verification puzzle expired. Load a new puzzle.", { status: 410, code: "message-puzzle-expired", source: "worker" });
-    }
+    if (!/^[A-Za-z0-9_-]{24}$/.test(challengeId))
+      throw serviceError("Verification puzzle is invalid.",{
+        status:400,code:"message-puzzle-invalid",source:"worker"
+      });
+    if (!Number.isFinite(answer) || answer < 0 || answer > 100)
+      throw serviceError("Complete the verification puzzle first.",{
+        status:400,code:"message-puzzle-answer",source:"worker"
+      });
     const binding = await privateMessageClientBinding(request);
-    if (String(challenge.origin || "") !== context.origin || String(challenge.binding || "") !== binding) {
-      await store.delete(key);
-      throw serviceError("Verification puzzle does not belong to this browser session.", { status: 403, code: "message-puzzle-binding", source: "worker" });
-    }
-
-    if (Math.abs(answer - Number(challenge.targetPercent)) > MESSAGE_PUZZLE_TOLERANCE) {
-      const attempts = Math.max(0, Number(challenge.attempts) || 0) + 1;
-      if (attempts >= MESSAGE_PUZZLE_MAX_ATTEMPTS) {
-        await store.delete(key);
-        return json({
-          ok: false,
-          outcome: "replace",
-          code: "message-puzzle-reset-required",
-          message: "That puzzle did not match. Switching to the next prepared image…"
-        }, 200, context.origin);
-      }
-      const geometry = randomPuzzleGeometry(challenge);
-      const ttlSeconds = Math.max(1, Math.ceil((Number(challenge.expiresAt) - Date.now()) / 1000));
-      await store.put(key, JSON.stringify({ ...challenge, ...geometry, attempts }), { expirationTtl: ttlSeconds });
+    const reply = await coordinateSecurity(env,
+      securityChallengeOwner("message-puzzle",challengeId), {
+        op:"puzzle-check",scope:"message-puzzle",id:challengeId,
+        origin:context.origin,binding,answer,
+        tolerance:MESSAGE_PUZZLE_TOLERANCE,
+        maxAttempts:MESSAGE_PUZZLE_MAX_ATTEMPTS,
+        nextGeometry:randomPuzzleGeometry(),
+        verificationNonce:securityRandomId(24)
+      });
+    if (reply.outcome === "replace") {
       return json({
-        ok: false,
-        outcome: "retry",
-        code: "message-puzzle-retry",
-        message: "Not quite. The matching space moved — try again.",
-        challenge: geometry,
-        attempts,
-        attemptsRemaining: Math.max(0, MESSAGE_PUZZLE_MAX_ATTEMPTS - attempts)
-      }, 200, context.origin);
+        ok:false,outcome:"replace",code:"message-puzzle-reset-required",
+        message:"That puzzle did not match. Switching to the next prepared image…"
+      },200,context.origin);
     }
-
-    await verifyTurnstile(request, env, turnstileToken);
-    await store.delete(key);
-    const verificationToken = randomCapability(24);
-    const proofKey = await privateMessageVerificationKey(verificationToken);
-    const now = Date.now();
-    await store.put(proofKey, JSON.stringify({ origin: context.origin, binding, createdAt: now, expiresAt: now + MESSAGE_VERIFICATION_TTL_SECONDS * 1000 }), { expirationTtl: MESSAGE_VERIFICATION_TTL_SECONDS });
-    return json({ ok: true, verificationToken, expiresIn: MESSAGE_VERIFICATION_TTL_SECONDS }, 200, context.origin);
+    if (reply.outcome === "retry") {
+      return json({
+        ok:false,outcome:"retry",code:"message-puzzle-retry",
+        message:"Not quite. The matching space moved — try again.",
+        challenge:reply.challenge,attempts:reply.attempts,
+        attemptsRemaining:reply.attemptsRemaining
+      },200,context.origin);
+    }
+    if (reply.outcome !== "pending") {
+      throw serviceError("Puzzle verification could not be completed.",{
+        status:503,code:"message-puzzle-state",source:"worker"
+      });
+    }
+    // The puzzle is now reserved by one nonce. Even if Turnstile is slow or
+    // fails, concurrent puzzle solves cannot issue another proof.
+    await verifyTurnstile(request,env,body?.turnstileToken);
+    await coordinateSecurity(env,securityChallengeOwner("message-puzzle",challengeId),{
+      op:"puzzle-finalize",scope:"message-puzzle",id:challengeId,
+      verificationNonce:reply.verificationNonce
+    });
+    const verificationToken=randomCapability(24);
+    const proofId=await privateMessageProofId(verificationToken);
+    const now=Date.now();
+    await coordinateSecurity(env,securityChallengeOwner("message-proof",proofId),{
+      op:"challenge-put",scope:"message-proof",id:proofId,
+      record:{
+        scope:"message-proof",origin:context.origin,binding,createdAt:now,
+        expiresAt:now+MESSAGE_VERIFICATION_TTL_SECONDS*1000
+      }
+    });
+    return json({ok:true,verificationToken,expiresIn:MESSAGE_VERIFICATION_TTL_SECONDS},200,context.origin);
   } catch (error) {
-    const origin = context?.origin || allowedOrigin(request.headers.get("Origin") || "", env);
-    return json({ error: error?.message || "Verification puzzle could not be completed.", code: error?.code || "internal", challenge: error?.challenge || undefined }, Number(error?.status) || 500, origin);
+    const origin=context?.origin||allowedOrigin(request.headers.get("Origin")||"",env);
+    return json({error:error?.message||"Verification puzzle could not be completed.",
+      code:error?.code||"internal"},Number(error?.status)||500,origin);
   }
 }
 
-async function consumePrivateMessageVerification(request, env, token) {
-  const value = String(token || "").trim();
-  if (!/^[A-Za-z0-9_-]{32}$/.test(value)) throw serviceError("Complete human verification before sending.", { status: 403, code: "message-verification-required", source: "worker" });
-  const store = pushStore(env);
-  const key = await privateMessageVerificationKey(value);
-  const proof = await store.get(key, "json");
-  await store.delete(key);
-  if (!proof || Number(proof.expiresAt) <= Date.now()) throw serviceError("Human verification expired. Complete the puzzle again.", { status: 403, code: "message-verification-expired", source: "worker" });
-  const context = messageRequestContext(request, env);
-  const binding = await privateMessageClientBinding(request);
-  if (String(proof.origin || "") !== context.origin || String(proof.binding || "") !== binding) {
-    throw serviceError("Human verification does not belong to this browser session.", { status: 403, code: "message-verification-binding", source: "worker" });
+async function consumePrivateMessageVerification(request,env,token) {
+  const value=String(token||"").trim();
+  if(!/^[A-Za-z0-9_-]{32}$/.test(value)) throw serviceError(
+    "Complete human verification before sending.",{
+      status:403,code:"message-verification-required",source:"worker"
+    });
+  const proofId=await privateMessageProofId(value);
+  let proof;
+  try{
+    proof=await consumeSecurityChallenge(env,"message-proof",proofId);
+  }catch(error){
+    if(["security-challenge-invalid","security-challenge-expired"].includes(error?.code)){
+      throw serviceError("Human verification expired. Complete the puzzle again.",{
+        status:403,code:"message-verification-expired",source:"worker"
+      });
+    }
+    throw error;
+  }
+  const context=messageRequestContext(request,env);
+  const binding=await privateMessageClientBinding(request);
+  if(proof.origin!==context.origin||proof.binding!==binding){
+    throw serviceError("Human verification does not belong to this browser session.",{
+      status:403,code:"message-verification-binding",source:"worker"
+    });
   }
   return true;
 }
 
-async function enforceMessageRateLimit(request, env, { scope, limit, windowSeconds, cooldownSeconds }) {
-  const store = pushStore(env);
-  const ip = String(request.headers.get("CF-Connecting-IP") || "local").trim() || "local";
-  const hash = await sha256Text(`${ip}:${scope}`);
-  const key = `message:rate:${hash}`;
-  const now = Date.now();
-  const current = await store.get(key, "json");
-  const fresh = current && Number(current.resetAt) > now
-    ? { count: Number(current.count) || 0, resetAt: Number(current.resetAt), lastAt: Number(current.lastAt) || 0 }
-    : { count: 0, resetAt: now + windowSeconds * 1000, lastAt: 0 };
-  if (cooldownSeconds > 0 && fresh.lastAt && now - fresh.lastAt < cooldownSeconds * 1000) {
-    throw serviceError("Please wait a moment before sending another message.", { status: 429, code: "message-rate-cooldown", source: "worker", retryAt: new Date(fresh.lastAt + cooldownSeconds * 1000).toISOString() });
-  }
-  if (fresh.count >= limit) {
-    throw serviceError("Too many messages were sent. Please try again later.", { status: 429, code: "message-rate-window", source: "worker", retryAt: new Date(fresh.resetAt).toISOString() });
-  }
-  const next = { count: fresh.count + 1, resetAt: fresh.resetAt, lastAt: now };
-  await store.put(key, JSON.stringify(next), { expirationTtl: Math.max(60, Math.ceil((fresh.resetAt - now) / 1000)) });
+async function enforceMessageRateLimit(request,env,{
+  scope,limit,windowSeconds,cooldownSeconds
+}){
+  const identity=securityIp(request);
+  const owner=await rateCoordinatorOwner("public-message:"+scope,identity);
+  await coordinateSecurity(env,owner,{
+    op:"rate-hit",category:"message",
+    policy:{limit,windowSeconds,cooldownSeconds},now:Date.now()
+  });
 }
 
 function pemPrivateKeyBytes(value = "") {

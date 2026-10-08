@@ -184,6 +184,66 @@ export class SecurityCoordinator {
         challenge: geometry, attempts, attemptsRemaining: maxAttempts - attempts
       });
     }
+    if (op === "recovery-read") {
+      if (scope !== "recovery" || !validChallengeId(id)) {
+        return reject("security-challenge-invalid", 400, "Invalid recovery session.");
+      }
+      const record = kv.get("record");
+      if (!record || record.scope !== "recovery" ||
+          Number(record.expiresAt) <= now) {
+        if (record && Number(record.expiresAt) <= now) kv.delete("record");
+        return reject("security-challenge-invalid", 400, "Recovery session has expired.");
+      }
+      // Read does not consume the challenge. The Firestore CAS on the
+      // authoritative Recovery record commits its one-time effect.
+      return json({ ok: true, record });
+    }
+    if (["upload-read", "upload-claim", "upload-release", "upload-consume"].includes(op)) {
+      if (scope !== "drive-upload" || !validChallengeId(id)) {
+        return reject("google-drive-upload-pending", 409, "Upload identity is invalid.");
+      }
+      const record = kv.get("record");
+      if (!record || record.scope !== "drive-upload" ||
+          Number(record.expiresAt) <= now) {
+        if (record && Number(record.expiresAt) <= now) kv.delete("record");
+        return reject("google-drive-upload-pending", 409,
+          "Google Drive upload confirmation expired or was already completed.");
+      }
+      if (!command.profileId || record.profileId !== command.profileId) {
+        return reject("google-drive-upload-profile", 403,
+          "Pending upload does not belong to the requested storage profile.");
+      }
+      if (op === "upload-read") {
+        return json({ ok: true, record });
+      }
+      if (op === "upload-claim") {
+        if (!validChallengeId(command.claimId)) {
+          return reject("google-drive-upload-pending", 400, "Upload claim is invalid.");
+        }
+        if (record.claimId && Number(record.leaseUntil) > now) {
+          return reject("google-drive-upload-in-progress", 409,
+            "Another upload confirmation is in progress.");
+        }
+        // A lease survives cross-request concurrency and Worker termination.
+        // Expired leases can be recovered without allowing parallel confirms.
+        const leaseUntil = Math.min(Number(record.expiresAt), now + 30 * 60 * 1000);
+        kv.put("record", { ...record, claimId: command.claimId, leaseUntil });
+        return json({ ok: true, claimId: command.claimId, record });
+      }
+      if (!validChallengeId(command.claimId) || !record.claimId ||
+          record.claimId !== command.claimId) {
+        return reject("google-drive-upload-claim-invalid", 403,
+          "Pending upload lease was not authorized.");
+      }
+      if (op === "upload-release") {
+        kv.put("record", { ...record, claimId: "", leaseUntil: 0 });
+        return json({ ok: true });
+      }
+      if (op === "upload-consume") {
+        kv.delete("record");
+        return json({ ok: true });
+      }
+    }
     if (op === "rate-clear") {
       kv.delete("record");
       return json({ ok: true });

@@ -111,3 +111,64 @@ test("workerd consumes Google Drive OAuth state once across 40 simultaneous call
   assert.equal(uses.filter(x=>x.status===200).length,1);
   assert.equal(uses.filter(x=>x.status===400).length,39);
 });
+
+
+test("workerd serializes concurrent Drive upload confirmation and supports exclusive retry", async()=>{
+  const env=await harness.getWorker().getEnv();
+  const ns=env.SECURITY_COORDINATOR;
+  const id="up-"+crypto.randomUUID().replaceAll("-","");
+  const stub=ns.get(ns.idFromName("security-challenge:drive-upload:"+id));
+  const profileId="isolated-staging-profile";
+  const record={
+    scope:"drive-upload",profileId,folderId:"expected-staging-folder",
+    sessionUrl:"https://upload.example.invalid/opaque-session",
+    name:"test-photo.jpg",mimeType:"image/jpeg",bytes:222,
+    expiresAt:Date.now()+120000
+  };
+  assert.equal((await send(stub,"challenge-put",{
+    scope:"drive-upload",id,record
+  })).status,200);
+  const attempts=await Promise.all(Array.from({length:40},(_,i)=>
+    send(stub,"upload-claim",{
+      scope:"drive-upload",id,profileId,
+      claimId:"claim-"+String(i).padStart(24,"0")
+    })
+  ));
+  const allowed=attempts.filter(x=>x.status===200);
+  assert.equal(allowed.length,1);
+  assert.equal(attempts.filter(x=>x.status===409).length,39);
+  assert.equal((await send(stub,"upload-release",{
+    scope:"drive-upload",id,profileId,claimId:allowed[0].body.claimId
+  })).status,200);
+  const retry=await send(stub,"upload-claim",{
+    scope:"drive-upload",id,profileId,claimId:"retry-"+String(1).padStart(24,"0")
+  });
+  assert.equal(retry.status,200);
+  const consumption=await Promise.all(Array.from({length:25},()=>send(stub,
+    "upload-consume",{
+      scope:"drive-upload",id,profileId,claimId:retry.body.claimId
+    })
+  ));
+  assert.equal(consumption.filter(x=>x.status===200).length,1);
+});
+
+test("workerd leaves recovery challenge pending on read, but never after consume", async()=>{
+  const env=await harness.getWorker().getEnv();
+  const ns=env.SECURITY_COORDINATOR;
+  const id="R".repeat(24)+crypto.randomUUID().replaceAll("-").slice(0,12);
+  const stub=ns.get(ns.idFromName("security-challenge:recovery:"+id));
+  const record={scope:"recovery",uid:"isolated-recovery-admin",
+    email:"staging-test@example.invalid",expiresAt:Date.now()+120000};
+  assert.equal((await send(stub,"challenge-put",{
+    scope:"recovery",id,record
+  })).status,200);
+  const reads=await Promise.all(Array.from({length:20},()=>
+    send(stub,"recovery-read",{scope:"recovery",id})
+  ));
+  assert.equal(reads.filter(x=>x.status===200).length,20);
+  const claims=await Promise.all(Array.from({length:20},()=>
+    send(stub,"challenge-consume",{scope:"recovery",id})
+  ));
+  assert.equal(claims.filter(x=>x.status===200).length,1);
+  assert.equal((await send(stub,"recovery-read",{scope:"recovery",id})).status,400);
+});

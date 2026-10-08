@@ -20,7 +20,7 @@ const encodeFields = record => Object.fromEntries(Object.entries(record).map(([k
 const decodeField = value => value?.stringValue ?? value?.booleanValue ??
   (value?.arrayValue?.values || []).map(v => v.stringValue);
 
-async function fixture() {
+async function fixture({ resetFailures = 0 } = {}) {
   const privateKey = await crypto.subtle.generateKey({
     name: "RSASSA-PKCS1-v1_5", modulusLength: 2048,
     publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256"
@@ -86,6 +86,7 @@ async function fixture() {
       }, 400);
     }
     if (path.endsWith("/accounts:update")) {
+      if (resetFailures-- > 0) return response({ error: { message: "test-only-reset-interrupted" } }, 503);
       resets += 1;
       return response({ localId: TEST_UID });
     }
@@ -134,6 +135,7 @@ async function fixture() {
   };
   return {
     oldKey, hash,
+    setResetFailures(n) { resetFailures = n; },
     enableSimultaneousReads() { synchronizeReads = true; },
     snapshot() { return { ...recovery, claims, resets, reads: recoveryReads }; },
     async post(path, body, ip = "198.51.100.10") {
@@ -193,4 +195,43 @@ test("concurrent Master Recovery Key uses are atomically claimed once, without r
   } finally {
     f.restore();
   }
+});
+
+
+test("interrupted Firebase reset can resume only with password and the original Master Key", async () => {
+  const f = await fixture({ resetFailures: 1 });
+  try {
+    const creds = { email: "staging-admin@example.invalid", password: "test-password",
+      recoveryKey: f.oldKey };
+    const interrupted = await f.post("/security/recovery/start", creds);
+    assert.equal(interrupted.status, 503);
+    assert.equal(interrupted.body.code, "security-recovery-interrupted");
+    assert.equal(interrupted.body.recoverySessionId, undefined, "incomplete reset cannot grant recovery");
+    assert.equal(f.snapshot().active, false);
+    assert.equal(f.snapshot().recoveryResetsComplete, false);
+    assert.equal(f.snapshot().masterKeyHash, await f.hash(f.oldKey));
+
+    const wrong = await f.post("/security/recovery/start", { ...creds, recoveryKey: "wrong-master-key" },
+      "198.51.100.34");
+    assert.equal(wrong.status, 401);
+    assert.equal(wrong.body.recoverySessionId, undefined);
+
+    const resumed = await f.post("/security/recovery/start", creds, "198.51.100.35");
+    assert.equal(resumed.status, 200);
+    assert.ok(resumed.body.recoverySessionId);
+    assert.equal(f.snapshot().active, false);
+    assert.equal(f.snapshot().recoveryResetsComplete, true);
+    assert.equal(f.snapshot().resets, 1);
+
+    const finished = await f.post("/security/recovery/complete", {
+      recoverySessionId: resumed.body.recoverySessionId
+    });
+    assert.equal(finished.status, 200);
+    assert.equal(f.snapshot().active, true);
+    assert.notEqual(finished.body.masterKey, f.oldKey);
+
+    const replay = await f.post("/security/recovery/start", creds, "198.51.100.36");
+    assert.equal(replay.status, 401);
+    assert.equal(replay.body.code, "security-recovery-key-invalid");
+  } finally { f.restore(); }
 });

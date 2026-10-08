@@ -172,14 +172,14 @@ function sortMiniRecords(records = []) {
   });
 }
 
-async function loadMiniModuleData() {
+async function loadMiniModuleData(contactData = null) {
   const loaders = {
     experience: async () => loadPublishedExperiences(),
     education: async () => (await educationService.getEducationRecords()).filter(publicLike),
     projects: async () => (await loadProjects()).filter(publicLike),
     "photo-editing": async () => (await listPhotoEditingProjects()).filter(publicLike),
     certificates: async () => (await loadCertificates()).filter(publicLike),
-    contact: async () => loadContact()
+    contact: async () => contactData ?? loadContact()
   };
   const settled = await Promise.all(Object.entries(loaders).map(async ([key,loader]) => {
     try {
@@ -190,7 +190,7 @@ async function loadMiniModuleData() {
       return [key, key === "contact" ? {} : []];
     }
   }));
-  modulePreviewData = Object.fromEntries(settled);
+  modulePreviewData = { ...modulePreviewData, ...Object.fromEntries(settled) };
 }
 
 async function loadMiniCustomModuleData(registry = []) {
@@ -476,8 +476,9 @@ function registeredSectionRow(section, registry = []) {
   return `<article class="section-composer-row section-row--custom" data-key="${escapePreview(section.key)}" data-module-id="${escapePreview(section.id)}" data-section-kind="custom"><span class="section-drag-handle" aria-hidden="true">⋮⋮</span><span class="section-module-icon" aria-hidden="true">${sectionIcon(section.key)}</span><div class="section-module-copy"><strong>${escapePreview(section.title || section.key)}</strong><small>Registered custom section</small></div><span class="section-visibility">${section.publicEnabled ? "Visible" : "Hidden"}</span><label class="section-switch"><span>Enabled</span><input class="section-enabled" type="checkbox" role="switch" ${section.publicEnabled ? "checked" : ""}></label><div class="section-order-field section-placement-summary"><span>Placement</span><strong>${escapePreview(placementLabels[section.placement] || "After Photo Editing")}</strong></div><div class="section-module-actions"><a class="editor-secondary-button button-compact" href="${sectionOwnerRoute(section.key,registry)}">Open owner</a><a class="editor-secondary-button button-compact" href="../../index.html#${encodeURIComponent(sectionPublicSlug(section.key,registry))}" target="_blank" rel="noopener">Preview</a></div><details class="section-quick-editor"><summary>Edit presentation</summary><div class="section-overrides"><label>Placement<select class="section-placement">${placementOptions(section.placement)}</select></label><label>Layout<select class="section-layout-preset">${layoutOptions(section.layoutPreset, section.key, presentation, section.layoutMode, modulePreviewData[section.key]?.length || 0)}</select></label><label>Overflow<select class="section-overflow-mode">${overflowOptions(section.overflowMode || "auto")}</select></label><label>Row pairing<select class="section-row-pairing">${rowPairingOptions(section.rowPairing)}</select></label><label class="section-row-partner-field"${section.rowPairing === "manual" ? "" : " hidden"}>Partner<select class="section-row-partner" data-selected-partner="${escapePreview(section.rowPartnerKey || "")}"><option value="">Choose compatible section</option></select></label><label class="section-inline-switch"><span>Hide when empty</span><input class="section-hide-empty" type="checkbox" ${section.hideWhenEmpty !== false ? "checked" : ""}></label><label class="section-inline-switch"><span>Navigation link</span><input class="section-navigation" type="checkbox" ${section.navigationLink ? "checked" : ""}></label><small class="section-row-pairing-status" data-row-pairing-status></small></div></details></article>`;
 }
 
-async function renderSections(saved = []) {
-  const registry = await listSections().catch(() => []);
+async function renderSections(saved = [], registry = undefined) {
+  // Reuse the snapshot during initial composition, but fetch fresh on later edits.
+  registry = registry ?? await listSections().catch(() => []);
   const registryKeys = new Set(registry.map((section) => section.key));
   const savedCore = saved.filter((section) => !registryKeys.has(section.key));
   registeredCustomSections = saved
@@ -542,7 +543,14 @@ async function upload(fileInput, folder, setter) {
 async function init() {
   try {
     $("saveStatus").textContent = "Loading…";
-    const [data, contactData] = await Promise.all([loadHome(), loadContact()]);
+    const [data, contactData, registry] = await Promise.all([
+      loadHome(),
+      loadContact(),
+      listSections().catch((error) => {
+        console.warn("Homepage section registry could not load.", error);
+        return [];
+      })
+    ]);
     fields.forEach((id) => {
       const element = $(id); if (!element) return;
       if (element.type === "checkbox") element.checked = id === "homeVisible" ? data.visible !== false : data[id] !== false;
@@ -558,8 +566,10 @@ async function init() {
     setImage("aboutImagePreview", aboutImage);
     setUploadStatus("portraitUploadStatus", portrait ? "Current image" : "No portrait uploaded yet.", portrait ? "success" : "ready");
     setUploadStatus("aboutUploadStatus", aboutImage ? "Current image" : "No homepage About image uploaded yet.", aboutImage ? "success" : "ready");
-    await loadMiniModuleData();
-    await renderSections(data.sections || []);
+    // Both preview owners load in parallel; they merge distinct keys without clobbering data.
+    await Promise.all([loadMiniModuleData(contactData), loadMiniCustomModuleData(registry)]);
+    featureSections = registry;
+    await renderSections(data.sections || [], registry);
     const contactMethods = Array.isArray(contactData.methods)
       ? contactData.methods.filter((method) => method && method.visible !== false && (method.value || method.url))
       : [];
@@ -1016,7 +1026,7 @@ $("portraitPreview")?.addEventListener("error", () => { failedPortraitSource=$("
 $("aboutImagePreview")?.addEventListener("error", () => { failedAboutSource=$("aboutImagePreview").getAttribute("src")||aboutImage;setImage("aboutImagePreview","");renderMiniPortfolioSections(); }, { passive:true });
 document.querySelector(".home-live-preview__portrait")?.addEventListener("error", (event) => { failedPortraitSource=event.currentTarget.getAttribute("src")||portrait;event.currentTarget.removeAttribute("src");event.currentTarget.hidden=true;event.currentTarget.closest(".home-live-preview__portrait-wrap")?.classList.add("is-empty"); }, { passive:true });
 
-await Promise.all([init(), refreshFutureFeatures(requestedModuleKey).catch((error) => note(error.message,"error"))]);
+await init();
 if (location.hash === "#future-portfolio-features" || requestedModuleKey) {
   requestAnimationFrame(() => document.querySelector('[data-lan-tab="future"]')?.click());
 }

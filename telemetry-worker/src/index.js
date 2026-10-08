@@ -2471,6 +2471,94 @@ async function promoteSecuritySessionToTrusted(admin,deviceId,env){
   return {customToken,session};
 }
 
+// This migration is part of the canonical trusted-device registration owner.
+// Existing active devices retain their trust and identity; we only backfill
+// server-owned uniqueness claims. Never auto-enroll, un-revoke, or erase a key.
+// Interrupted migration can run again safely because each claim is verified.
+async function migrateHistoricalTrustedDeviceClaims(env,uid,devices,epoch){
+  if(devices.length>=100){
+    throw serviceError("Too many device records for a complete security migration.",{
+      status:503,code:"security-device-migration-required",source:"worker"
+    });
+  }
+  const active=devices.filter(device=>device.active===true);
+  const candidates=[],unique=new Set();
+  for(const device of active){
+    const jwk=device.publicKeyJwk;
+    if(device.uid!==uid || !device.deviceId ||
+        jwk?.kty!=="EC" || jwk?.crv!=="P-256" ||
+        typeof jwk.x!=="string" || !jwk.x ||
+        typeof jwk.y!=="string" || !jwk.y){
+      throw serviceError("A historical trusted device needs verified security migration.",{
+        status:503,code:"security-device-migration-required",source:"worker"
+      });
+    }
+    const credentialId=await sha256Text(JSON.stringify([
+      jwk.kty,jwk.crv,jwk.x,jwk.y
+    ]));
+    if(unique.has(credentialId)){
+      throw serviceError("Existing trusted devices share a cryptographic key.",{
+        status:409,code:"security-device-credential-duplicate",source:"worker"
+      });
+    }
+    unique.add(credentialId);
+    candidates.push({deviceId:device.deviceId,credentialId});
+  }
+
+  for(const candidate of candidates){
+    let claim=await securityGetDoc(env,"adminSecurityDeviceCredentials",candidate.credentialId);
+    if(!claim){
+      try{
+        await firestoreAdminCommit(env,[{
+          update:{
+            name:firestoreDocumentName(env,"adminSecurityDeviceCredentials",candidate.credentialId),
+            fields:firestoreFields({
+              uid,deviceId:candidate.deviceId,
+              migratedAt:new Date().toISOString()
+            })
+          },
+          currentDocument:{exists:false}
+        }]);
+      }catch(error){
+        if(error?.code!=="firestore-precondition-failed")throw error;
+      }
+      claim=await securityGetDoc(env,"adminSecurityDeviceCredentials",candidate.credentialId);
+    }
+    if(!claim || claim.uid!==uid || claim.deviceId!==candidate.deviceId){
+      throw serviceError("Trusted-device credential claim is inconsistent.",{
+        status:409,code:"security-device-credential-duplicate",source:"worker"
+      });
+    }
+  }
+
+  if(devices.length>0 && !epoch){
+    const markerId=await sha256Text(uid+"|trusted-device-bootstrap|initial");
+    let marker=await securityGetDoc(env,"adminSecurityDeviceBootstrap",markerId);
+    if(!marker){
+      try{
+        await firestoreAdminCommit(env,[{
+          update:{
+            name:firestoreDocumentName(env,"adminSecurityDeviceBootstrap",markerId),
+            fields:firestoreFields({
+              uid,epoch:"initial",deviceId:devices[0].deviceId,
+              migratedAt:new Date().toISOString()
+            })
+          },
+          currentDocument:{exists:false}
+        }]);
+      }catch(error){
+        if(error?.code!=="firestore-precondition-failed")throw error;
+      }
+      marker=await securityGetDoc(env,"adminSecurityDeviceBootstrap",markerId);
+    }
+    if(!marker || marker.uid!==uid || marker.epoch!=="initial"){
+      throw serviceError("First trusted-device bootstrap claim is inconsistent.",{
+        status:409,code:"security-device-migration-required",source:"worker"
+      });
+    }
+  }
+}
+
 // The initial trusted-device claim and the device document must become visible
 // in ONE Firestore commit. The marker's exists:false precondition ensures that
 // two independent QR challenges cannot both initialize the same security epoch.
@@ -2504,6 +2592,9 @@ async function completeTrustedDeviceEnrollment(request,env,admin,body){
       status:409,code:'security-device-credential-duplicate',source:'worker'
     });
   }
+  // Protect existing devices during migration without introducing a second
+  // state owner or trusting browser-supplied migration data.
+  await migrateHistoricalTrustedDeviceClaims(env,admin.uid,existingDevices,epoch);
   if(enrollment.approved===true){
     // Revoking the approving device also revokes its outstanding approvals.
     const approverId=String(enrollment.approvedByDeviceId||'');

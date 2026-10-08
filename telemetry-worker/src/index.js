@@ -3046,6 +3046,11 @@ export default {
       ok: true,
       service: "lan-cloudinary-telemetry",
       firebaseConfigured: Boolean(String(env.FIREBASE_PROJECT_ID || "").trim()),
+      securityCoordinatorConfigured: Boolean(
+        env?.SECURITY_COORDINATOR &&
+        typeof env.SECURITY_COORDINATOR.idFromName === "function" &&
+        typeof env.SECURITY_COORDINATOR.get === "function"
+      ),
       cloudinaryConfigured: Boolean(
         String(env.CLOUDINARY_CLOUD_NAME || "").trim() &&
         String(env.CLOUDINARY_API_KEY || "").trim() &&

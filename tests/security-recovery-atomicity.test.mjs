@@ -41,6 +41,7 @@ async function fixture({ resetFailures = 0 } = {}) {
     backupCodeHashes: [], createdAt: new Date().toISOString()
   };
   let version = 1, claims = 0, resets = 0, recoveryReads = 0;
+  let failedAuditWrites = 0, atomicCompletionAuditWrites = 0;
   let synchronizeReads = false, resolveReads;
   const readGate = new Promise(resolve => { resolveReads = resolve; });
   const doObjects = new Map(), waitUntil = [];
@@ -111,6 +112,18 @@ async function fixture({ resetFailures = 0 } = {}) {
     if (path.endsWith("/documents:runQuery")) return response([]);
     if (path.endsWith("/documents:commit")) {
       const writes = JSON.parse(init.body).writes || [];
+      const hasRecoveryCompletion = writes.some(x =>
+        x.update?.name?.includes("/adminSecurityRecovery/" + TEST_UID) &&
+        x.update?.fields?.active?.booleanValue === true
+      );
+      const hasSecurityEvent = writes.some(x =>
+        x.update?.name?.includes("/adminSecurityEvents/")
+      );
+      if (hasRecoveryCompletion && hasSecurityEvent) atomicCompletionAuditWrites++;
+      if (hasSecurityEvent && !hasRecoveryCompletion && failedAuditWrites > 0) {
+        failedAuditWrites--;
+        return response({ error:{ message:"test-only-activity-outage" } },503);
+      }
       for (const write of writes) {
         if (!write.update?.name?.includes("/adminSecurityRecovery/" + TEST_UID)) continue;
         const expected = write.currentDocument?.updateTime;
@@ -136,6 +149,8 @@ async function fixture({ resetFailures = 0 } = {}) {
   return {
     oldKey, hash,
     setResetFailures(n) { resetFailures = n; },
+    failNextSeparateAuditWrite() { failedAuditWrites = 1; },
+    get atomicCompletionAuditWrites() { return atomicCompletionAuditWrites; },
     enableSimultaneousReads() { synchronizeReads = true; },
     snapshot() { return { ...recovery, claims, resets, reads: recoveryReads }; },
     async post(path, body, ip = "198.51.100.10") {
@@ -234,4 +249,24 @@ test("interrupted Firebase reset can resume only with password and the original 
     assert.equal(replay.status, 401);
     assert.equal(replay.body.code, "security-recovery-key-invalid");
   } finally { f.restore(); }
+});
+
+
+test("security Activity outage after recovery must not cause loss of the freshly issued Master Key",async()=>{
+  const f=await fixture();
+  try{
+    const start=await f.post("/security/recovery/start",{
+      email:"staging-admin@example.invalid",password:"test-password",recoveryKey:f.oldKey
+    });
+    assert.equal(start.status,200);
+    f.failNextSeparateAuditWrite();
+    const finish=await f.post("/security/recovery/complete",{
+      recoverySessionId:start.body.recoverySessionId
+    });
+    assert.equal(finish.status,200,"never commit a replacement key then lose its one-time display");
+    assert.ok(finish.body.masterKey);
+    assert.equal(f.snapshot().masterKeyHash,await f.hash(finish.body.masterKey));
+    assert.equal(f.atomicCompletionAuditWrites,1,
+      "replacement key and Security Activity audit event must use one Firestore commit");
+  }finally{f.restore();}
 });

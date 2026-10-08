@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+
+<html lang="en" data-lan-workspace-document="true" data-lan-admin-architecture="shared">
+<head>
+  <link rel="icon" href="/assets/brand/lan-mark.svg" type="image/svg+xml">
+<meta charset="utf-8"/>
+    <script src="../js/theme-controller.js"></script>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+<meta content="Professional Photo Editing Content Management System for the LΛN Portfolio Website" name="description"/>
+<meta content="noindex, nofollow, noarchive" name="robots"/>
+<meta content="#111827" name="theme-color"/>
+<title>
+   Photo Editing Manager | LΛN Portfolio CMS
+  </title>
+<link href="../css/theme.css" rel="stylesheet"/>
+<!-- =====================================================
+         GLOBAL CSS
+    ====================================================== -->
+<link href="../css/shared-ui.css" rel="stylesheet"/>
+<link href="../css/photo-editing.css" rel="stylesheet"/>
+  <link href="../css/admin-layout.css" rel="stylesheet"/>
+</head>
+<body class="photo-editing-admin photo-editing-page">
+<a class="skip-link" href="#mainContent" id="skipToMainContent">
+   Skip to main content
+  </a>
+<noscript>
+   JavaScript is required to use the LΛN Portfolio CMS photo editing manager.
+  </noscript>
+<div class="editor-layout">
+<!-- =====================================================
+     SIDEBAR
+====================================================== -->
+<!-- =====================================================
+     MAIN CONTENT
+====================================================== -->
+<main aria-labelledby="pageTitle" class="editor-main" id="mainContent" tabindex="-1">
+<!-- =====================================================
+     PAGE HEADER
+====================================================== -->
+<header class="editor-topbar">
+<div><p class="editor-eyebrow">Portfolio content</p>
+<h1 id="pageTitle">Photo Editing</h1>
+</div>
+<div class="editor-topbar-actions"><div aria-live="polite" class="editor-status-badge" id="saveStatus" role="status">Ready</div>
+<button aria-label="Refresh photo editing samples" class="editor-secondary-button" id="refreshSamples" type="button">
+       Refresh
+      </button>
+
+</div>
+</header>
+<!-- =====================================================
+     DASHBOARD CARDS
+====================================================== -->
+<section aria-label="Photo editing manager workspace" class="editor-content lan-admin-workspace"><section class="stats-grid lan-admin-grid lan-admin-grid--stats">
+<article class="stat-card">
+<div class="stat-icon">▧</div>
+<div>
+<h2 id="totalSamples">
+        0
+       </h2>
+<p>
+        Total Samples
+       </p>
+</div>
+</article>
+<article class="stat-card">
+<div class="stat-icon">★</div>
+<div>
+<h2 id="featuredSamples">
+        0
+       </h2>
+<p>
+        Featured
+       </p>
+</div>
+</article>
+<article class="stat-card">
+<div class="stat-icon">◎</div>
+<div>
+<h2 id="publishedSamples">
+        0
+       </h2>
+<p>
+        Published
+       </p>
+</div>
+</article>
+<article class="stat-card">
+<div class="stat-icon">▤</div>
+<div>
+<h2 id="draftSamples">
+        0
+       </h2>
+<p>
+        Drafts
+       </p>
+</div>
+</article>
+</section><section class="editor-panel">
+<div class="editor-panel-header photo-library-header" data-lan-action-header>
+<div><p class="editor-eyebrow">Existing entries</p>
+<h2>
+        Photo Editing Library
+       </h2>
+<p>
+        Curate samples, category capabilities, and publishing from one focused workspace.
+       </p>
+</div>
+<div class="photo-library-actions" data-lan-action-group><button aria-label="Manage Photo Editing categories" class="editor-secondary-button" id="managePhotoCategoriesButton" type="button">Categories</button><button aria-label="Manage Photo Editing capabilities" class="editor-secondary-button" id="photoCapabilityProfileButton" type="button">Capabilities</button><button aria-label="Add a new photo editing sample" class="editor-primary-button" id="newPhotoButton" data-lan-primary-action data-lan-create-action type="button">+ New Sample</button></div>
+<span aria-hidden="true" class="editor-section-number">01</span></div>
+<!-- =====================================================
+     FILTER BAR
+====================================================== -->
+<div class="toolbar lan-admin-filter-grid">
+<label class="sr-only" for="searchInput">
+       Search photo editing samples
+      </label>
+<input aria-label="Search photo editing samples" autocomplete="off" id="searchInput" name="searchInput" placeholder="Search samples..." type="search"/>
+<label class="sr-only" for="categoryFilter">
+       Filter samples by category
+      </label>
+<select aria-label="Filter samples by category" id="categoryFilter" name="categoryFilter">
+<option value="">All Categories</option>
+</select>
+<label class="sr-only" for="statusFilter">
+       Filter samples by publishing status
+      </label>
+<select aria-label="Filter samples by publishing status" id="statusFilter" name="statusFilter">
+<option value="">
+        All Status
+       </option>
+<option value="Published">
+        Published
+       </option>
+<option value="Draft">
+        Draft
+       </option>
+</select>
+<label class="sr-only" for="sortBy">
+       Sort photo editing samples
+      </label>
+<select aria-label="Sort photo editing samples" id="sortBy" name="sortBy">
+<option value="Newest">
+        Newest
+       </option>
+<option value="Oldest">
+        Oldest
+       </option>
+<option value="Featured">
+        Featured
+       </option>
+<option value="A–Z">
+        A–Z
+       </option>
+</select>
+<div class="view-switch">
+<button aria-label="Show samples in grid view" aria-pressed="true" class="editor-icon-button button-compact active" id="gridView" type="button">▦</button>
+<button aria-label="Show samples in list view" aria-pressed="false" class="editor-icon-button button-compact" id="listView" type="button">☰</button>
+</div>
+</div>
+<!-- =====================================================
+     LIBRARY INFO
+====================================================== -->
+<div class="library-information">
+<div>
+       Showing
+       <strong aria-atomic="true" aria-live="polite" id="resultCount">
+        0
+       </strong>
+       Samples
+      </div>
+<div>
+       Page
+       <strong id="summaryCurrentPage">
+        1
+       </strong>
+       of
+       <strong id="summaryTotalPages">
+        1
+       </strong>
+</div>
+</div>
+<!-- =====================================================
+     PHOTO GRID START
+====================================================== -->
+<div aria-busy="false" aria-label="Photo editing sample gallery" aria-live="polite" class="photo-library lan-admin-grid lan-admin-grid--records" data-lan-record-library="true" data-lan-view="grid" id="photoLibrary">
+<!-- =====================================================
+         EMPTY STATE
+    ====================================================== -->
+<div aria-label="No photo editing samples" aria-live="polite" class="empty-state" id="emptyState" role="status">
+<div class="empty-state-icon">
+        LΛN
+       </div>
+<h3>
+        No Photo Editing Samples Yet
+       </h3>
+<p>
+        Start building your professional portfolio by adding your
+            first before &amp; after editing sample.
+       </p>
+<button aria-label="Add the first photo editing sample" class="editor-primary-button" id="emptyAddButton" type="button">
+        + Create First Sample
+       </button>
+</div>
+<!-- =====================================================
+         PHOTO CARDS
+         Generated by JavaScript
+    ====================================================== -->
+</div>
+<!-- =====================================================
+     PAGINATION
+====================================================== -->
+<div class="pagination">
+<button aria-label="Go to previous page" class="editor-secondary-button" id="previousPage" type="button">
+       ← Previous
+      </button>
+<div class="pagination-info">
+<span aria-atomic="true" aria-live="polite" id="currentPage">
+        1
+       </span>
+       /
+       <span aria-atomic="true" aria-live="polite" id="totalPages">
+        1
+       </span>
+</div>
+<button aria-label="Go to next page" class="editor-secondary-button" id="nextPage" type="button">
+       Next →
+      </button>
+</div>
+</section></section>
+<!-- =====================================================
+     LIBRARY PANEL
+====================================================== -->
+<!-- =====================================================
+     PHOTO CARD TEMPLATE
+====================================================== -->
+<template id="photoCardTemplate">
+<article aria-label="Photo editing sample card" class="photo-card" data-lan-record-card="true" data-lan-record-flow="grid" data-lan-record-has-media="true" data-lan-record-footprint="media-gallery" data-project-id="">
+<!-- ===============================
+     IMAGE PREVIEW
+================================ -->
+<div class="photo-card-image" data-lan-record-media="true">
+<div class="comparison-wrapper">
+<img alt="Before" class="before-image" decoding="async" loading="lazy"/>
+<div class="comparison-overlay">
+<img alt="After" class="after-image" decoding="async" loading="lazy"/>
+</div>
+<div class="comparison-divider">
+<span>
+</span>
+</div>
+</div>
+<div class="photo-status">
+<span class="badge badge-featured">
+         ⭐ Featured
+        </span>
+<span class="badge photo-status-badge is-published">
+         Published
+        </span>
+</div>
+</div>
+<!-- ===============================
+     CONTENT
+================================ -->
+<div class="photo-card-body" data-lan-record-content="true">
+<div class="photo-card-identity">
+  <span class="photo-card-module-emblem" aria-hidden="true">
+    <svg viewBox="0 0 24 24" role="presentation" focusable="false">
+      <path d="M5 6.5h3l1.35-2h5.3l1.35 2h3A2.5 2.5 0 0 1 21.5 9v9A2.5 2.5 0 0 1 19 20.5H5A2.5 2.5 0 0 1 2.5 18V9A2.5 2.5 0 0 1 5 6.5Z" fill="currentColor"/>
+      <circle cx="12" cy="13" r="3.7" fill="var(--surface-soft)" opacity=".72"/>
+      <circle cx="12" cy="13" r="2" fill="currentColor"/>
+    </svg>
+  </span>
+  <div class="photo-card-heading">
+    <h3 class="photo-title" data-lan-record-identity="title">Sample Title</h3>
+    <div class="photo-card-secondary-badges">
+      <span class="badge photo-category" data-lan-record-identity="context">Portrait Retouching</span>
+      <span class="badge photo-display-type">Before &amp; After</span>
+    </div>
+  </div>
+</div>
+<p class="photo-description" data-lan-record-summary="true">
+        Short description goes here...
+       </p>
+<div class="photo-tools" data-lan-record-overflow-group="capabilities">
+<span>
+         Photoshop
+        </span>
+<span>
+         Lightroom
+        </span>
+<span>
+         AI
+        </span>
+</div>
+<div class="photo-meta" data-lan-record-overflow-group="secondary">
+<div>
+         ◷
+         <span class="created-date">
+          2026-07-30
+         </span>
+</div>
+<div>
+         ↻
+         <span class="updated-date">
+          2026-07-30
+         </span>
+</div>
+</div>
+</div>
+<!-- ===============================
+     FOOTER
+================================ -->
+<div class="photo-card-footer" data-lan-record-actions="true">
+
+
+
+<div class="lan-record-command-group" data-lan-record-command-group="true"><button aria-label="Preview sample" class="editor-secondary-button button-compact previewButton" type="button">
+        Preview
+       </button><button aria-label="Edit sample" class="editor-secondary-button button-compact editButton" type="button">
+        Edit
+       </button><button aria-label="Move sample to trash" class="editor-danger-button button-compact deleteButton" type="button">
+        Delete
+       </button></div></div>
+</article>
+</template>
+<!-- =====================================================
+     ADD / EDIT MODAL
+====================================================== -->
+<div aria-hidden="true" aria-labelledby="sampleModalTitle" aria-modal="true" class="modal hidden" id="sampleModal" role="dialog">
+<div class="modal-overlay">
+</div>
+<div class="modal-container extra-large">
+<div class="modal-header photo-editor-modal-header">
+<div class="photo-editor-modal-identity"><span class="photo-editor-modal-emblem" aria-hidden="true"><svg viewBox="0 0 24 24" role="presentation" focusable="false"><rect x="3.5" y="6.5" width="17" height="13" rx="2.5"></rect><circle cx="12" cy="13" r="3.2"></circle><path d="m8 6.5 1.4-2h5.2l1.4 2"></path></svg></span><div><p class="editor-eyebrow">Photo Editing Studio</p><h2 id="sampleModalTitle">
+         New Photo Editing Sample
+        </h2><p>
+         Build the sample, prepare media, preview the result, then publish.
+        </p></div></div>
+<button aria-label="Close sample editor dialog" class="modal-close" id="closeModal" type="button">
+        ✕
+       </button>
+</div><nav aria-label="Photo editor sections" class="workspace-tabs photo-editor-tabs" data-lan-tabs="photo-editor"><button class="workspace-tab is-active" data-lan-tab="details" type="button">Details</button><button class="workspace-tab" data-lan-tab="media" type="button">Media</button><button class="workspace-tab" data-lan-tab="skills" type="button">Skills &amp; SEO</button><button class="workspace-tab" data-lan-tab="publishing" type="button">Publishing</button></nav>
+<form aria-labelledby="sampleModalTitle" class="editor-form" id="sampleForm" novalidate="">
+<!-- =====================================================
+     BASIC INFORMATION
+====================================================== -->
+<input id="updatedAt" name="updatedAt" type="hidden"/>
+<input id="createdAt" name="createdAt" type="hidden"/>
+<!-- Legacy compatibility field. Keep until photo-editing.js and the service layer are migrated fully to Cloudinary URLs. -->
+<input id="afterStoragePath" name="afterStoragePath" type="hidden"/>
+<!-- Legacy compatibility field. Do not store Firebase Storage paths in new records. -->
+<input id="beforeStoragePath" name="beforeStoragePath" type="hidden"/>
+<input id="afterImageUrl" name="afterImageUrl" type="hidden"/>
+<input id="beforeImageUrl" name="beforeImageUrl" type="hidden"/>
+<input id="singleImageUrl" name="singleImageUrl" type="hidden"/>
+<input id="galleryImagesData" name="galleryImagesData" type="hidden" value="[]"/>
+<input id="sampleId" name="sampleId" type="hidden"/>
+<div class="photo-editor-body"><section class="editor-card photo-editor-section--basic" data-lan-panel="details">
+<div class="card-header">
+<h3>
+          Basic Information
+         </h3>
+</div>
+<div class="form-grid">
+<div class="form-group">
+<label for="sampleTitle">
+           Sample Title
+          </label>
+<input aria-label="Sample title" autocomplete="off" id="sampleTitle" maxlength="80" name="sampleTitle" placeholder="Portrait Retouching" required="" type="text"/>
+<small>
+<span id="titleCounter">
+            0
+           </span>
+           /80
+          </small>
+</div>
+<div class="form-group">
+<label for="projectSlug">
+           Sample URL Slug
+          </label>
+<input aria-describedby="projectSlugHelp" autocomplete="off" id="projectSlug" name="projectSlug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" type="text"/>
+<small class="field-help" id="projectSlugHelp">
+           Used for a clean portfolio URL. Lowercase letters, numbers, and hyphens only.
+          </small>
+</div>
+<div class="form-group">
+<label for="sampleCategory">
+           Category
+          </label>
+<select aria-label="Sample category" id="sampleCategory" name="sampleCategory" required="">
+<option value="Portrait Retouching">
+            Portrait Retouching
+           </option>
+<option value="Product Editing">
+            Product Editing
+           </option>
+<option value="Background Removal">
+            Background Removal
+           </option>
+<option value="Color Correction">
+            Color Correction
+           </option>
+<option value="Thumbnail Design">
+            Thumbnail Design
+           </option>
+<option value="AI-Assisted Editing">
+            AI-Assisted Editing
+           </option>
+<option value="Photo Manipulation">
+            Photo Manipulation
+           </option>
+<option value="__create__">
+            + Create new category
+           </option>
+</select>
+</div>
+<div class="form-group hidden" id="customCategoryGroup">
+<label for="customCategory">Create Photo Editing Category</label>
+<div class="photo-category-create-row">
+<input autocomplete="off" id="customCategory" maxlength="60" name="customCategory" placeholder="e.g. Lighting &amp; Exposure" type="text"/>
+<button class="editor-secondary-button button-compact" id="createPhotoCategoryButton" type="button">Create Category</button>
+</div>
+<small class="field-help">Create it once. Future samples can select the category directly and inherit its Category Rules.</small>
+</div>
+<div class="form-group form-group-full display-type-field">
+<span class="field-label" id="projectDisplayTypeLabel">Sample Display Type</span>
+<select aria-describedby="projectDisplayTypeHelp" aria-labelledby="projectDisplayTypeLabel" class="display-type-native-select sr-only" id="projectDisplayType" name="projectDisplayType" required="">
+<option value="comparison">Before &amp; After Comparison</option>
+<option value="single">Single Image Showcase</option>
+<option value="gallery">Gallery Collage</option>
+</select>
+<div aria-labelledby="projectDisplayTypeLabel" class="display-type-grid" id="displayTypeCards" role="radiogroup">
+<button aria-checked="true" class="display-type-card active" data-display-type="comparison" role="radio" type="button">
+<span aria-hidden="true" class="display-type-icon"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"></rect><path d="M12 4.5v15"></path><path d="m6.5 15 3-3 2.2 2.2 2.5-2.5 3.3 3.3"></path></svg></span>
+<span><strong>Before &amp; After</strong><small>Interactive comparison slider.</small></span>
+</button>
+<button aria-checked="false" class="display-type-card" data-display-type="single" role="radio" type="button">
+<span aria-hidden="true" class="display-type-icon"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"></rect><circle cx="9" cy="9.5" r="1.5"></circle><path d="m5.5 17 4.2-4.2 3 3 2.3-2.3 3.5 3.5"></path></svg></span>
+<span><strong>Single Showcase</strong><small>One finished image with a clean focus.</small></span>
+</button>
+<button aria-checked="false" class="display-type-card" data-display-type="gallery" role="radio" type="button">
+<span aria-hidden="true" class="display-type-icon"><svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="7.2" height="7.2" rx="1.4"></rect><rect x="13.3" y="4" width="7.2" height="7.2" rx="1.4"></rect><rect x="3.5" y="13" width="7.2" height="7" rx="1.4"></rect><rect x="13.3" y="13" width="7.2" height="7" rx="1.4"></rect></svg></span>
+<span><strong>Gallery Collage</strong><small>Multiple images shown as a tiled collection.</small></span>
+</button>
+</div>
+<small class="field-help" id="projectDisplayTypeHelp">Choose how this sample appears in your portfolio.</small>
+</div>
+<div class="form-group">
+<label for="displayOrder">
+           Display Order
+          </label>
+<input aria-describedby="displayOrderHelp" aria-label="Display order" autocomplete="off" id="displayOrder" min="0" name="displayOrder" step="1" type="number" value="1"/>
+<small class="field-help" id="displayOrderHelp">
+           Lower numbers appear first.
+          </small>
+</div>
+<div class="form-group">
+<label for="projectStatus">
+           Sample Status
+          </label>
+<select aria-describedby="projectStatusHelp" aria-label="Sample status" id="projectStatus" name="projectStatus" required="">
+<option value="Published">
+            Published
+           </option>
+<option value="Draft">
+            Draft
+           </option>
+</select>
+<small class="field-help" id="projectStatusHelp">Published samples can appear publicly; drafts remain inside the CMS.</small>
+</div>
+</div>
+</section><section class="editor-card photo-editor-section--before" data-lan-panel="media" id="beforeImageSection">
+<div class="card-header">
+<h3>
+          Before Image
+         </h3>
+<p>
+          Upload the original image before editing.
+         </p>
+</div>
+<div aria-controls="beforeImage" aria-describedby="beforeImageHelp" aria-label="Choose or drop a before image" class="lan-image-uploader" id="beforeUploadZone" role="button" tabindex="0">
+<input accept="image/jpeg,image/png,image/webp" aria-describedby="beforeImageHelp" hidden="" id="beforeImage" name="beforeImage" type="file"/>
+<small class="field-help" id="beforeImageHelp">
+          Accepted formats: JPEG, PNG, or WebP. Recommended size: 3840 × 2160 pixels.
+         </small>
+<div class="lan-image-uploader__content photo-media-upload-content">
+<div class="photo-media-upload-icon lan-image-uploader__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5M8 9l4-4 4 4"></path><path d="M5 14v5h14v-5"></path></svg></div>
+<h4>
+           Drag &amp; Drop
+          </h4>
+<p>
+           or click to browse
+          </p>
+</div>
+<div class="lan-image-uploader__preview hidden" id="beforePreview">
+<img alt="Before Preview" class="lan-image-uploader__image" decoding="async" id="beforePreviewImage" loading="lazy"/>
+</div>
+</div>
+<div class="upload-information">
+<div>
+<strong>
+           File
+          </strong>
+<span id="beforeFileName">
+           No file selected
+          </span>
+</div>
+<div>
+<strong>
+           Resolution
+          </strong>
+<span id="beforeResolution">
+           —
+          </span>
+</div>
+<div>
+<strong>
+           Size
+          </strong>
+<span id="beforeFileSize">
+           —
+          </span>
+</div>
+</div>
+<div aria-label="Before image upload progress" aria-valuemax="100" aria-valuemin="0" aria-valuenow="0" class="upload-progress hidden" id="beforeProgress" role="progressbar">
+<div class="progress-bar">
+<div class="progress-fill">
+</div>
+</div>
+</div>
+<div class="upload-actions">
+<button class="editor-primary-button" id="uploadBeforeButton" type="button">
+          Upload
+         </button>
+<button class="editor-secondary-button" id="replaceBeforeButton" type="button">
+          Replace
+         </button>
+<button class="editor-danger-button" id="removeBeforeButton" type="button">
+          Remove
+         </button>
+</div>
+</section><section class="editor-card photo-editor-section--after" data-lan-panel="media" id="afterImageSection">
+<div class="card-header">
+<h3>
+          After Image
+         </h3>
+<p>
+          Upload the finished edited image.
+         </p>
+</div>
+<div aria-controls="afterImage" aria-describedby="afterImageHelp" aria-label="Choose or drop an after image" class="lan-image-uploader" id="afterUploadZone" role="button" tabindex="0">
+<input accept="image/jpeg,image/png,image/webp" aria-describedby="afterImageHelp" hidden="" id="afterImage" name="afterImage" type="file"/>
+<small class="field-help" id="afterImageHelp">
+          Accepted formats: JPEG, PNG, or WebP. Recommended size: 3840 × 2160 pixels.
+         </small>
+<div class="lan-image-uploader__content photo-media-upload-content">
+<div class="photo-media-upload-icon lan-image-uploader__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.3 4.2L17.5 8.5l-4.2 1.3L12 14l-1.3-4.2-4.2-1.3 4.2-1.3L12 3Z"></path><path d="m18 14 .8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14Z"></path></svg></div>
+<h4>
+           Drag &amp; Drop
+          </h4>
+<p>
+           or click to browse
+          </p>
+</div>
+<div class="lan-image-uploader__preview hidden" id="afterPreview">
+<img alt="After Preview" class="lan-image-uploader__image" decoding="async" id="afterPreviewImage" loading="lazy"/>
+</div>
+</div>
+<div class="upload-information">
+<div>
+<strong>
+           File
+          </strong>
+<span id="afterFileName">
+           No file selected
+          </span>
+</div>
+<div>
+<strong>
+           Resolution
+          </strong>
+<span id="afterResolution">
+           —
+          </span>
+</div>
+<div>
+<strong>
+           Size
+          </strong>
+<span id="afterFileSize">
+           —
+          </span>
+</div>
+</div>
+<div aria-label="After image upload progress" aria-valuemax="100" aria-valuemin="0" aria-valuenow="0" class="upload-progress hidden" id="afterProgress" role="progressbar">
+<div class="progress-bar">
+<div class="progress-fill">
+</div>
+</div>
+</div>
+<div class="upload-actions">
+<button class="editor-primary-button" id="uploadAfterButton" type="button">
+          Upload
+         </button>
+<button class="editor-secondary-button" id="replaceAfterButton" type="button">
+          Replace
+         </button>
+<button class="editor-danger-button" id="removeAfterButton" type="button">
+          Remove
+         </button>
+</div>
+</section><section aria-labelledby="galleryImagesHeading" class="editor-card hidden photo-editor-section--gallery" data-lan-panel="media" id="galleryImagesSection">
+<div class="card-header">
+<h3 id="galleryImagesHeading">
+          Gallery Images
+         </h3>
+<p>
+          Upload multiple finished images. The portfolio card will automatically display them as a collage.
+         </p>
+</div>
+<div aria-controls="galleryImages" aria-describedby="galleryImagesHelp" aria-label="Choose or drop gallery images" class="lan-image-uploader" id="galleryUploadZone" role="button" tabindex="0">
+<input accept="image/jpeg,image/png,image/webp" aria-describedby="galleryImagesHelp" hidden="" id="galleryImages" multiple="" name="galleryImages" type="file"/>
+<small class="field-help" id="galleryImagesHelp">
+          Accepted formats: JPEG, PNG, or WebP. You may select multiple images at once.
+         </small>
+<div class="lan-image-uploader__content photo-media-upload-content">
+<div class="photo-media-upload-icon lan-image-uploader__icon">
+           LΛN
+          </div>
+<h4>
+           Drag &amp; Drop Multiple Images
+          </h4>
+<p>
+           or click to browse
+          </p>
+</div>
+</div>
+<div aria-atomic="true" aria-live="polite" class="gallery-upload-summary">
+<strong id="galleryImageCount">
+          0 images selected
+         </strong>
+<span id="galleryUploadStatus">
+          No gallery images selected
+         </span>
+</div>
+<div aria-label="Gallery image upload progress" aria-valuemax="100" aria-valuemin="0" aria-valuenow="0" class="upload-progress hidden" id="galleryProgress" role="progressbar">
+<div class="progress-bar">
+<div class="progress-fill">
+</div>
+</div>
+</div>
+<div aria-label="Selected gallery images" class="gallery-image-grid lan-media-gallery-grid" id="galleryImageGrid">
+<div class="gallery-empty-state" id="galleryEmptyState">
+          Selected images will appear here as a collage preview.
+         </div>
+</div>
+<div class="upload-actions">
+<button class="editor-primary-button" id="uploadGalleryButton" type="button">
+          Upload Gallery
+         </button>
+<button class="editor-secondary-button" id="addGalleryImagesButton" type="button">
+          Add More Images
+         </button>
+<button class="editor-danger-button" id="clearGalleryButton" type="button">
+          Clear Gallery
+         </button>
+</div>
+</section><section class="editor-card photo-editor-section--comparison" data-lan-panel="media" id="comparisonPreviewSection">
+<div class="card-header">
+<h3>
+          Live Comparison Preview
+         </h3>
+<p>
+          Preview exactly how visitors will see the slider.
+         </p>
+</div>
+<div class="comparison-preview" id="comparisonPreview">
+<div aria-hidden="true" class="comparison-preview-toolbar">
+<span class="comparison-key comparison-key-before">Before</span>
+<span class="comparison-preview-hint">Drag the handle or use the left and right arrow keys</span>
+<span class="comparison-key comparison-key-after">After</span>
+</div>
+<div class="comparison-container comparison-stage" id="comparisonContainer" style="--comparison-position: 50%;">
+<div class="comparison-media-frame">
+<img alt="Final image after editing" class="comparison-base-image comparison-after" decoding="async" draggable="false" id="comparisonAfter"/>
+<div class="comparison-reveal-layer" id="comparisonRevealLayer">
+<img alt="Original image before editing" class="comparison-overlay-image comparison-before" decoding="async" draggable="false" id="comparisonBefore"/>
+</div>
+</div>
+<span aria-hidden="true" class="comparison-image-label comparison-image-label-before">BEFORE</span>
+<span aria-hidden="true" class="comparison-image-label comparison-image-label-after">AFTER</span>
+<div aria-label="Before and after comparison position" aria-valuemax="100" aria-valuemin="0" aria-valuenow="50" class="comparison-slider" id="comparisonSlider" role="slider" tabindex="0">
+<div aria-hidden="true" class="slider-handle">
+<span>‹</span>
+<span class="slider-grip">⋮</span>
+<span>›</span>
+</div>
+</div>
+<div class="comparison-empty-message" id="comparisonEmptyMessage">
+<div aria-hidden="true" class="comparison-empty-icon"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"></rect><path d="M12 4.5v15"></path></svg></div>
+<strong>Upload both images to compare</strong>
+<span>The original will appear on the left and the edited result on the right.</span>
+</div>
+</div>
+</div>
+</section><section class="editor-card photo-editor-section--description" data-lan-panel="details">
+<div class="card-header">
+<h3>
+          Sample Description
+         </h3>
+</div>
+<div class="form-group">
+<label for="shortDescription">
+          Short Description
+         </label>
+<textarea aria-label="Short sample description" id="shortDescription" maxlength="180" name="shortDescription" placeholder="Brief sample overview..." required="" rows="3"></textarea>
+<small>
+<span id="shortCounter">
+           0
+          </span>
+          /180
+         </small>
+</div>
+<div class="form-group">
+<label for="fullDescription">
+          Full Description
+         </label>
+<textarea aria-label="Full sample description" id="fullDescription" maxlength="1500" name="fullDescription" placeholder="Explain your editing workflow, tools, techniques, and final results..." rows="8"></textarea>
+<small>
+<span id="descriptionCounter">
+           0
+          </span>
+          /1500
+         </small>
+</div>
+</section><section class="editor-card photo-editor-section--skills" data-lan-panel="skills">
+<div class="card-header">
+<h3>
+          Capabilities &amp; Editing Workflow
+         </h3>
+<p>
+          Link shared Skills and Tools, then record the editing techniques specific to this sample.
+         </p>
+</div>
+<div class="photo-capability-inheritance">
+<div class="photo-capability-inheritance-head"><label class="photo-capability-inherit-toggle" for="inheritPhotoCapabilityProfile"><input id="inheritPhotoCapabilityProfile" name="inheritCapabilityProfile" type="checkbox" checked/><span class="photo-capability-inherit-switch" aria-hidden="true"></span><span class="photo-capability-inherit-copy"><strong>Inherit category capabilities</strong><small>Uses the Skills and Tools assigned to this sample category.</small></span></label><button class="editor-secondary-button button-compact" id="editPhotoCapabilityProfileInline" type="button">Manage Capabilities</button></div>
+<div class="photo-inherited-capabilities" id="photoInheritedCapabilities"><span>Shared profile will be applied automatically.</span></div>
+</div>
+<section class="photo-additional-capabilities">
+<div class="photo-additional-capabilities-head"><div><span class="editor-eyebrow">Optional</span><h4>Additional capabilities</h4><p>Only add capabilities unique to this sample. Category Skills and Tools are inherited automatically when enabled.</p></div></div>
+<div class="form-grid photo-shared-capability-grid">
+<div class="form-group">
+<span class="field-label">Additional Skills</span>
+<input id="photoSkillIds" name="skillIds" type="hidden"/>
+<div id="photoSkillsSelector"></div>
+</div>
+<div class="form-group">
+<span class="field-label">Additional Tools</span>
+<input id="photoToolIds" name="toolIds" type="hidden"/>
+<div id="softwareSelector"></div>
+</div>
+</div>
+</section>
+<div class="form-group">
+<span class="field-label">
+          Editing Techniques
+         </span>
+<div class="skills-selector" id="techniquesSelector">
+<label for="checkbox-option-9">
+<input id="checkbox-option-9" name="techniques" type="checkbox" value="Skin Retouching"/>
+           Skin Retouching
+          </label>
+<label for="checkbox-option-10">
+<input id="checkbox-option-10" name="techniques" type="checkbox" value="Frequency Separation"/>
+           Frequency Separation
+          </label>
+<label for="checkbox-option-11">
+<input id="checkbox-option-11" name="techniques" type="checkbox" value="Color Grading"/>
+           Color Grading
+          </label>
+<label for="checkbox-option-12">
+<input id="checkbox-option-12" name="techniques" type="checkbox" value="Dodge &amp; Burn"/>
+           Dodge &amp; Burn
+          </label>
+<label for="checkbox-option-13">
+<input id="checkbox-option-13" name="techniques" type="checkbox" value="Background Removal"/>
+           Background Removal
+          </label>
+<label for="checkbox-option-14">
+<input id="checkbox-option-14" name="techniques" type="checkbox" value="AI Enhancement"/>
+           AI Enhancement
+          </label>
+<label for="checkbox-option-15">
+<input id="checkbox-option-15" name="techniques" type="checkbox" value="Object Removal"/>
+           Object Removal
+          </label>
+<label for="checkbox-option-16">
+<input id="checkbox-option-16" name="techniques" type="checkbox" value="Compositing"/>
+           Compositing
+          </label>
+<label for="checkbox-option-17">
+<input id="checkbox-option-17" name="techniques" type="checkbox" value="Product Retouching"/>
+           Product Retouching
+          </label>
+<label for="checkbox-option-18">
+<input id="checkbox-option-18" name="techniques" type="checkbox" value="Shadow Creation"/>
+           Shadow Creation
+          </label>
+<label for="checkbox-option-19">
+<input id="checkbox-option-19" name="techniques" type="checkbox" value="Reflection Creation"/>
+           Reflection Creation
+          </label>
+<label for="checkbox-option-20">
+<input id="checkbox-option-20" name="techniques" type="checkbox" value="Thumbnail Design"/>
+           Thumbnail Design
+          </label>
+<label class="other-technique-option" for="checkbox-technique-other">
+<input id="checkbox-technique-other" name="techniques" type="checkbox" value="Other"/>
+           Other
+          </label>
+</div>
+<div class="custom-technique-field hidden" id="customTechniqueGroup">
+<label for="customTechnique">Other Technique</label>
+<input aria-describedby="customTechniqueHelp" autocomplete="off" id="customTechnique" maxlength="80" name="customTechnique" placeholder="Example: Hair masking, perspective correction" type="text"/>
+<small class="field-help" id="customTechniqueHelp">Type a technique and press Enter. It will become a reusable checkbox.</small>
+</div>
+</div>
+</section><section class="editor-card photo-editor-section--seo" data-lan-panel="skills">
+<div class="card-header">
+<h3>
+          SEO Information
+         </h3>
+</div>
+<div class="form-group">
+<label for="seoTitle">
+          SEO Title
+         </label>
+<input aria-label="SEO title" autocomplete="off" id="seoTitle" maxlength="60" name="seoTitle" type="text"/>
+<small>
+<span id="seoTitleCounter">
+           0
+          </span>
+          /60
+         </small>
+</div>
+<div class="form-group">
+<label for="seoDescription">
+          SEO Description
+         </label>
+<textarea aria-label="SEO description" id="seoDescription" maxlength="160" name="seoDescription" rows="4"></textarea>
+<small>
+<span id="seoDescriptionCounter">
+           0
+          </span>
+          /160
+         </small>
+</div>
+<div class="form-group">
+<label for="seoKeywords">
+          Keywords
+         </label>
+<input aria-label="SEO keywords" autocomplete="off" id="seoKeywords" name="seoKeywords" placeholder="portrait, photoshop, retouching, ai editing" type="text"/>
+</div>
+</section><section class="editor-card photo-editor-section--settings" data-lan-panel="publishing">
+<div class="card-header">
+<h3>
+          Portfolio Settings
+         </h3>
+</div>
+<div class="toggle-grid">
+<label class="toggle-card" for="featuredProject">
+<input id="featuredProject" name="featuredProject" type="checkbox" value="true"/>
+<div>
+<strong>
+            Featured Sample
+           </strong>
+<small>
+            Show on homepage.
+           </small>
+</div>
+</label>
+<label class="toggle-card" for="showComparison">
+<input checked="" id="showComparison" name="showComparison" type="checkbox" value="true"/>
+<div>
+<strong>
+            Enable Comparison Slider
+           </strong>
+<small>
+            Visitors can drag before &amp; after.
+           </small>
+</div>
+</label>
+<label class="toggle-card" for="allowFullscreen">
+<input checked="" id="allowFullscreen" name="allowFullscreen" type="checkbox" value="true"/>
+<div>
+<strong>
+            Fullscreen Preview
+           </strong>
+<small>
+            Allow enlarged preview.
+           </small>
+</div>
+</label>
+<label class="toggle-card" for="publishImmediately">
+<input id="publishImmediately" name="publishImmediately" type="checkbox" value="true"/>
+<div>
+<strong>
+            Publish Immediately
+           </strong>
+<small>
+            Visible on portfolio after saving.
+           </small>
+</div>
+</label>
+</div>
+</section></div>
+<!-- =====================================================
+     BEFORE IMAGE
+====================================================== -->
+<!-- =====================================================
+         AFTER IMAGE
+    ====================================================== -->
+<!-- =====================================================
+         GALLERY IMAGES
+         Visible only when Sample Display Type is Gallery.
+    ====================================================== -->
+<!-- =====================================================
+         LIVE BEFORE / AFTER PREVIEW
+    ====================================================== -->
+<!-- =====================================================
+         PROJECT DESCRIPTION
+    ====================================================== -->
+<!-- =====================================================
+     SKILLS & TOOLS
+====================================================== -->
+<!-- =====================================================
+         SEO SETTINGS
+    ====================================================== -->
+<!-- =====================================================
+         DISPLAY SETTINGS
+    ====================================================== -->
+<!-- =====================================================
+         FORM ACTIONS
+    ====================================================== -->
+<div class="form-actions sticky-form-actions">
+<button class="editor-secondary-button" id="cancelButton" type="button">
+         Cancel
+        </button>
+<button class="editor-primary-button" type="submit">
+         Save Sample
+        </button>
+</div>
+</form>
+</div>
+</div>
+
+<!-- =====================================================
+     PHOTO EDITING CAPABILITY PROFILE
+====================================================== -->
+<div aria-hidden="true" aria-labelledby="photoCapabilityProfileTitle" aria-modal="true" class="modal hidden" id="photoCapabilityProfileModal" role="dialog">
+<div class="modal-overlay"></div>
+<div class="modal-container extra-large photo-capability-profile-modal">
+<div class="modal-header photo-editor-modal-header">
+<div class="photo-editor-modal-identity"><span class="photo-editor-modal-emblem" aria-hidden="true">✦</span><div><p class="editor-eyebrow">Capability studio</p><h2 id="photoCapabilityProfileTitle">Photo Editing Capabilities</h2><p>Manage category capabilities once so matching samples inherit them automatically.</p></div></div>
+<div class="photo-capability-header-actions"><a class="editor-secondary-button button-compact" href="skills.html">Manage Library</a><button aria-label="Close capability profile" class="modal-close" id="closePhotoCapabilityProfile" type="button">×</button></div>
+</div>
+<div class="photo-capability-profile-body">
+<section class="editor-card">
+<div class="card-header"><h3>Category Rules</h3><p>Choose a Photo Editing category, then assign the Skills and Tools inherited by every sample in that category.</p></div>
+<div class="form-group photo-capability-category-picker"><label for="photoProfileCategory">Category</label><select id="photoProfileCategory"></select></div>
+<div class="form-grid photo-capability-profile-grid"><div class="form-group"><span class="field-label">Skills demonstrated</span><div id="photoProfileCategorySkills"></div></div><div class="form-group"><span class="field-label">Tools used</span><div id="photoProfileCategoryTools"></div></div></div>
+</section>
+<div class="photo-capability-profile-note"><strong>One owner per capability</strong><span>Category Rules belong to matching Photo Editing samples. The single Photo Editing Portfolio Project derives its public capability summary automatically from published samples.</span></div>
+</div>
+<div class="form-actions sticky-form-actions"><button class="editor-secondary-button" id="cancelPhotoCapabilityProfile" type="button">Cancel</button><button class="editor-primary-button" id="savePhotoCapabilityProfile" type="button">Save Capabilities</button></div>
+</div>
+</div>
+
+<!-- =====================================================
+     PHOTO EDITING CATEGORY MANAGER
+====================================================== -->
+<div aria-hidden="true" aria-labelledby="photoCategoryManagerTitle" aria-modal="true" class="modal hidden" id="photoCategoryManagerModal" role="dialog">
+<div class="modal-overlay"></div>
+<div class="modal-container large photo-category-manager-modal">
+<div class="modal-header photo-editor-modal-header">
+<div class="photo-editor-modal-identity"><span class="photo-editor-modal-emblem" aria-hidden="true">◇</span><div><p class="editor-eyebrow">Library structure</p><h2 id="photoCategoryManagerTitle">Photo Editing Categories</h2><p>Add, rename, reorder, and safely remove the categories used by Photo Editing samples.</p></div></div>
+<button aria-label="Close category manager" class="modal-close" id="closePhotoCategoryManager" type="button">×</button>
+</div>
+<div class="photo-category-manager-body">
+<section class="photo-category-create-manager"><label for="newPhotoCategoryName"><span>New category</span><input autocomplete="off" id="newPhotoCategoryName" maxlength="60" placeholder="e.g. Editorial Retouching" type="text"/></label><button class="editor-primary-button" id="addPhotoCategoryManagerButton" type="button">Add Category</button></section>
+<section class="photo-category-manager-list" id="photoCategoryManagerList" aria-live="polite"></section>
+<section class="photo-category-reassign hidden" id="photoCategoryReassignPanel" aria-live="polite"><div><strong>Category is in use</strong><p id="photoCategoryReassignMessage"></p></div><label for="photoCategoryReassignTarget">Move samples to<select id="photoCategoryReassignTarget"></select></label><div><button class="editor-secondary-button" id="cancelPhotoCategoryReassign" type="button">Cancel</button><button class="editor-danger-button" id="confirmPhotoCategoryReassign" type="button">Reassign &amp; Delete</button></div></section>
+</div>
+</div>
+</div>
+
+<!-- =====================================================
+         PREVIEW MODAL
+    ====================================================== -->
+<div aria-hidden="true" aria-labelledby="previewModalTitle" aria-modal="true" class="modal hidden" id="previewModal" role="dialog">
+<div class="modal-overlay"></div>
+<div class="modal-container preview-modal lan-admin-preview-card">
+<div class="preview-modal-header">
+<div><p class="editor-eyebrow">Sample preview</p><h2 id="previewModalTitle">Sample Preview</h2><p id="previewModalContext">Read-only Admin inspection</p></div>
+<button aria-label="Close sample preview dialog" class="modal-close" id="closePreview" type="button">✕</button>
+</div>
+<div class="preview-content lan-admin-preview-body" id="photoPreviewBody"></div>
+</div>
+</div>
+<!-- =====================================================
+         DELETE MODAL
+    ====================================================== -->
+<div aria-describedby="deleteModalDescription" aria-hidden="true" aria-labelledby="deleteModalTitle" aria-modal="true" class="modal hidden" id="deleteModal" role="dialog">
+<div class="modal-overlay">
+</div>
+<div class="modal-container small">
+<div aria-hidden="true" class="delete-modal-warning-icon lan-modal-emblem is-danger"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path></svg></div>
+<div class="delete-modal-content">
+<h2 id="deleteModalTitle">
+       Move Sample to Trash
+      </h2>
+<p id="deleteModalDescription">
+       This sample will be hidden from the portfolio and can be restored later.
+      </p>
+</div>
+<div class="modal-actions">
+<button class="editor-secondary-button" id="cancelDelete" type="button">
+        Cancel
+       </button>
+<button class="editor-danger-button" id="confirmDelete" type="button">
+<span aria-hidden="true">⌫</span>
+<span>Move to Trash</span>
+</button>
+</div>
+</div>
+</div>
+<!-- =====================================================
+     UPLOAD LIMIT MODAL
+====================================================== -->
+<div aria-hidden="true" aria-labelledby="uploadLimitModalTitle" aria-modal="true" class="modal hidden" id="uploadLimitModal" role="dialog">
+<div class="modal-overlay"></div>
+<div class="modal-container upload-limit-modal-container">
+<div aria-hidden="true" class="upload-limit-modal-icon lan-modal-emblem is-danger"><svg viewBox="0 0 24 24"><path d="M12 3 21 20H3L12 3Z"></path><path d="M12 9v5M12 17h.01"></path></svg></div>
+<div class="upload-limit-modal-heading">
+<p class="editor-eyebrow">Image upload validation</p>
+<h2 id="uploadLimitModalTitle">Upload Limit Exceeded</h2>
+<p id="uploadLimitModalDescription">
+        This image is larger than the maximum size allowed by your current
+        Cloudinary configuration.
+      </p>
+</div>
+<div aria-label="Upload size details" class="upload-limit-details">
+<div class="upload-limit-detail">
+<span>Maximum Upload Size</span>
+<strong id="uploadLimitMaximum">10.00 MB</strong>
+</div>
+<div class="upload-limit-detail">
+<span>Selected File</span>
+<strong id="uploadLimitSelected">0.00 MB</strong>
+</div>
+<div class="upload-limit-detail upload-limit-detail-danger">
+<span>Exceeded By</span>
+<strong id="uploadLimitExceeded">+0.00 MB</strong>
+</div>
+</div>
+<div class="upload-limit-guidance">
+<strong>Please choose a smaller image.</strong>
+<p>
+        The maximum size is controlled by
+        <code>maxUploadSizeMB</code> in <code>config.js</code>.
+        After upgrading your Cloudinary plan, changing that single value
+        automatically updates this website.
+      </p>
+</div>
+<div class="modal-actions upload-limit-actions">
+<button class="editor-primary-button" id="chooseAnotherImageButton" type="button">
+        Choose Another Image
+      </button>
+<button aria-label="Close upload limit dialog" class="editor-secondary-button" id="closeUploadLimitModal" type="button">
+        Close
+      </button>
+</div>
+</div>
+</div>
+<!-- =====================================================
+         TOAST NOTIFICATION
+    ====================================================== -->
+<div class="toast-container"><div aria-atomic="true" aria-hidden="true" aria-live="polite" class="toast hidden" id="toast" role="status">
+<span aria-hidden="true" class="toast-icon" id="toastIcon">✓</span>
+<span id="toastMessage">Saved successfully.</span>
+</div></div>
+<!-- =====================================================
+         LOADING OVERLAY
+    ====================================================== -->
+<div aria-busy="true" aria-hidden="true" aria-live="assertive" class="loading-screen hidden" id="loadingScreen" role="status">
+<div class="loader">
+</div>
+<p>
+      Processing request...
+     </p>
+</div>
+<!-- =====================================================
+         JAVASCRIPT
+    ====================================================== -->
+<script src="../js/workspace-host.js" type="module"></script>
+<script src="../js/admin-ui.js" type="module"></script>
+<script src="../js/photo-editing.js" type="module">
+</script>
+</main>
+</div>
+</body>
+</html>
+<!-- END OF FILE -->

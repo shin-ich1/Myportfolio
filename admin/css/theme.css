@@ -1,0 +1,310 @@
+/*
+ * LΛN Portfolio CMS v2 — canonical semantic theme
+ * FINAL PRESENTATION OWNER
+ * ------------------------------------------------------------
+ * This file owns semantic tokens only. Component appearance belongs
+ * to shared-ui.css. Module styles may consume tokens but must not
+ * invent competing palettes or shared component systems.
+ */
+:root {
+  color-scheme: dark;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  /* Surfaces */
+  --page: #030812;
+  --page-2: #06101d;
+  --sidebar: #020710;
+  --topbar: rgba(4, 11, 22, .91);
+  --surface-0: #06111e;
+  --surface-1: #091725;
+  --surface-2: #0c1b2b;
+  --surface-3: #10263d;
+  --surface: var(--surface-1);
+  --surface-muted: #08131f;
+  --surface-soft: #091522;
+  --surface-raised: #0d1d2f;
+  --surface-elevated: #122943;
+  --surface-glass: rgba(9, 22, 37, .84);
+  --surface-hover: #0d2034;
+  --surface-active: #102b4b;
+  --glass: var(--surface-glass);
+
+  /* Preview / document */
+  --preview-bg: #020912;
+  --preview-surface: #06131f;
+  --preview-raised: #0b1b2b;
+  --preview-border: #1b3550;
+  --preview-text: #f6f9fd;
+  --preview-muted: #94a8bf;
+  --document-canvas: #e5ebf2;
+  --document-paper: #ffffff;
+  --document-ink: #152233;
+  --document-muted: #5f7184;
+  --document-canvas-alt: #c2ceda;
+  --document-border: #aebbc8;
+  --document-border-strong: #a9b7c5;
+  --document-fallback-bg: rgba(255,255,255,.94);
+  --document-fallback-soft: rgba(255,255,255,.45);
+  --document-fallback-text: #465769;
+  --document-shadow: rgba(14,28,43,.16);
+  --document-shadow-soft: rgba(14,28,43,.14);
+  --media-contrast-text: #ffffff;
+  --media-overlay: rgba(3,10,19,.78);
+  --media-overlay-soft: rgba(3,10,19,.62);
+  --media-overlay-strong: rgba(0,0,0,.88);
+  --media-overlay-counter: rgba(0,0,0,.60);
+  --media-contrast-border: rgba(255,255,255,.65);
+  --media-subtle-border: rgba(255,255,255,.18);
+  --media-divider: rgba(255,255,255,.80);
+  --media-divider-shadow: rgba(0,0,0,.25);
+  --media-shadow: rgba(0,0,0,.28);
+
+  /* Text */
+  --text-primary: #f7f9fd;
+  --text-secondary: #cbd6e4;
+  --text-muted: #91a5bb;
+  --text-faint: #6e839b;
+  --placeholder: #73879f;
+  --text-on-accent: #ffffff;
+
+  /* Borders */
+  --border: #193149;
+  --border-strong: #294d6c;
+  --border-bright: #40739b;
+  --hairline: rgba(111, 151, 190, .16);
+
+  /* Controls */
+  --input-bg: #071726;
+  --input-bg-hover: #0a1c2e;
+  --input-border: #21435f;
+  --input-border-hover: #3b6f97;
+
+  /* Brand / status */
+  --accent: #3478ff;
+  --accent-2: #6e52ff;
+  --accent-3: #3fc2ff;
+  --accent-secondary: var(--accent-2);
+  --accent-soft: rgba(52,120,255,.14);
+  --accent-soft-2: rgba(108,82,255,.13);
+  --accent-2-soft: rgba(108,82,255,.13);
+  --success: #2dd391;
+  --warning: #f1b447;
+  --danger: #f0667a;
+  --info: #4da8ff;
+  --cyan: #3fc2ff;
+  --success-soft: rgba(45,211,145,.11);
+  --warning-soft: rgba(241,180,71,.11);
+  --danger-soft: rgba(240,102,122,.11);
+  --info-soft: rgba(77,168,255,.11);
+
+  /* Typography — global hierarchy */
+  --text-overline: .7rem;      /* 11.2 */
+  --text-caption: .79rem;      /* 12.6 */
+  --text-label: .855rem;       /* 13.7 */
+  --text-ui: .925rem;          /* 14.8 */
+  --text-body: .975rem;        /* 15.6 */
+  --text-subtitle: 1.055rem;   /* 16.9 */
+  --text-section: 1.22rem;     /* 19.5 */
+  --text-title: 1.5rem;        /* 24 */
+  --text-page-title: 1.95rem;  /* 31.2 */
+  --text-display: 2.45rem;     /* 39.2 */
+  --line-tight: 1.18;
+  --line-compact: 1.3;
+  --line-ui: 1.48;
+  --line-body: 1.65;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Spacing */
+  --space-1: .25rem;
+  --space-2: .5rem;
+  --space-3: .75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 2rem;
+  --space-8: 2.5rem;
+  --space-9: 3rem;
+  --space-10: 4rem;
+
+  /* Geometry */
+  --radius-xs: .375rem;
+  --radius-sm: .625rem;
+  --radius-md: .75rem;
+  --radius-lg: .9rem;
+  --radius-xl: 1.15rem;
+  --radius-2xl: 1.45rem;
+  --control-height: 3rem;
+  --control-compact: 2.4rem;
+  --button-height: 2.875rem;
+  --button-compact: 2.35rem;
+  --icon-button-size: 2.45rem;
+  --sidebar-width: 15rem;
+  --topbar-height: 4.75rem;
+  --content-max: 112rem;
+
+  /* Elevation */
+  --shadow-xs: 0 .55rem 1.5rem rgba(0,0,0,.18);
+  --shadow-sm: 0 1.15rem 3rem rgba(0,0,0,.28);
+  --shadow-md: 0 1.9rem 5.25rem rgba(0,0,0,.36);
+  --shadow-lg: 0 2.25rem 6.5rem rgba(0,0,0,.42);
+  --shadow-modal: 0 2.5rem 7.5rem rgba(0,0,0,.52);
+  --inner-highlight: inset 0 1px 0 rgba(255,255,255,.035);
+  --focus-ring: 0 0 0 .1875rem rgba(52,120,255,.22), 0 0 0 1px rgba(63,194,255,.28);
+  --overlay: rgba(0,4,11,.8);
+
+  /* Motion */
+  --motion-fast: 120ms;
+  --motion-normal: 190ms;
+  --motion-slow: 320ms;
+  --motion-ease: cubic-bezier(.2,.8,.2,1);
+  --record-active-fill: 10%;
+  --record-active-glow: 20%;
+
+  /* Layers */
+  --z-topbar: 40;
+  --z-sidebar: 50;
+  --z-savebar: 55;
+  --z-overlay: 70;
+  --z-modal: 100;
+  --z-select: 130;
+  --z-toast: 150;
+  --z-loader: 200;
+
+  /* Legacy aliases retained only as token aliases, not presentation owners. */
+  --text: var(--text-primary);
+  --text-2: var(--text-secondary);
+  --text-3: var(--text-muted);
+  --text-4: var(--text-faint);
+  --text-xs: var(--text-caption);
+  --text-sm: var(--text-label);
+  --primary: var(--accent);
+  --primary-2: var(--accent-3);
+  --primary-3: var(--accent-2);
+  --primary-hover: #4d88ff;
+  --primary-soft: var(--accent-soft);
+  --primary-soft-2: var(--accent-2-soft);
+  --r-xs: var(--radius-xs);
+  --r-sm: var(--radius-sm);
+  --r-md: var(--radius-md);
+  --r-lg: var(--radius-lg);
+  --r-xl: var(--radius-xl);
+  --s1: var(--space-1);
+  --s2: var(--space-2);
+  --s3: var(--space-3);
+  --s4: var(--space-4);
+  --s5: var(--space-5);
+  --s6: var(--space-6);
+  --s7: var(--space-7);
+  --s8: var(--space-8);
+  --s9: var(--space-9);
+  --control-h: var(--control-height);
+  --button-h: var(--button-height);
+  --sidebar-w: var(--sidebar-width);
+  --topbar-h: var(--topbar-height);
+  --workspace-max: var(--content-max);
+  --fast: var(--motion-fast);
+  --normal: var(--motion-normal);
+  --slow: var(--motion-slow);
+  --ease: var(--motion-ease);
+  --focus: var(--focus-ring);
+}
+
+:root[data-theme="light"],
+:root[data-cms-theme-resolved="light"] {
+  color-scheme: light;
+  --page: #e4e8ed;
+  --page-2: #dce2e8;
+  --sidebar: #eef2f5;
+  --topbar: rgba(255,255,255,.965);
+  --surface-0: #edf1f4;
+  --surface-1: #ffffff;
+  --surface-2: #f3f6f8;
+  --surface-3: #e7ecf0;
+  --surface: var(--surface-1);
+  --surface-muted: #f4f7f9;
+  --surface-soft: #f8fafb;
+  --surface-raised: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-glass: rgba(255,255,255,.91);
+  --surface-hover: #edf2f6;
+  --surface-active: #e7eef5;
+  --glass: var(--surface-glass);
+
+  --preview-bg: #e1e6eb;
+  --preview-surface: #ffffff;
+  --preview-raised: #f3f6f8;
+  --preview-border: #b5c2cd;
+  --preview-text: #0d1a27;
+  --preview-muted: #4d6274;
+
+  --text-primary: #0b1723;
+  --text-secondary: #293d4e;
+  --text-muted: #526778;
+  --text-faint: #718291;
+  --placeholder: #788997;
+
+  --border: #c5cfd8;
+  --border-strong: #aab8c4;
+  --border-bright: #8096a8;
+  --hairline: rgba(34,51,68,.13);
+
+  --input-bg: #f8fafc;
+  --input-bg-hover: #ffffff;
+  --input-border: #b8c4cf;
+  --input-border-hover: #7d93a5;
+
+  --accent: #176bd7;
+  --accent-2: #5e4bd7;
+  --accent-3: #087ea8;
+  --success: #08795d;
+  --warning: #8a5d0c;
+  --danger: #b8344a;
+  --info: #176bd7;
+  --cyan: #087ea8;
+  --accent-soft: rgba(23,107,215,.11);
+  --accent-soft-2: rgba(94,75,215,.10);
+  --accent-2-soft: rgba(94,75,215,.10);
+  --success-soft: rgba(8,121,93,.10);
+  --warning-soft: rgba(138,93,12,.10);
+  --danger-soft: rgba(184,52,74,.10);
+  --info-soft: rgba(23,107,215,.10);
+
+  --shadow-xs: 0 .4rem 1.15rem rgba(31,45,61,.09);
+  --shadow-sm: 0 .9rem 2.4rem rgba(31,45,61,.12);
+  --shadow-md: 0 1.45rem 3.8rem rgba(31,45,61,.15);
+  --shadow-lg: 0 2rem 5rem rgba(31,45,61,.18);
+  --shadow-modal: 0 1.875rem 5rem rgba(31,45,61,.24);
+  --inner-highlight: inset 0 1px 0 rgba(255,255,255,.98), inset 0 -1px 0 rgba(31,45,61,.045);
+  --focus-ring: 0 0 0 .1875rem rgba(23,107,215,.14), 0 0 0 1px rgba(23,107,215,.22);
+  --overlay: rgba(21,31,42,.48);
+  --record-active-fill: 4%;
+  --record-active-glow: 9%;
+}
+
+:root[data-compact="true"],
+:root[data-cms-compact="true"] {
+  --control-height: 2.5rem;
+  --button-height: 2.375rem;
+  --space-4: .875rem;
+  --space-5: 1.125rem;
+  --space-6: 1.375rem;
+}
+
+
+
+/* Page identity — one system, different page personality. */
+.dashboard-page{--page-accent:#6f58ff;--page-accent-soft:rgba(111,88,255,.14)}
+.home-page{--page-accent:#3478ff;--page-accent-soft:rgba(52,120,255,.14)}
+.about-page{--page-accent:#2dd391;--page-accent-soft:rgba(45,211,145,.12)}
+.experience-page{--page-accent:#f0a83e;--page-accent-soft:rgba(240,168,62,.12)}
+.education-page{--page-accent:#7c65ff;--page-accent-soft:rgba(124,101,255,.13)}
+.skills-page{--page-accent:#36b9ff;--page-accent-soft:rgba(54,185,255,.13)}
+.projects-page{--page-accent:#6d59ff;--page-accent-soft:rgba(109,89,255,.14)}
+.photo-editing-page{--page-accent:#e75d9c;--page-accent-soft:rgba(231,93,156,.13)}
+.certificates-page{--page-accent:#e5ad40;--page-accent-soft:rgba(229,173,64,.13)}
+.resume-page{--page-accent:#657dff;--page-accent-soft:rgba(101,125,255,.14)}
+.contact-page{--page-accent:#33c4c8;--page-accent-soft:rgba(51,196,200,.12)}
+.settings-page{--page-accent:#417cff;--page-accent-soft:rgba(65,124,255,.13)}

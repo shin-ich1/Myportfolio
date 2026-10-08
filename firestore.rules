@@ -1,9 +1,207 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /portfolio/{document} {
-      allow read: if true;
-      allow write: if request.auth != null;
+
+    // =========================================================
+    // AUTHORIZATION
+    // =========================================================
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function hasAdminClaim() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function hasAdministratorRecord() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/authorizedAdministrators/$(request.auth.uid))
+        && get(/databases/$(database)/documents/authorizedAdministrators/$(request.auth.uid)).data.active == true;
+    }
+
+    function hasSecurityApprovedSession() {
+      return signedIn()
+        && request.auth.token.lanSecurityVerified == true
+        && request.auth.token.lanSessionId is string
+        && request.auth.token.lanSessionId.size() > 0
+        && exists(/databases/$(database)/documents/adminSecuritySessions/$(request.auth.token.lanSessionId))
+        && get(/databases/$(database)/documents/adminSecuritySessions/$(request.auth.token.lanSessionId)).data.uid == request.auth.uid
+        && get(/databases/$(database)/documents/adminSecuritySessions/$(request.auth.token.lanSessionId)).data.active == true
+        && get(/databases/$(database)/documents/adminSecuritySessions/$(request.auth.token.lanSessionId)).data.expiresAt > request.time;
+    }
+
+    function isAdministrator() {
+      return hasSecurityApprovedSession() && (hasAdminClaim() || hasAdministratorRecord());
+    }
+
+    // =========================================================
+    // PUBLICATION CONTRACT
+    // Every public collection converges on these two fields.
+    // Deleting/archiving a record must also unpublish or hide it.
+    // =========================================================
+
+    function publicDocument(data) {
+      return ('status' in data) && data.status == 'published'
+        && ('visible' in data) && data.visible == true;
+    }
+
+    function legacyEducationDocument(data) {
+      return ('educationStatus' in data) && data.educationStatus == 'published'
+        && ('educationVisible' in data) && data.educationVisible == true;
+    }
+
+    function legacySkillDocument(data) {
+      return ('active' in data) && data.active == true;
+    }
+
+    function legacyPublicSingleton(data) {
+      return !('status' in data) && !('visible' in data);
+    }
+
+    // =========================================================
+    // ADMINISTRATORS
+    // A signed-in administrator may read only their own allowlist
+    // record. Client-side allowlist management is not permitted.
+    // =========================================================
+
+    match /authorizedAdministrators/{uid} {
+      allow get: if hasSecurityApprovedSession() && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update, delete: if hasAdminClaim();
+    }
+
+    // =========================================================
+    // PORTFOLIO SINGLETONS
+    // =========================================================
+
+    match /portfolio/{documentId} {
+      allow get: if isAdministrator()
+        || (
+          documentId in ['home', 'profile', 'contact', 'services']
+          && (publicDocument(resource.data) || legacyPublicSingleton(resource.data))
+        );
+      allow list: if false;
+      allow create, update, delete: if isAdministrator();
+    }
+
+    // =========================================================
+    // CONTENT COLLECTIONS
+    // Public clients query status == published and visible == true.
+    // Education/Skills keep temporary legacy read compatibility until
+    // the schema repair has normalized all existing documents.
+    // =========================================================
+
+    match /experiences/{id} {
+      allow read: if isAdministrator() || publicDocument(resource.data);
+      allow create, update, delete: if isAdministrator();
+    }
+
+    match /projects/{id} {
+      allow read: if isAdministrator() || publicDocument(resource.data);
+      allow create, update, delete: if isAdministrator();
+    }
+
+    match /photoEditingProjects/{id} {
+      allow read: if isAdministrator() || publicDocument(resource.data);
+      allow create, update, delete: if isAdministrator();
+    }
+
+    match /education/{id} {
+      allow read: if isAdministrator()
+        || publicDocument(resource.data)
+        || legacyEducationDocument(resource.data);
+      allow create, update, delete: if isAdministrator();
+    }
+
+    match /skills/{id} {
+      allow read: if isAdministrator()
+        || publicDocument(resource.data)
+        || legacySkillDocument(resource.data);
+      allow create, update, delete: if isAdministrator();
+    }
+
+    match /certificates/{id} {
+      allow read: if isAdministrator() || publicDocument(resource.data);
+      allow create, update, delete: if isAdministrator();
+    }
+
+    match /resumes/{id} {
+      allow read: if isAdministrator() || publicDocument(resource.data);
+      allow create, update, delete: if isAdministrator();
+    }
+
+    // =========================================================
+    // CUSTOM MODULE REGISTRY / MODULE ENTRIES
+    // =========================================================
+
+    match /portfolioSections/{id} {
+      allow read: if isAdministrator() || publicDocument(resource.data);
+      allow create, update, delete: if isAdministrator();
+    }
+
+    match /portfolioSectionEntries/{id} {
+      allow read: if isAdministrator() || publicDocument(resource.data);
+      allow create, update, delete: if isAdministrator();
+    }
+
+    // =========================================================
+    // PRIVATE PORTFOLIO MESSAGING
+    // Public visitors may read only a thread whose 256-bit capability they
+    // already possess. All visitor writes are brokered by the trusted Worker,
+    // which verifies human challenges, rate limits requests, and writes with
+    // server credentials. Direct anonymous Firestore writes are denied.
+    // =========================================================
+
+    function validPrivateThreadId(threadId) {
+      return threadId.matches('^[A-Za-z0-9_-]{43}$');
+    }
+
+    match /privateMessageThreads/{threadId} {
+      allow get: if isAdministrator() || validPrivateThreadId(threadId);
+      allow list: if isAdministrator();
+      allow create, update, delete: if isAdministrator();
+
+      match /messages/{messageId} {
+        allow get, list: if isAdministrator() || (
+          validPrivateThreadId(threadId)
+          && exists(/databases/$(database)/documents/privateMessageThreads/$(threadId))
+        );
+        allow create, delete: if isAdministrator();
+        allow update: if false;
+      }
+    }
+
+    match /settings/{id} {
+      allow read, write: if isAdministrator();
+    }
+
+    match /migrations/{id} {
+      allow read, write: if isAdministrator();
+    }
+
+
+    // =========================================================
+    // SECURITY & ACCESS — backend-owned truth
+    // Direct client access is denied; safe UI models are served by the Worker.
+    // =========================================================
+
+    match /adminSecurityDevices/{id} { allow read, write: if false; }
+    match /adminSecuritySessions/{id} { allow read, write: if false; }
+    match /adminSecurityRecovery/{id} { allow read, write: if false; }
+    match /adminSecurityEvents/{id} { allow read, write: if false; }
+    match /adminSecurityChallenges/{id} { allow read, write: if false; }
+    match /adminSecurityStepUps/{id} { allow read, write: if false; }
+    match /adminSecurityPreferences/{id} { allow read, write: if false; }
+    match /adminSecurityState/{id} { allow read, write: if false; }
+
+    // =========================================================
+    // DEFAULT DENY
+    // =========================================================
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

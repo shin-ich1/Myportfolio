@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+
+<html lang="en" data-lan-workspace-document="true" data-lan-admin-architecture="shared"><head>
+  <link rel="icon" href="/assets/brand/lan-mark.svg" type="image/svg+xml">
+<meta charset="utf-8"/>
+    <script src="../js/theme-controller.js"></script><meta content="width=device-width,initial-scale=1" name="viewport"/><title>Certificates Manager | LΛN Portfolio CMS</title>
+<link href="../css/theme.css" rel="stylesheet"/>
+<link href="../css/shared-ui.css" rel="stylesheet"/>
+<link href="../css/simple-manager.css" rel="stylesheet"/>
+  <link href="../css/admin-layout.css" rel="stylesheet"/>
+</head><body class="certificates-page"><div class="editor-layout"><main class="editor-main"><header class="editor-topbar"><div><p class="editor-eyebrow">Credentials</p><h1>Certificates</h1></div><div class="editor-status-badge" id="saveStatus">Loading...</div></header><section class="editor-content lan-admin-workspace"><div class="simple-manager-grid certificate-manager-grid lan-record-workspace lan-admin-record-surface" id="certificateRecordWorkspace" data-lan-record-workspace data-editor-mode="idle" data-preview-open="false"><section class="editor-panel certificate-library-panel lan-record-workspace__library">
+    <div class="editor-panel-header lan-record-workspace__library-header"><div><p class="editor-eyebrow">Saved records</p><h2>Certificate Library</h2></div></div>
+    <div class="simple-list" id="certificateList"></div>
+  </section><section class="editor-panel lan-record-workspace__idle" data-lan-record-workspace-idle aria-live="polite"><button class="lan-record-workspace__idle-action" id="addCertificateButton" type="button" data-lan-record-add aria-pressed="false" aria-label="Add Certificate"><span class="lan-record-workspace__idle-icon" aria-hidden="true">＋</span></button><p class="editor-eyebrow">Workspace ready</p><h2>Certificate workspace</h2><p>Choose the Add button to create a new record, or use Edit on a saved certificate to update it.</p><small>Preview replaces this workspace only when you choose Preview on a saved certificate.</small></section><form aria-label="Certificate details editor" class="editor-panel simple-form certificate-form lan-record-workspace__editor" id="certificateForm" data-lan-record-workspace-editor hidden>
+    <div class="editor-panel-header certificate-form-header"><div><p class="editor-eyebrow">Credential editor</p><h2 id="certificateEditorTitle">New Certificate</h2><p>Add or update the certificate shown in your portfolio.</p></div></div>
+    <div class="simple-form-grid lan-form-grid">
+      <label>Title<input id="title" name="title" required=""/></label>
+      <label>Issuer<input id="issuer" name="issuer"/></label>
+      <label>Issue date<input id="year" name="year" placeholder="2026 or YYYY-MM-DD"/></label>
+      <label>Training hours<span class="lan-input-with-unit"><input id="trainingHours" name="trainingHours" type="number" min="0.25" step="0.25" inputmode="decimal" placeholder="Optional"/><span aria-hidden="true">hours</span></span><small>Actual training/contact hours, when stated by the credential.</small></label>
+      <label>Expiry date<input id="expiryDate" name="expiryDate" placeholder="Optional"/></label>
+      <label>Credential ID<input id="credentialId" name="credentialId"/></label>
+      <label>Credential URL<input id="credentialUrl" name="credentialUrl" type="url"/></label>
+      <label class="full-field">Description<textarea id="description" name="description" rows="4"></textarea></label>
+      <label class="full-field">Image URL<input id="imageUrl" name="imageUrl" type="url"/></label>
+
+      <div class="certificate-media-field full-field">
+        <div class="certificate-media-workbench">
+          <div class="certificate-media-copy"><p class="editor-eyebrow">Certificate media</p><strong>Add a certificate image</strong><small>JPG, PNG or WebP. Preview it first, then upload it to Cloudinary.</small></div>
+          <label class="lan-image-uploader certificate-image-stage" for="certificateImageFile">
+            <input accept="image/jpeg,image/png,image/webp" class="certificate-file-input" id="certificateImageFile" type="file"/ hidden="">
+            <div class="lan-image-uploader__content certificate-image-placeholder"><span aria-hidden="true" class="lan-image-uploader__icon">◈</span><strong>Choose certificate image</strong><small>JPG, PNG, or WebP · preview before upload</small></div>
+            <div class="lan-image-uploader__preview" hidden="" id="certificateImagePreview"><img alt="Certificate preview" class="lan-image-uploader__image" id="certificateImagePreviewImage"/></div>
+          </label>
+          <small class="certificate-upload-note" id="certificateFileState">No local image selected.</small>
+          <div class="certificate-upload-actions">
+            <button class="editor-primary-button" id="uploadCertificateImageButton" type="button">Upload image</button>
+            <button class="editor-danger-button" id="removeCertificateImageButton" type="button">Remove image</button>
+          </div>
+        </div>
+      </div>
+
+      <label>Status<select id="status" name="status"><option value="published">Published</option><option value="draft">Draft</option></select></label>
+      <label>Display order<input id="displayOrder" name="displayOrder" type="number" value="0"/></label>
+      <label class="simple-check"><input checked="" id="visible" type="checkbox"/> Visible</label>
+      <label class="simple-check"><input id="featured" type="checkbox"/> Featured</label>
+      <div class="editor-form-actions full-field"><button class="editor-secondary-button" id="cancelButton" type="button">Cancel</button><button class="editor-primary-button" type="submit">Save Certificate</button></div>
+    </div>
+  </form><aside aria-label="Certificate preview" class="lan-live-preview lan-certificate-live-preview lan-record-workspace__preview" id="certificatePreviewPane" data-lan-record-workspace-preview hidden>
+    <div class="lan-live-preview__header lan-record-workspace__preview-header"><span>Certificate Preview</span><b id="certificatePreviewStatus">Ready</b></div>
+    <div class="lan-record-workspace__preview-scroll"><div class="lan-admin-preview-body" id="certificatePreviewBody"></div></div>
+    <div class="lan-record-workspace__preview-actions" id="certificatePreviewActions"><button class="editor-secondary-button" id="closeCertificatePreviewAction" type="button">Close</button></div>
+  </aside></div></section></main></div><script src="../js/workspace-host.js" type="module"></script>
+<script src="../js/admin-ui.js" type="module"></script>
+
+<script src="../js/certificates.js" type="module"></script></body></html>

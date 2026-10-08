@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en" data-lan-workspace-document="true" data-lan-admin-architecture="shared">
+<head>
+  <link rel="icon" href="/assets/brand/lan-mark.svg" type="image/svg+xml">
+<meta charset="utf-8"/>
+    <script src="js/theme-controller.js"></script>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<meta content="LΛN Portfolio CMS workspace" name="description"/>
+<title>Dashboard | LΛN Portfolio CMS</title>
+<link href="css/theme.css" rel="stylesheet"/>
+<link href="css/shared-ui.css" rel="stylesheet"/>
+<link href="css/dashboard.css" rel="stylesheet"/>
+  <link href="css/admin-layout.css" rel="stylesheet"/>
+</head>
+<body class="dashboard-page">
+<svg aria-hidden="true" class="lan-dashboard-icon-sprite" focusable="false">
+<symbol id="dash-icon-projects" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h4M7 16h7"/></symbol>
+<symbol id="dash-icon-photo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12" r="3"/><path d="m8 5 1.5-2h5L16 5"/></symbol>
+<symbol id="dash-icon-experience" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v2h4v-2"/></symbol>
+<symbol id="dash-icon-resume" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l4 4v16H6V2Z"/><path d="M14 2v5h5M9 12h6M9 16h6"/></symbol>
+<symbol id="dash-icon-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5v8a1.5 1.5 0 0 1-1.5 1.5H15v-6H9v6H4.5A1.5 1.5 0 0 1 3 19.5v-8Z"/></symbol>
+<symbol id="dash-icon-education" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m2 9 10-5 10 5-10 5L2 9Z"/><path d="M6 11.5V16c3.2 2.6 8.8 2.6 12 0v-4.5M22 9v6"/></symbol>
+<symbol id="dash-icon-skills" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 9.7 8.2 3 9l5 4.4L6.6 20 12 16.6 17.4 20 16 13.4 21 9l-6.7-.8L12 2Z"/></symbol>
+<symbol id="dash-icon-certificates" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="m9 14-1 8 4-2 4 2-1-8"/></symbol>
+<symbol id="dash-icon-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 1.6 5.1L19 9l-5.4 1.9L12 16l-1.6-5.1L5 9l5.4-1.9L12 2Z"/><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/></symbol>
+<symbol id="dash-icon-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 20 5v6c0 5.2-3.1 8.8-8 11-4.9-2.2-8-5.8-8-11V5l8-3Z"/><path d="m8.7 12 2.1 2.1 4.6-4.7"/></symbol>
+<symbol id="dash-icon-database" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></symbol>
+<symbol id="dash-icon-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 18H18a4 4 0 0 0 .7-7.9A6.5 6.5 0 0 0 6.4 8.4 4.8 4.8 0 0 0 7.5 18Z"/></symbol>
+<symbol id="dash-icon-publish" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></symbol>
+</svg>
+
+<div class="dashboard-shell">
+<div class="dashboard-workspace">
+<header class="dashboard-header">
+<div class="dashboard-header-copy"><div><p class="editor-eyebrow">Portfolio command center</p><h1>Dashboard</h1></div></div>
+<div class="dashboard-header-actions"><a class="btn btn-secondary" href="../index.html" rel="noopener" target="_blank">View Portfolio ↗</a><button class="lan-user-chip lan-account-chip" id="topbarLogoutButton" type="button"><span class="lan-user-avatar" data-lan-avatar><span>RL</span></span><span class="lan-account-chip__copy"><strong>Rolando</strong><small>Administrator</small></span></button></div>
+</header>
+
+<main class="dashboard-stage lan-admin-workspace" id="dashboardWorkspace">
+<section aria-labelledby="welcomeTitle" class="dashboard-welcome dashboard-reveal">
+  <div aria-hidden="true" class="welcome-ambient welcome-ambient-a"></div>
+  <div aria-hidden="true" class="welcome-ambient welcome-ambient-b"></div>
+  <div aria-hidden="true" class="welcome-grid"></div>
+
+  <div aria-hidden="true" class="welcome-visual" data-visual-shape="landscape">
+    <div aria-hidden="true" class="welcome-edge-fill welcome-edge-fill-left"></div>
+    <div aria-hidden="true" class="welcome-edge-fill welcome-edge-fill-right"></div>
+    <img alt="" class="welcome-foreground" data-dashboard-visual-layer data-default-src="../assets/images/editor-workstation.png" id="dashboardHeroImage" src="../assets/images/editor-workstation.png"/>
+    <div class="welcome-image-vignette"></div><div aria-hidden="true" class="welcome-scene-glow"></div>
+  </div>
+
+  <div class="welcome-copy">
+    <div class="welcome-identity"><span class="command-pulse"></span><span>LΛN PRIVATE WORKSPACE</span></div>
+    <h1 id="welcomeTitle">Welcome back, Rolando.</h1>
+    <p class="welcome-message">Your portfolio is live and ready. Settle in, check the pulse, and create when the idea feels right.</p>
+  </div>
+
+  <section aria-labelledby="portfolioPassTitle" class="portfolio-pass command-wallet" data-command-wallet role="button" tabindex="0" aria-label="LΛN Portfolio Pass. Click to flip and view workspace details.">
+    <div class="command-wallet-inner">
+      <div class="command-wallet-face portfolio-pass-front">
+        <div class="portfolio-pass-topline">
+          <div><p class="editor-eyebrow">Private admin pass</p><h2 id="portfolioPassTitle">LΛN Portfolio Pass</h2></div>
+          <span class="portfolio-pass-live"><i></i> LIVE</span>
+        </div>
+        <div class="portfolio-pass-balance"><small>Workspace records</small><strong data-mirror="analyticsTotalCount">—</strong></div>
+        <div class="portfolio-pass-owner"><span id="portfolioPassName">LΛN</span><small>Administrator</small></div><span aria-hidden="true" class="portfolio-pass-wordmark">LΛN</span>
+      </div>
+      <div aria-hidden="true" class="command-wallet-face portfolio-pass-back">
+        <div class="portfolio-pass-topline">
+          <div><p class="editor-eyebrow">Workspace snapshot</p><h2>Portfolio Pulse</h2></div>
+          <span class="portfolio-pass-live"><i></i> READY</span>
+        </div>
+        <div class="portfolio-pass-detail-grid">
+          <span><small>Projects</small><b data-mirror="projectCount">—</b></span>
+          <span><small>Photo Editing</small><b data-mirror="photoSampleCount">—</b></span>
+          <span><small>Experience</small><b data-mirror="experienceCount">—</b></span>
+          <span><small>Resumes</small><b data-mirror="resumeCount">—</b></span>
+        </div>
+        <div class="portfolio-pass-healthline" aria-label="Connected services">
+          <span><svg aria-hidden="true"><use href="#dash-icon-shield"/></svg><small>Auth</small><b data-mirror="authenticationStatus">Checking</b></span>
+          <span><svg aria-hidden="true"><use href="#dash-icon-database"/></svg><small>Data</small><b data-mirror="firestoreStatus">Checking</b></span>
+          <span><svg aria-hidden="true"><use href="#dash-icon-cloud"/></svg><small>Media</small><b data-mirror="cloudinaryStatus">CHECK</b></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="dashboard-pulse-dock lan-admin-grid lan-admin-grid--stats" aria-label="Portfolio pulse">
+    <article class="pulse-card pulse-card-primary"><div class="pulse-card-icon"><svg><use href="#dash-icon-projects"/></svg></div><div><small>Portfolio</small><strong data-mirror="analyticsTotalCount">—</strong><span>managed records</span></div><div class="pulse-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div></article>
+    <article class="pulse-card"><div class="pulse-card-icon"><svg><use href="#dash-icon-photo"/></svg></div><div><small>Media</small><strong data-mirror="dashboardMediaCount">—</strong><span>photo + resume records</span></div><div class="pulse-meter" id="dashboardContentMixRing" style="--media-share:0%"><i></i></div></article>
+    <article class="pulse-card"><div class="pulse-card-icon"><svg><use href="#dash-icon-shield"/></svg></div><div><small>System</small><strong id="systemHealthScore">0/3</strong><span id="systemHealthHeadline">Checking services</span></div><div class="pulse-health" id="systemHealthRing" style="--health-percent:0%"><i></i></div></article>
+    <article class="pulse-card pulse-card-live"><div class="pulse-card-icon"><svg><use href="#dash-icon-publish"/></svg></div><div><small>Public portfolio</small><strong>LIVE</strong><span>updated <time id="lastAccessText">Loading latest access…</time></span></div><a href="../index.html" target="_blank" rel="noopener" aria-label="Open public portfolio">↗</a></article>
+  </div>
+</section>
+
+<div aria-hidden="true" class="dashboard-data-hooks">
+  <span id="projectCount">—</span><span id="photoSampleCount">—</span><span id="experienceCount">—</span><span id="resumeCount">—</span>
+  <span id="educationLibraryCount">—</span><span id="skillsLibraryCount">—</span><span id="certificateLibraryCount">—</span>
+  <span id="analyticsTotalCount">—</span><span id="dashboardMediaCount">0</span><span id="dashboardMediaLegendCount">0</span><span id="dashboardStructuredCount">0</span>
+  <span id="authenticationStatus">Checking</span><span id="firestoreStatus">Checking</span><span id="cloudinaryStatus">CHECK</span><span id="cloudinaryCloudName">—</span><span id="cloudinaryPhotoCount">—</span><span id="cloudinaryPdfCount">—</span><span id="cloudinaryTrackedTotal">—</span><span id="cloudinaryMediaRing"></span>
+  <span id="workspaceFocusTitle"></span><span id="workspaceFocusDetail"></span><span id="workspaceFocusTime"></span><span id="workspaceFocusGlyph"></span>
+  <div id="activityList"></div>
+  <button id="clearActivityButton" type="button"></button><button id="copyPortfolioLinkButton" type="button"></button><button id="addContentButton" type="button"></button>
+  <button data-manager="projects" type="button"></button><button data-manager="photo-editing" type="button"></button><button data-manager="about" type="button"></button><button data-manager="experience" type="button"></button><button data-manager="education" type="button"></button><button data-manager="skills" type="button"></button><button data-manager="certificates" type="button"></button><button data-manager="contact" type="button"></button><button data-manager="settings" type="button"></button>
+</div>
+</main>
+</div>
+</div>
+<script src="js/workspace-host.js" type="module"></script>
+<script src="js/admin-ui.js" type="module"></script>
+<script src="js/dashboard.js" type="module"></script>
+</body>
+</html>

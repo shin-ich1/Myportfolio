@@ -1,0 +1,915 @@
+/*
+ * LΛN Portfolio CMS v2 — canonical Admin adaptive layout owner
+ * ------------------------------------------------------------------
+ * Owns shared Admin page sizing, gutters, shell/container adaptation,
+ * common responsive layout primitives, and overflow safety. Visual
+ * component styling remains in shared-ui.css; page CSS owns only truly
+ * page-specific composition.
+ */
+
+:root{
+  --admin-page-inline:clamp(.625rem,2.55vw,2.75rem);
+  --admin-page-top:1.35rem;
+  --admin-page-bottom:2.75rem;
+  --admin-page-content-max:var(--content-max);
+  --admin-page-section-gap:var(--space-4);
+  --admin-page-hero-padding:clamp(1rem,1.8vw,1.5rem);
+  --lan-admin-wide-min:60rem;
+  --lan-admin-mobile-min:42rem;
+  --lan-admin-readable-inline-min:15rem;
+  --lan-admin-editor-main-readable:42rem;
+  --lan-admin-editor-rail-readable:18rem;
+  --lan-admin-editor-rail-card-readable:16rem;
+  --lan-sidebar-expanded-width:15rem;
+  --lan-sidebar-compact-width:4.75rem;
+}
+
+/* Admin shell / scroll ownership ------------------------------------ */
+.editor-layout,.dashboard-shell,.composer-shell{display:grid;grid-template-columns:var(--shell-nav-reserve,var(--sidebar-width)) minmax(0,1fr);width:100%;height:100dvh;min-height:0;overflow:hidden}
+.editor-sidebar,.sidebar{position:relative;z-index:var(--z-sidebar);display:flex;width:var(--sidebar-width);min-width:0;min-height:0;flex-direction:column;overflow:hidden;border:0;border-right:1px solid color-mix(in srgb,var(--border) 58%,transparent);background:linear-gradient(180deg,color-mix(in srgb,var(--topbar) 94%,transparent),color-mix(in srgb,var(--page) 97%,transparent));box-shadow:8px 0 28px color-mix(in srgb,var(--page) 16%,transparent);backdrop-filter:blur(1rem);will-change:width;transition:none}
+.editor-main,.dashboard-workspace,.about-main,.composer-main{--topbar-height:4.75rem;container-name:lan-admin-shell;container-type:inline-size;display:grid;grid-template-rows:auto minmax(0,1fr);min-width:0;min-height:0;overflow:hidden}
+.editor-content,.dashboard-stage,.about-canvas,.composer-canvas{container-type:inline-size;min-width:0;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;padding:var(--admin-page-top) var(--admin-page-inline) var(--admin-page-bottom);scroll-behavior:smooth}
+html[data-lan-nav-form="rail"] :is(.editor-sidebar,.sidebar){overflow:hidden}
+
+/* System navigation is structurally pinned inside the scrollable sidebar so
+   Settings remains reachable even as promoted/future modules grow. */
+.lan-system-nav{position:sticky;bottom:0;z-index:3;display:grid;gap:.25rem;margin-top:.35rem;padding-top:.2rem;background:linear-gradient(180deg,color-mix(in srgb,var(--page) 0%,transparent),color-mix(in srgb,var(--page) 96%,transparent) 22%,color-mix(in srgb,var(--page) 99%,transparent));backdrop-filter:blur(.55rem)}
+
+.lan-nav-message-badge{display:grid;min-width:1.35rem;height:1.35rem;margin-left:auto;padding:0 .34rem;place-items:center;border-radius:999px;background:var(--danger,#e34f64);color:#fff;font-size:.58rem;font-weight:800;line-height:1;box-shadow:0 0 0 2px color-mix(in srgb,var(--surface-0,#0b1320) 78%,transparent)}
+.lan-nav-message-badge[hidden]{display:none}
+.lan-system-nav>a{background:color-mix(in srgb,var(--page) 94%,transparent)}
+html[data-lan-nav-form="rail"] .lan-system-nav{justify-items:center;margin-inline:-.1rem;padding-top:.35rem}
+html[data-lan-nav-form="rail"] .lan-system-nav>.editor-navigation-label{display:none}
+html[data-lan-nav-form="rail"] :is(.editor-navigation,.sidebar-navigation){flex:1 1 auto;min-height:0;overflow-x:visible;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-width:none}
+html[data-lan-nav-form="rail"] :is(.editor-navigation,.sidebar-navigation)::-webkit-scrollbar{display:none}
+html[data-lan-nav-form="rail"] :is(.lan-sidebar-status,.editor-sidebar-footer,.sidebar-footer){flex:0 0 auto}
+html[data-lan-admin-mode="mobile"] :is(.editor-sidebar,.sidebar){overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable}
+/* Canonical Admin vertical rhythm. Workspace roots own the shared section gap;
+   runtime page-band composition never enables or changes spacing geometry. */
+.editor-content,.about-canvas,.composer-canvas{gap:var(--admin-page-section-gap)}
+.lan-local-page-header .editor-content,
+.lan-local-page-header .about-canvas,
+.lan-local-page-header .composer-canvas{display:grid;align-content:start}
+.editor-panel,.studio-panel,.simple-form,.dashboard-block,.settings-card,form,fieldset,label,.editor-card,.simple-card,.skill-card,.empty-state,.editor-empty-state,.lan-empty-state{min-width:0}.editor-panel h1,.editor-panel h2,.editor-panel h3,.editor-panel h4,.studio-panel h1,.studio-panel h2,.studio-panel h3,.simple-card strong,.skill-card strong{overflow-wrap:break-word;word-break:normal}.editor-primary-button,.editor-secondary-button,.editor-danger-button,.btn-primary,.btn-secondary,.btn-danger{max-width:100%}
+.editor-content>*:not(.modal):not(.experience-modal):not(.education-modal):not(.skills-modal):not(.project-modal):not(.project-preview-modal):not(.project-image-modal):not(.skills-editor-dialog),.dashboard-stage>*,.about-canvas>*,.composer-canvas>*{width:min(100%,var(--admin-page-content-max));min-width:0;margin-inline:auto}
+body.modal-open .editor-content,body.modal-open .dashboard-stage,body.modal-open .about-canvas,body.modal-open .composer-canvas,body.lan-decision-open .editor-content,body.lan-command-open .editor-content{overflow:hidden}
+
+
+/* Reusable Admin layout primitives ---------------------------------- */
+.lan-layout-grid{display:grid;min-width:0;grid-template-columns:repeat(var(--lan-layout-columns,2),minmax(0,1fr));gap:var(--lan-layout-gap,var(--space-4))}
+.lan-layout-grid>*{min-width:0}
+.lan-form-grid,.editor-form-grid,.simple-form-grid{display:grid;min-width:0;grid-template-columns:repeat(var(--lan-form-columns,2),minmax(0,1fr));gap:var(--lan-form-gap,var(--space-4))}
+.lan-form-grid>*,.editor-form-grid>*,.simple-form-grid>*{min-width:0}
+.lan-stats-grid{display:grid;min-width:0;grid-template-columns:var(--lan-stats-template,repeat(4,minmax(0,1fr)));gap:var(--lan-stats-gap,var(--space-3))}
+.lan-stats-grid>*{min-width:0}
+.lan-filter-layout{display:grid;min-width:0;grid-template-columns:var(--lan-filter-columns,minmax(12rem,1.4fr) repeat(3,minmax(7.5rem,.7fr)));gap:var(--lan-filter-gap,.625rem);align-items:end}
+.lan-filter-layout>*{min-width:0}
+.lan-action-layout{display:flex;min-width:0;align-items:center;justify-content:flex-end;gap:var(--lan-action-gap,.5rem);flex-wrap:wrap}
+.lan-action-layout>*{min-width:0;max-width:100%}
+
+/* Semantic split workspace: feature CSS supplies its approved Wide proportions;
+   the canonical adaptive owner decides when the composition may compact/stack. */
+[data-lan-adaptive-split]{display:grid;min-width:0;grid-template-columns:var(--lan-adaptive-split-wide,minmax(20rem,1fr) minmax(20rem,1fr));gap:var(--lan-adaptive-split-gap,var(--space-4));align-items:start}
+[data-lan-adaptive-split]>*{min-width:0}
+html[data-lan-admin-architecture="shared"][data-lan-admin-mode="compact"] [data-lan-adaptive-split]{grid-template-columns:1fr}
+html[data-lan-admin-architecture="shared"][data-lan-admin-mode="mobile"] [data-lan-adaptive-split]{grid-template-columns:1fr}
+
+/* Canonical primary-action header contract. Current and future Admin pages opt in
+   semantically; the layout responds to the owning workspace width, never a page name. */
+[data-lan-action-header]{display:flex;min-width:0;max-width:100%;align-items:center;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap}
+[data-lan-action-header]>:first-child{min-width:0;flex:1 1 min(22rem,100%)}
+.lan-admin-toolbar>[data-lan-action-header]{flex:1 1 min(28rem,100%)}
+[data-lan-action-group]{display:flex;min-width:0;align-items:center;justify-content:flex-end;gap:.5rem;flex-wrap:wrap}
+[data-lan-action-group]>*{min-width:0;max-width:100%}
+[data-lan-primary-action]{flex:0 0 auto;max-width:100%}
+/* Canonical multi-create page action owner. Pages with more than one peer
+   library expose the real create controls once, inside the page overview, so
+   every action is immediately reachable without detached/relocated controls. */
+[data-lan-page-overview]{display:flex;min-width:0;max-width:100%;height:auto;align-items:center;justify-content:space-between;gap:var(--space-4);overflow:visible;flex-wrap:wrap}
+[data-lan-page-overview]>*{min-width:0;max-width:100%}
+[data-lan-page-overview]>:first-child{flex:1 1 min(34rem,100%)}
+[data-lan-page-overview] :is(h1,h2,h3,h4,p,small,strong,span){max-width:100%;white-space:normal;overflow-wrap:break-word;word-break:normal}
+[data-lan-page-actions]{display:flex;min-width:0;max-width:100%;align-items:center;justify-content:flex-end;gap:var(--space-2);flex:0 1 auto;flex-wrap:wrap}
+[data-lan-page-actions]>[data-lan-primary-action]{min-width:max-content;max-width:100%;justify-content:center}
+
+
+@container lan-admin-shell (max-width:66rem){
+  .settings-control-rail{grid-template-columns:repeat(auto-fit,minmax(min(100%,4.5rem),1fr))}
+}
+@container lan-admin-shell (max-width:56rem){
+  .lan-layout-grid{grid-template-columns:repeat(var(--lan-layout-medium-columns,1),minmax(0,1fr))}
+  .lan-stats-grid{grid-template-columns:var(--lan-stats-template-medium,repeat(2,minmax(0,1fr)))}
+  .lan-filter-layout{grid-template-columns:var(--lan-filter-medium-columns,repeat(2,minmax(0,1fr)))}
+}
+@container (max-width:48rem){
+  .editor-form-actions,.form-actions,.composer-savebar,.about-savebar,.project-sticky-actions,.editor-savebar,.sticky-form-actions,.contact-savebar{flex-wrap:wrap;align-items:stretch}
+  .composer-savebar>div:first-child,.about-savebar>div:first-child,.project-sticky-actions>div:first-child,.editor-savebar>div:first-child{width:100%;margin-right:0}
+  .composer-savebar>div:last-child,.about-savebar>div:last-child,.project-sticky-actions>div:last-child,.editor-savebar>div:last-child,.contact-savebar>div:last-child{width:100%;min-width:0;flex:1 1 100%;flex-wrap:wrap;justify-content:flex-start}
+  .editor-form-actions>*,.form-actions>*,.composer-savebar>div:last-child>*,.about-savebar>div:last-child>*,.project-sticky-actions>div:last-child>*,.editor-savebar>div:last-child>*,.contact-savebar>div:last-child>*{min-width:0;flex:1 1 min(10rem,100%)}
+}
+
+@container lan-admin-shell (max-width:40rem){
+  .editor-content,.dashboard-stage,.about-canvas,.composer-canvas{--admin-page-top:1rem;--admin-page-section-gap:var(--space-3)}
+  .lan-layout-grid{grid-template-columns:repeat(var(--lan-layout-compact-columns,1),minmax(0,1fr))}
+  .lan-form-grid,.editor-form-grid,.simple-form-grid{grid-template-columns:1fr}
+  .lan-stats-grid{grid-template-columns:var(--lan-stats-template-compact,repeat(2,minmax(0,1fr)))}
+  .lan-filter-layout{grid-template-columns:1fr}
+  .lan-action-layout{align-items:stretch}
+  .lan-action-layout>*{flex:1 1 auto}
+  .editor-content [data-lan-record-toolbar]{display:grid;grid-template-columns:1fr;height:max-content;min-height:0;flex:0 0 auto;align-items:stretch}
+  .editor-content [data-lan-action-header]{display:flex;align-items:stretch;flex-direction:column;flex-wrap:nowrap;gap:var(--space-3)}
+  .editor-content [data-lan-action-header]>:first-child{width:100%;flex:0 1 auto}
+  .editor-content [data-lan-action-group]{display:grid;width:100%;grid-template-columns:repeat(auto-fit,minmax(min(9rem,100%),1fr));justify-content:stretch}
+  .editor-content [data-lan-action-group]>*{width:100%;min-width:0;justify-content:center}
+  .editor-content [data-lan-action-header]>[data-lan-primary-action]{width:100%;min-width:0;align-self:stretch;justify-content:center}
+  .editor-content [data-lan-action-header]>.editor-section-number{align-self:flex-start}
+  .editor-form-actions,.form-actions,.composer-savebar,.about-savebar,.project-sticky-actions,.editor-savebar,.sticky-form-actions{flex-wrap:wrap;align-items:stretch}
+  .composer-savebar>div:last-child,.about-savebar>div:last-child,.project-sticky-actions>div:last-child,.editor-savebar>div:last-child{min-width:0;flex:1 1 100%;flex-wrap:wrap;justify-content:flex-start}
+  .editor-form-actions>*,.form-actions>*,.composer-savebar>div:last-child>*,.about-savebar>div:last-child>*,.project-sticky-actions>div:last-child>*,.editor-savebar>div:last-child>*{min-width:0;flex:1 1 min(9rem,100%)}
+  .full-field,.editor-field-full,.project-wide-field{grid-column:auto}
+}
+
+@container lan-admin-shell (max-width:24rem){
+  .editor-content,.dashboard-stage,.about-canvas,.composer-canvas{--admin-page-top:.75rem;--admin-page-section-gap:var(--space-2)}
+  .lan-stats-grid{grid-template-columns:var(--lan-stats-template-narrow,1fr)}
+  .lan-action-layout{display:grid;grid-template-columns:1fr}
+  .lan-action-layout>*{width:100%}
+  .editor-content [data-lan-action-group]{grid-template-columns:1fr}
+}
+
+
+/* Responsive shell -------------------------------------------------- */
+.sidebar-overlay,.sidebar-backdrop{display:none}
+.lan-shell-menu-button{position:fixed;z-index:calc(var(--z-sidebar) + 2);display:inline-grid;width:2.5rem;height:2.5rem;place-items:center;border:1px solid var(--lan-button-glass-border);border-radius:var(--radius-md);background:var(--lan-button-glass-bg);color:var(--text-secondary);box-shadow:var(--lan-button-glass-shadow);top:1.125rem;left:calc(var(--lan-sidebar-expanded-width) - 3.1rem);transition:background var(--motion-fast),border-color var(--motion-fast),transform var(--motion-fast)}
+.lan-shell-menu-button:hover{border-color:color-mix(in srgb,var(--accent) 34%,var(--lan-button-glass-border));background:color-mix(in srgb,var(--accent) 8%,var(--lan-button-glass-bg))}
+.lan-shell-menu-button svg{width:1.15rem;height:1.15rem}
+html[data-lan-workspace-document="true"] .menu-button,html[data-lan-workspace-document="true"] .sidebar-toggle{display:none}
+html[data-lan-admin-mode="compact"] .editor-content,html[data-lan-admin-mode="compact"] .dashboard-stage,html[data-lan-admin-mode="compact"] .about-canvas,html[data-lan-admin-mode="compact"] .composer-canvas{padding-inline:1.25rem}
+
+/* Canonical constrained status controls. Compact and Mobile share one geometry
+   owner so semantic status dots remain centered and never change shape by page. */
+:is(html[data-lan-admin-mode="compact"],html[data-lan-admin-mode="mobile"]) :is(
+  :is(.editor-topbar-actions,.dashboard-header-actions,.about-header-actions,.composer-header-actions)>.editor-status-badge,
+  .lan-global-health-control
+){display:inline-flex;width:2.5rem;min-width:2.5rem;max-width:2.5rem;height:2.5rem;justify-content:center;align-items:center;padding:0;overflow:hidden;line-height:0}
+:is(html[data-lan-admin-mode="compact"],html[data-lan-admin-mode="mobile"]) :is(.editor-topbar-actions,.dashboard-header-actions,.about-header-actions,.composer-header-actions)>.editor-status-badge{border-color:color-mix(in srgb,currentColor 26%,var(--border-strong));background:color-mix(in srgb,currentColor 7%,var(--surface-soft));font-size:0;box-shadow:inset 0 1px color-mix(in srgb,var(--text-primary) 4%,transparent)}
+:is(html[data-lan-admin-mode="compact"],html[data-lan-admin-mode="mobile"]) :is(.editor-topbar-actions,.dashboard-header-actions,.about-header-actions,.composer-header-actions)>.editor-status-badge::before{content:"";display:block;width:.5rem;height:.5rem;margin:0;border-radius:50%;background:currentColor;box-shadow:0 0 .65rem color-mix(in srgb,currentColor 42%,transparent)}
+:is(html[data-lan-admin-mode="compact"],html[data-lan-admin-mode="mobile"]) .lan-global-health-control i{width:.5rem;height:.5rem;flex:none;margin:0}
+:is(html[data-lan-admin-mode="compact"],html[data-lan-admin-mode="mobile"]) .lan-global-health-control span{display:none}
+
+/* Canonical constrained topbar. Search is the flexible middle column: it gives
+   up width before identity or essential controls are allowed to collide. */
+html[data-lan-admin-mode="compact"] :is(.editor-main,.dashboard-workspace,.about-main,.composer-main){--topbar-height:4.25rem}
+html[data-lan-admin-mode="compact"] :is(.editor-topbar,.dashboard-header,.about-header,.composer-header){height:var(--topbar-height);min-height:var(--topbar-height);grid-template-columns:minmax(8rem,max-content) minmax(7rem,1fr) max-content;gap:clamp(.35rem,1.2cqi,.7rem)}
+html[data-lan-admin-mode="compact"] .lan-page-identity{min-width:0;overflow:hidden}
+html[data-lan-admin-mode="compact"] .lan-page-identity :is(.editor-eyebrow,.about-kicker,.composer-kicker){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+html[data-lan-admin-mode="compact"] .lan-page-identity h1{overflow:hidden;font-size:var(--text-section);line-height:1.1;text-overflow:ellipsis;white-space:nowrap}
+html[data-lan-admin-mode="compact"] .lan-command-search{display:flex;width:100%;min-width:0;max-width:100%;justify-self:stretch}
+html[data-lan-admin-mode="compact"] .lan-command-search kbd{display:none}
+html[data-lan-admin-mode="compact"] :is(.editor-topbar-actions,.dashboard-header-actions,.about-header-actions,.composer-header-actions){min-width:0;gap:.2rem;justify-self:end}
+html[data-lan-admin-mode="compact"] .lan-topbar-command-group{display:flex;width:auto;min-width:0;align-items:center;gap:.2rem;flex-wrap:nowrap}
+html[data-lan-admin-mode="compact"] .lan-premium-actions{gap:.2rem;padding-inline:.2rem}
+html[data-lan-admin-mode="compact"] .lan-account-chip{min-width:auto;padding-right:.34rem}
+html[data-lan-admin-mode="compact"] .lan-account-chip__copy{display:none}
+
+
+/* Topbar command density is component-owned. The global Wide / Compact / Mobile
+   mode still owns shell/navigation geometry, while the actual topbar width decides
+   whether command labels fit. This also covers constrained embedded workspaces and
+   future pages without page-specific breakpoints. */
+@container lan-admin-topbar (max-width:60rem){
+  .lan-topbar-command-group{display:flex;width:auto;min-width:0;align-items:center;gap:.2rem;flex-wrap:nowrap}
+  .lan-topbar-command-group>.lan-topbar-action{width:2.5rem;min-width:2.5rem;max-width:2.5rem;min-height:2.5rem;padding:0;justify-content:center;overflow:hidden}
+  .lan-topbar-action-icon{display:inline-grid}
+  .lan-topbar-action-label{display:none}
+  .lan-premium-actions [data-lan-health-control]{width:2.5rem;min-width:2.5rem;max-width:2.5rem;padding-inline:0;justify-content:center;overflow:hidden}
+  .lan-premium-actions [data-lan-health-control] span{display:none}
+}
+
+html[data-lan-admin-mode="mobile"] :is(.editor-main,.dashboard-workspace,.about-main,.composer-main){--topbar-height:4rem}
+html[data-lan-admin-mode="mobile"] :is(.editor-topbar,.dashboard-header,.about-header,.composer-header){height:var(--topbar-height);min-height:var(--topbar-height);grid-template-columns:minmax(0,1fr) max-content;gap:.35rem}
+html[data-lan-admin-mode="mobile"] .lan-command-search{display:none}
+html[data-lan-admin-mode="mobile"] .lan-page-identity{min-width:0;overflow:hidden}
+html[data-lan-admin-mode="mobile"] .lan-page-identity :is(.editor-eyebrow,.about-kicker,.composer-kicker){display:none}
+html[data-lan-admin-mode="mobile"] .lan-page-identity h1{overflow:hidden;font-size:var(--text-section);line-height:1.1;text-overflow:ellipsis;white-space:nowrap}
+html[data-lan-admin-mode="mobile"] .lan-premium-actions{gap:.18rem;padding-inline:.18rem}
+html[data-lan-admin-mode="mobile"] .lan-account-chip{min-width:auto;margin-left:0;padding:.2rem}
+html[data-lan-admin-mode="mobile"] .lan-account-chip__copy{display:none}
+
+
+/* The Admin adaptive mode is the sole topbar state owner. Search remains
+   fluid inside Compact; Mobile removes it and keeps essential controls only. */
+@container lan-admin-shell (max-width:26rem){
+  .editor-content,.dashboard-stage,.about-canvas,.composer-canvas{scrollbar-gutter:auto}
+  .composer-savebar,.about-savebar,.project-sticky-actions,.editor-savebar,.sticky-form-actions{position:static;bottom:auto;z-index:auto}
+  :is(.editor-content,.dashboard-stage,.about-canvas,.composer-canvas) :is(.editor-primary-button,.editor-save-button,.button-primary,.btn-primary,.btn.btn-primary,.editor-secondary-button,.editor-preview-button,.editor-reset-button,.button-secondary,.btn-secondary,.btn.btn-secondary,.editor-danger-button,.button-danger,.btn-danger,.btn.btn-danger){height:auto;min-height:var(--button-height);white-space:normal;overflow-wrap:break-word;word-break:normal;text-align:center}
+  :is(.editor-content,.dashboard-stage,.about-canvas,.composer-canvas) :is(.badge,.health-pill,.certificate-badge,.skill-card-badge,.status-badge,.experience-status,.education-status){min-width:0;max-width:100%;white-space:normal;overflow-wrap:break-word;word-break:normal;word-break:break-word}
+  .settings-control-rail{gap:.3rem;overflow:visible}
+  .settings-control-rail .workspace-tab{min-width:0;padding-inline:.25rem}
+  .settings-control-rail .settings-tab-icon{width:1.75rem;height:1.75rem}
+  .settings-control-rail .workspace-tab b{display:block;min-width:0;max-width:100%;overflow:visible;font-size:.55rem;line-height:1.1;text-overflow:clip;white-space:normal}
+  .settings-radar-stage{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem;min-height:0;padding:.65rem}
+  .settings-radar-disc,.settings-radar-core,.settings-radar-link{display:none}
+  .settings-radar-node,.radar-auth,.radar-firestore,.radar-cloudinary,.radar-public{position:static;width:100%;min-width:0;transform:none;padding:.45rem .5rem;border:1px solid var(--border);border-radius:.6rem;background:var(--surface-soft)}
+  .settings-radar-node>span:last-child{min-width:0;max-width:100%;overflow:visible}
+  .settings-radar-node b,.settings-radar-node small{max-width:100%;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:break-word;word-break:normal}
+  .settings-health-summary-head{flex-wrap:wrap}
+  .settings-health-summary-head h3{white-space:normal;overflow-wrap:break-word;word-break:normal}
+  .settings-health-stat-grid{grid-template-columns:1fr}
+  .settings-health-stat-grid small{min-width:0;white-space:normal;overflow-wrap:break-word;word-break:normal}
+  .settings-telemetry-series-controls{grid-template-columns:repeat(auto-fit,minmax(min(6rem,100%),1fr));width:100%}
+  .section-module-actions{display:grid;width:100%;grid-template-columns:1fr}
+  .section-module-actions>*{width:100%;min-width:0}
+  .ownership-strip{align-items:stretch;flex-direction:column}
+  .ownership-strip>a,.ownership-strip>button{width:100%;min-width:0;margin-left:0;justify-content:center}
+  html[data-lan-workspace-document="true"] .editor-topbar,html[data-lan-workspace-document="true"] .dashboard-header,html[data-lan-workspace-document="true"] .about-header,html[data-lan-workspace-document="true"] .composer-header{padding-left:3.35rem;padding-right:.35rem}
+  html[data-lan-workspace-document="true"] .editor-topbar>.editor-status-badge{display:none}
+  .dashboard-header h1{font-size:1rem}
+}
+
+
+/* Responsive Admin shell ------------------------------------------------
+   The canonical Admin mode owns navigation form only. Every mode keeps the
+   same viewport/frame/scroll lifecycle; Mobile alone turns navigation into an
+   independently scrollable drawer. Workspace geometry is container-driven. */
+html[data-lan-admin-mode="mobile"]{--shell-nav-reserve:0rem}
+html[data-lan-admin-mode="mobile"] .editor-layout,
+html[data-lan-admin-mode="mobile"] .dashboard-shell,
+html[data-lan-admin-mode="mobile"] .composer-shell{grid-template-columns:0 minmax(0,1fr)}
+html[data-lan-admin-mode="mobile"] .editor-main,
+html[data-lan-admin-mode="mobile"] .dashboard-workspace,
+html[data-lan-admin-mode="mobile"] .about-main,
+html[data-lan-admin-mode="mobile"] .composer-main,
+html[data-lan-admin-mode="mobile"] .lan-admin-workspace-host{grid-column:2}
+html[data-lan-admin-mode="mobile"] .editor-sidebar,
+html[data-lan-admin-mode="mobile"] .sidebar{position:fixed;inset:0 auto 0 0;width:min(var(--lan-sidebar-expanded-width),88vi);height:100dvh;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;transform:translateX(-105%);box-shadow:var(--shadow-md);transition:transform var(--motion-normal) var(--motion-ease)}
+html[data-lan-admin-mode="mobile"] .editor-sidebar.open,
+html[data-lan-admin-mode="mobile"] .sidebar.open{transform:none}
+html[data-lan-admin-mode="mobile"] .sidebar-overlay,
+html[data-lan-admin-mode="mobile"] .sidebar-backdrop{position:fixed;inset:0;z-index:calc(var(--z-sidebar) - 1);display:block;background:rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity var(--motion-normal)}
+html[data-lan-admin-mode="mobile"] .sidebar-overlay.show,
+html[data-lan-admin-mode="mobile"] .sidebar-backdrop.show{opacity:1;pointer-events:auto}
+html[data-lan-admin-mode="compact"] body.sidebar-open :is(.editor-sidebar,.sidebar){position:fixed;inset:0 auto 0 0;width:var(--lan-sidebar-expanded-width);height:100dvh;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;z-index:var(--z-sidebar);background:linear-gradient(180deg,color-mix(in srgb,var(--topbar) 98%,transparent),color-mix(in srgb,var(--page) 99%,transparent));box-shadow:var(--shadow-md)}
+html[data-lan-admin-mode="compact"] body.sidebar-open :is(.sidebar-overlay,.sidebar-backdrop){position:fixed;inset:0;z-index:calc(var(--z-sidebar) - 1);display:block;background:transparent;opacity:1;pointer-events:auto}
+html[data-lan-admin-mode="compact"] body.sidebar-open .lan-shell-menu-button{top:.7rem;left:calc(var(--lan-sidebar-expanded-width) - 3.2rem)}
+html[data-lan-admin-mode="mobile"] .lan-shell-menu-button{display:inline-grid;top:.7rem;left:.7rem}
+html[data-lan-admin-mode="mobile"] body.sidebar-open .lan-shell-menu-button{left:min(calc(88vi - 3.2rem),15.55rem)}
+html[data-lan-admin-mode="mobile"] body.sidebar-open :is(.editor-brand,.dashboard-brand){padding-right:3.5rem}
+html[data-lan-admin-mode="mobile"] .sidebar-close{display:inline-grid}
+html[data-lan-admin-mode="mobile"] .lan-command-search{display:none;max-width:none}
+html[data-lan-admin-mode="mobile"] .lan-account-chip{min-width:auto;padding-right:.34rem}
+html[data-lan-admin-mode="mobile"] .lan-account-chip__copy{display:none}
+
+/* Workspace documents inherit the persistent shell's canonical mode. Mobile
+   reserves the one shell-owned drawer trigger; content continues to use the
+   same internal workspace scroller as Wide and Compact. */
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] .editor-topbar,
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] .dashboard-header,
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] .about-header,
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] .composer-header{padding-left:3.9rem;padding-right:.6rem}
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] .editor-content,
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] .dashboard-stage,
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] .about-canvas,
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] .composer-canvas{padding-inline:clamp(.625rem,3.4cqi,1rem)}
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] .editor-topbar>div:first-child:not(.editor-topbar-actions),
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] .dashboard-header-copy>div,
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] .about-heading>div,
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] .composer-heading>div{min-width:0}
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] :is(.editor-topbar,.dashboard-header,.about-header,.composer-header) h1{font-size:var(--text-section)}
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] :is(.editor-form-grid,.simple-form-grid){grid-template-columns:1fr}
+html[data-lan-workspace-document="true"][data-lan-admin-mode="mobile"] :is(.full-field,.editor-field-full,.project-wide-field){grid-column:auto}
+html[data-lan-admin-mode="mobile"] .modal,
+html[data-lan-admin-mode="mobile"] .experience-modal,
+html[data-lan-admin-mode="mobile"] .education-modal,
+html[data-lan-admin-mode="mobile"] .skills-modal,
+html[data-lan-admin-mode="mobile"] .project-modal,
+html[data-lan-admin-mode="mobile"] .project-preview-modal,
+html[data-lan-admin-mode="mobile"] .project-image-modal,
+html[data-lan-admin-mode="mobile"] .skills-editor-dialog,
+html[data-lan-admin-mode="mobile"] .editor-modal{align-items:end;padding:.5rem}
+html[data-lan-admin-mode="mobile"] :is(.modal-container,.experience-modal-card,.education-modal-card,.skills-modal-card,.project-modal-card,.project-preview-modal-card,.project-image-modal-card,.skills-editor-card,.editor-modal-card){width:100%;max-height:calc(100dvh - 1rem);border-radius:.875rem .875rem .5rem .5rem}
+html[data-lan-admin-mode="mobile"] :is(.modal-container>form,.editor-modal-card>form,.modal-body,.modal-content,.preview-content,.delete-modal-content,.project-preview-modal-body,.project-image-modal-stage){padding:.875rem}
+html[data-lan-admin-mode="mobile"] :is(.editor-icon-button,.modal-close){width:2.75rem;min-width:2.75rem;height:2.75rem}
+
+/* Page-band adaptation is driven by the workspace container, not viewport names. */
+@container lan-admin-shell (max-width:72rem){.lan-header-astronaut{width:2.15rem;height:2.15rem}.lan-page-band--tabs{grid-template-columns:minmax(0,1fr) auto;min-height:7.6rem}.lan-page-band--tabs .workspace-tabs,.lan-page-band--tabs .home-tabs,.lan-page-band--tabs .about-tabs{grid-column:1/-1;grid-row:2;justify-content:flex-start}.lan-page-band--tabs .lan-page-band-orbit{grid-column:2;grid-row:1;right:auto;top:auto}}
+@container lan-admin-shell (max-width:47.5rem){.lan-planet-orbit-stage,.lan-page-band-asteroids,.lan-shooting-stars,.lan-time-celestial{display:none}.lan-header-astronaut{width:1.8rem;height:1.8rem}.lan-page-band{grid-template-columns:minmax(0,1fr) auto;gap:.55rem;min-height:4.5rem;padding:.65rem .75rem}.lan-page-band-copy{min-width:0;max-width:100%}.lan-page-band-copy strong{max-width:100%;font-size:var(--text-ui)}.lan-page-band-orbit{display:none}.lan-page-band--tabs{grid-template-columns:1fr;height:max-content;min-height:0;row-gap:.35rem}.lan-page-band .workspace-tabs,.lan-page-band .home-tabs,.lan-page-band .about-tabs{min-height:2.55rem}}
+@container lan-admin-shell (max-width:24rem){.editor-main,.dashboard-workspace,.about-main,.composer-main{--topbar-height:3.75rem}.editor-topbar,.dashboard-header,.about-header,.composer-header{gap:.35rem;padding-inline:.45rem;padding-block:.4rem}.lan-account-chip{margin-left:0;padding:.2rem;min-height:2.25rem;border-radius:.7rem}.lan-account-chip .lan-user-avatar{width:2rem;height:2rem;flex-basis:2rem}.editor-content,.dashboard-stage,.about-canvas,.composer-canvas{padding-inline:.5rem}.lan-page-band{min-height:4rem;padding:.55rem .6rem;border-radius:var(--radius-lg)}.lan-page-band-copy{min-width:0}.lan-page-band-copy strong{font-size:var(--text-label);overflow-wrap:break-word;word-break:normal}.editor-panel,.studio-panel,.simple-form{padding:.75rem}.modal-actions,.experience-modal-actions,.education-modal-actions,.skills-modal-actions,.project-modal-actions,.skills-editor-footer{display:grid;grid-template-columns:1fr;padding:.65rem}.modal-actions>*,.experience-modal-actions>*,.education-modal-actions>*,.skills-modal-actions>*,.project-modal-actions>*,.skills-editor-footer>*{width:100%;min-width:0}}
+
+/* Vertical compaction remains height-driven because it solves viewport-height
+   clipping rather than width adaptation. */
+@media(max-height:760px){.editor-brand,.dashboard-brand{min-height:4.25rem;padding-top:.875rem}.editor-navigation-label,.navigation-label{margin-top:.6875rem}.editor-navigation a,.navigation-link{min-height:2.25rem;padding-block:.4rem}.lan-sidebar-status-details small{display:none}.lan-sidebar-status-details a{min-height:1.75rem}.editor-sidebar-footer,.sidebar-footer{padding:.625rem .75rem}}
+@media(max-height:34rem){html[data-lan-admin-mode="mobile"] :is(.composer-savebar,.about-savebar,.project-sticky-actions,.editor-savebar,.sticky-form-actions){position:static;bottom:auto;z-index:auto}}
+
+/* Compact defaults to the icon rail, while Wide can temporarily request the
+   same rail through the one shell-owned hamburger without changing Admin mode. */
+:root[data-lan-admin-mode="compact"]{--sidebar-width:4.75rem;--shell-nav-reserve:4.75rem}
+:root[data-lan-nav-form="rail"]{--sidebar-width:4.75rem;--shell-nav-reserve:4.75rem}
+:root[data-lan-nav-form="rail"] :is(.editor-sidebar,.sidebar){width:4.75rem;overflow:hidden;border-right-color:color-mix(in srgb,var(--page-accent,var(--accent)) 16%,var(--border));background:linear-gradient(180deg,color-mix(in srgb,var(--topbar) 97%,transparent),color-mix(in srgb,var(--page) 98%,transparent));box-shadow:10px 0 30px color-mix(in srgb,var(--page) 18%,transparent),inset -1px 0 color-mix(in srgb,var(--text-primary) 4%,transparent)}
+:root[data-lan-nav-form="rail"] :is(.editor-brand,.dashboard-brand){height:4.75rem;min-height:4.75rem;grid-template-columns:1fr;grid-template-rows:1fr;align-content:center;justify-items:center;gap:0;padding:.55rem}
+:root[data-lan-nav-form="rail"] :is(.editor-brand,.dashboard-brand) a{display:none}
+:root[data-lan-nav-form="rail"] :is(.editor-navigation,.sidebar-navigation) .lan-nav-label{display:none}
+:root[data-lan-nav-form="rail"] :is(.editor-navigation,.sidebar-navigation){gap:.28rem;padding:.45rem .62rem .75rem}
+:root[data-lan-nav-form="rail"] :is(.editor-navigation-label,.navigation-label){max-height:0;margin:0;opacity:0;pointer-events:none}
+:root[data-lan-nav-form="rail"] :is(.editor-navigation a,.navigation-link){display:grid;width:3rem;min-width:0;overflow:hidden;box-sizing:border-box;place-items:center;justify-self:center;min-height:3rem;gap:0;padding:0;border-radius:.82rem}
+:root[data-lan-nav-form="rail"] .lan-nav-message-badge{position:absolute;top:.14rem;right:.08rem;min-width:1rem;height:1rem;margin:0;padding:0 .22rem;font-size:.46rem;box-shadow:0 0 0 2px var(--page)}
+:root[data-lan-nav-form="rail"] :is(.editor-navigation a>span:first-child,.navigation-link .navigation-icon){width:2.45rem;height:2.45rem;flex-basis:2.45rem;margin:0;border-radius:.75rem}
+:root[data-lan-nav-form="rail"] .lan-sidebar-status{max-height:0;margin:0 .5rem;opacity:0;border-color:transparent;pointer-events:none}
+:root[data-lan-nav-form="rail"] :is(.editor-sidebar-footer,.sidebar-footer){gap:.2rem;padding:.62rem .7rem .7rem}
+:root[data-lan-nav-form="rail"] .editor-admin-card{display:grid;width:3rem;min-width:0;overflow:hidden;box-sizing:border-box;place-items:center;justify-self:center;gap:0;padding:0;border:0;background:transparent}
+:root[data-lan-nav-form="rail"] .editor-admin-card>div:not(.editor-avatar):not(.lan-user-avatar){display:none}
+:root[data-lan-nav-form="rail"] :is(.editor-logout-button,.logout-button){max-height:0;min-height:0;opacity:0;border-color:transparent;pointer-events:none}
+:root[data-lan-nav-form="rail"] .lan-shell-menu-button{top:1.125rem;left:1.125rem}
+
+/* Shared semantic Admin layout primitives ----------------------------- */
+html[data-lan-admin-architecture="shared"] .lan-admin-workspace{
+  container-type:inline-size;
+  min-width:0;
+  min-height:0;
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-grid:not([data-lan-adaptive-split]){
+  --lan-admin-grid-min:18rem;
+  --lan-admin-grid-gap:var(--space-4);
+  display:grid;
+  min-width:0;
+  grid-template-columns:repeat(auto-fit,minmax(min(var(--lan-admin-grid-min),100%),1fr));
+  gap:var(--lan-admin-grid-gap);
+  align-items:start;
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-grid:not([data-lan-adaptive-split])>*{min-width:0}
+html[data-lan-admin-architecture="shared"] .lan-admin-grid[data-lan-view="list"]{grid-template-columns:1fr}
+html[data-lan-admin-architecture="shared"] .lan-admin-grid.lan-admin-grid--split:not([data-lan-adaptive-split]){--lan-admin-grid-min:24rem}
+html[data-lan-admin-architecture="shared"] .lan-admin-grid.lan-admin-grid--records{--lan-admin-grid-min:20rem;--lan-admin-grid-gap:var(--space-3)}
+html[data-lan-admin-architecture="shared"] .lan-admin-grid.lan-admin-grid--stats{--lan-admin-grid-min:9rem;--lan-admin-grid-gap:var(--space-3);align-items:stretch}
+html[data-lan-admin-architecture="shared"] .lan-admin-grid.lan-admin-grid--status{--lan-admin-grid-min:12rem;--lan-admin-grid-gap:.45rem}
+html[data-lan-admin-architecture="shared"] .lan-admin-grid.lan-admin-grid--media{--lan-admin-grid-min:20rem;--lan-admin-grid-gap:var(--space-4)}
+html[data-lan-admin-architecture="shared"] .lan-admin-form-grid{
+  display:grid;
+  min-width:0;
+  grid-template-columns:repeat(auto-fit,minmax(min(14rem,100%),1fr));
+  gap:var(--space-4);
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-form-grid>*{min-width:0}
+html[data-lan-admin-architecture="shared"] .lan-admin-filter-grid{
+  display:grid;
+  min-width:0;
+  grid-template-columns:repeat(auto-fit,minmax(min(9rem,100%),1fr));
+  gap:var(--space-2);
+  align-items:center;
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-filter-grid>*{min-width:0;max-width:100%}
+html[data-lan-admin-architecture="shared"] .lan-admin-media-workbench{
+  --lan-admin-grid-min:14rem;
+  align-items:start;
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-editor-layout{
+  display:grid;
+  min-width:0;
+  grid-template-columns:minmax(0,1fr);
+  grid-template-areas:"tabs" "main";
+  gap:var(--space-4);
+  align-items:start;
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-editor-layout:has(>.lan-admin-editor-rail){
+  display:flex;
+  min-width:0;
+  align-items:flex-start;
+  gap:var(--space-4);
+  flex-wrap:wrap;
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-editor-tabs{grid-area:tabs;min-width:0}
+html[data-lan-admin-architecture="shared"] .lan-admin-editor-layout:has(>.lan-admin-editor-rail)>.lan-admin-editor-tabs{flex:1 0 100%}
+html[data-lan-admin-architecture="shared"] .lan-admin-editor-main{grid-area:main;min-width:0;container-type:inline-size;container-name:lan-admin-editor-main}
+/* The editor main and presentation rail declare their own readable minimums.
+   Flex wrapping, not a viewport breakpoint, decides when the rail moves below
+   the editor. This protects current and future rail-based editors from squeezed
+   intermediate-width compositions. */
+html[data-lan-admin-architecture="shared"] .lan-admin-editor-layout:has(>.lan-admin-editor-rail)>.lan-admin-editor-main{
+  flex:999 1 var(--lan-admin-editor-main-readable);
+  min-width:min(100%,var(--lan-admin-editor-main-readable));
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-editor-rail{
+  grid-area:rail;
+  display:grid;
+  min-width:min(100%,var(--lan-admin-editor-rail-readable));
+  grid-template-columns:repeat(auto-fit,minmax(min(var(--lan-admin-editor-rail-card-readable),100%),1fr));
+  gap:var(--space-3);
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-editor-layout:has(>.lan-admin-editor-rail)>.lan-admin-editor-rail{
+  position:static;
+  flex:1 1 var(--lan-admin-editor-rail-readable);
+  width:auto;
+  max-width:100%;
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-label-content{
+  display:grid;
+  min-width:0;
+  grid-template-columns:minmax(min(9rem,30%),10rem) minmax(0,1fr);
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-label-content>*{min-width:0}
+html[data-lan-admin-architecture="shared"] .lan-admin-toolbar{
+  display:flex;
+  min-width:0;
+  align-items:center;
+  gap:var(--space-3);
+  flex-wrap:wrap;
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-toolbar>*{min-width:0;max-width:100%}
+html[data-lan-admin-architecture="shared"] .lan-admin-toolbar-stats{
+  display:flex;
+  width:max-content;
+  min-width:0;
+  max-width:100%;
+  align-items:stretch;
+  gap:.45rem;
+  flex-wrap:nowrap;
+  margin-left:auto;
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-toolbar-stats>*{min-width:0;flex:0 0 auto}
+html[data-lan-admin-architecture="shared"] .lan-admin-actions{
+  display:flex;
+  min-width:0;
+  align-items:center;
+  gap:.5rem;
+  flex-wrap:wrap;
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-actions>*{min-width:0;max-width:100%}
+html[data-lan-admin-architecture="shared"] .lan-admin-text-safe,
+html[data-lan-admin-architecture="shared"] .lan-admin-workspace :where(h1,h2,h3,h4,p,small,strong,span,label,dd,dt){
+  max-width:100%;
+  overflow-wrap:break-word;
+  word-break:normal;
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-workspace :where(.lan-admin-grid,.lan-admin-toolbar,.editor-panel,.studio-panel,.simple-card,.skill-card,[data-lan-record-card])>*{min-width:0}
+html[data-lan-admin-architecture="shared"] .lan-admin-sticky-pane{position:sticky;top:0;min-width:0}
+
+/* Shared direct record-library/editor composition. The normal state is a complete
+   single-column contract; opening an editor changes only the library/editor row.
+   Unique studios and lan-record-workspace surfaces do not consume this primitive. */
+html[data-lan-admin-architecture="shared"] .lan-admin-master-detail{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  grid-template-areas:"pageband" "toolbar" "library" "editor";
+  grid-template-rows:max-content max-content max-content max-content;
+  align-items:start;
+  gap:var(--admin-page-section-gap);
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-master-detail:has(>.lan-admin-record-editor:not(.hidden)){
+  grid-template-columns:minmax(min(20rem,34%),24rem) minmax(0,1fr);
+  grid-template-areas:"pageband pageband" "toolbar toolbar" "library editor";
+  grid-template-rows:max-content max-content max-content;
+}
+html[data-lan-admin-architecture="shared"] .lan-admin-master-detail>.lan-page-band{grid-area:pageband}
+html[data-lan-admin-architecture="shared"] .lan-admin-master-detail>[data-lan-record-toolbar]{grid-area:toolbar}
+html[data-lan-admin-architecture="shared"] .lan-admin-master-detail>.lan-admin-record-library{grid-area:library;min-width:0}
+html[data-lan-admin-architecture="shared"] .lan-admin-master-detail>.lan-admin-record-editor{grid-area:editor;min-width:0}
+html[data-lan-admin-architecture="shared"] .lan-admin-master-detail:has(>.lan-admin-record-editor:not(.hidden)) .lan-admin-grid--records{grid-template-columns:1fr}
+
+/* The outer master/detail owner stacks the library/editor split before either
+   workspace becomes too narrow. Editor-internal composition is owned separately
+   by the width allocated to .lan-admin-editor-main below. */
+@container (max-width:56rem){
+  html[data-lan-admin-architecture="shared"] .lan-admin-master-detail:has(>.lan-admin-record-editor:not(.hidden)){
+    grid-template-columns:1fr;
+    grid-template-areas:"pageband" "toolbar" "library" "editor";
+    grid-template-rows:max-content max-content max-content max-content;
+  }
+}
+
+@container (max-width:48rem){
+  html[data-lan-admin-architecture="shared"] .lan-admin-sticky-pane,
+  html[data-lan-admin-architecture="shared"] .lan-admin-master-detail>.lan-admin-record-library{position:static}
+  html[data-lan-admin-architecture="shared"] .lan-admin-toolbar{align-items:stretch}
+  html[data-lan-admin-architecture="shared"] .lan-admin-toolbar-stats{width:100%;margin-left:0;flex-wrap:wrap}
+  html[data-lan-admin-architecture="shared"] .lan-admin-toolbar-stats>*{flex:1 1 5rem}
+  html[data-lan-admin-architecture="shared"] .lan-admin-label-content{grid-template-columns:1fr}
+}
+@container (max-width:36rem){
+  html[data-lan-admin-architecture="shared"] .lan-admin-grid.lan-admin-grid--split:not([data-lan-adaptive-split]),
+  html[data-lan-admin-architecture="shared"] .lan-admin-grid.lan-admin-grid--records,
+  html[data-lan-admin-architecture="shared"] .lan-admin-grid.lan-admin-grid--stats,
+  html[data-lan-admin-architecture="shared"] .lan-admin-form-grid{grid-template-columns:1fr}
+}
+
+/* Shared Admin component adaptation ----------------------------------
+ * Every Admin page is migrated to semantic layout primitives. The shell
+ * width (not the physical device viewport) drives the shared states below.
+ * Unique components may adapt here, but page-name selectors are forbidden.
+ */
+
+/* about component */
+@container (max-width:60rem){
+  html[data-lan-admin-architecture="shared"] :is(.identity-card,.biography-card,.visibility-card,.profile-preview){grid-column:1;grid-row:auto}
+  html[data-lan-admin-architecture="shared"] .profile-preview{position:relative;top:auto;min-height:360px}
+}
+@container (max-width:36rem){
+  html[data-lan-admin-architecture="shared"] .profile-preview__actions{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .about-field-grid{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .about-span{grid-column:auto}
+}
+
+/* dashboard component */
+@container (max-width:72rem){
+  html[data-lan-admin-architecture="shared"] .portfolio-pass{width:min(340px,27vw)}
+  html[data-lan-admin-architecture="shared"] .welcome-copy{width:44%;padding-left:36px;padding-bottom:220px}
+  html[data-lan-admin-architecture="shared"] .welcome-copy h1{font-size:clamp(2.9rem,4.6vw,5rem)}
+  html[data-lan-admin-architecture="shared"] .dashboard-pulse-dock{grid-template-columns:repeat(2,minmax(0,1fr));bottom:22px}
+  html[data-lan-admin-architecture="shared"] .dashboard-welcome{margin-bottom:24px;min-height:820px}
+}
+@container (max-width:60rem){
+  html[data-lan-admin-architecture="shared"] .dashboard-welcome{min-height:clamp(44rem,calc(100dvh - var(--topbar-height) - 2rem),52rem);margin-bottom:24px}
+  html[data-lan-admin-architecture="shared"] .welcome-copy{width:68%;min-height:500px;padding:54px 36px 0}
+  html[data-lan-admin-architecture="shared"] .portfolio-pass{top:365px;right:36px;width:min(360px,46vw)}
+  html[data-lan-admin-architecture="shared"] .dashboard-pulse-dock{grid-template-columns:repeat(2,minmax(0,1fr));bottom:22px}
+}
+@container (max-width:48rem){
+  html[data-lan-admin-architecture="shared"] .dashboard-welcome{display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:.75rem;min-width:0;min-height:auto;margin:0;padding:0;overflow:visible;border:0;border-radius:0;background:transparent;box-shadow:none;isolation:auto}
+  html[data-lan-admin-architecture="shared"] .dashboard-welcome::before, html[data-lan-admin-architecture="shared"] .dashboard-welcome::after{content:none}
+  html[data-lan-admin-architecture="shared"] .welcome-visual, html[data-lan-admin-architecture="shared"] .welcome-ambient, html[data-lan-admin-architecture="shared"] .welcome-grid, html[data-lan-admin-architecture="shared"] .welcome-image-vignette, html[data-lan-admin-architecture="shared"] .welcome-scene-glow{display:none}
+  html[data-lan-admin-architecture="shared"] .welcome-copy{position:relative;z-index:auto;display:grid;width:100%;min-width:0;min-height:0;gap:.7rem;padding:1rem;border:1px solid color-mix(in srgb,var(--border-strong) 72%,transparent);border-radius:18px;background:radial-gradient(circle at 100% 0,color-mix(in srgb,var(--accent) 9%,transparent),transparent 42%),linear-gradient(145deg,color-mix(in srgb,var(--surface-raised) 94%,transparent),color-mix(in srgb,var(--surface-0) 96%,transparent));box-shadow:var(--shadow-sm);color:var(--text-primary)}
+  html[data-lan-admin-architecture="shared"] .welcome-identity{position:static;display:inline-flex;justify-self:start;max-width:100%;margin:0;padding:.45rem .65rem;border-color:color-mix(in srgb,var(--success) 28%,var(--border));background:color-mix(in srgb,var(--success-soft) 58%,var(--surface));color:color-mix(in srgb,var(--text-secondary) 82%,var(--success) 18%);font-size:.56rem;letter-spacing:.1em;box-shadow:none}
+  html[data-lan-admin-architecture="shared"] .welcome-copy h1, html[data-lan-admin-architecture="shared"] .welcome-copy h1.is-long, html[data-lan-admin-architecture="shared"] .welcome-copy h1.is-very-long, html[data-lan-admin-architecture="shared"] .welcome-copy h1.is-question{max-width:14ch;margin:0;padding:0;color:var(--text-primary);font-size:clamp(2rem,9vw,2.65rem);line-height:.96;letter-spacing:-.055em}
+  html[data-lan-admin-architecture="shared"] .hero-greeting-accent{background:linear-gradient(100deg,var(--text-primary),var(--cyan) 54%,var(--accent-secondary));-webkit-background-clip:text;background-clip:text;color:transparent}
+  html[data-lan-admin-architecture="shared"] .welcome-message{max-width:34rem;margin:0;color:var(--text-secondary);font-size:clamp(.78rem,3vw,.88rem);line-height:1.55}
+  html[data-lan-admin-architecture="shared"] .portfolio-pass{position:relative;top:auto;right:auto;left:auto;display:grid;width:min(100%,19rem);max-width:none;height:auto;min-height:9.5rem;margin:0;justify-self:center;aspect-ratio:auto;filter:drop-shadow(0 12px 22px color-mix(in srgb,var(--page) 28%,transparent))}
+  html[data-lan-admin-architecture="shared"] .command-wallet-inner{display:grid;height:auto;min-height:inherit}
+  html[data-lan-admin-architecture="shared"] .command-wallet-face{position:relative;inset:auto;grid-area:1/1;width:100%;height:auto;min-height:inherit;padding:13px 14px;border-radius:16px}
+  html[data-lan-admin-architecture="shared"] .portfolio-pass-topline h2{font-size:.92rem}html[data-lan-admin-architecture="shared"] .portfolio-pass-balance strong{font-size:2.35rem}html[data-lan-admin-architecture="shared"] .portfolio-pass-owner{padding-top:6px}html[data-lan-admin-architecture="shared"] .portfolio-pass-wordmark{right:14px;bottom:10px}
+  html[data-lan-admin-architecture="shared"] .dashboard-pulse-dock{position:relative;right:auto;bottom:auto;left:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;min-width:0;margin:0;gap:.6rem;filter:none}
+  html[data-lan-admin-architecture="shared"] .pulse-card{grid-template-columns:34px minmax(0,1fr);gap:.6rem;min-width:0;min-height:4.5rem;padding:.7rem .75rem;border-radius:14px}
+  html[data-lan-admin-architecture="shared"] .pulse-card:hover{transform:none}
+  html[data-lan-admin-architecture="shared"] .pulse-card-icon{width:34px;height:34px;border-radius:10px}html[data-lan-admin-architecture="shared"] .pulse-card-icon svg{width:15px;height:15px}
+  html[data-lan-admin-architecture="shared"] .pulse-card small{font-size:.54rem;letter-spacing:.07em}html[data-lan-admin-architecture="shared"] .pulse-card strong{font-size:1.2rem}html[data-lan-admin-architecture="shared"] .pulse-card span{display:none}
+  html[data-lan-admin-architecture="shared"] .pulse-wave, html[data-lan-admin-architecture="shared"] .pulse-meter, html[data-lan-admin-architecture="shared"] .pulse-health{display:none}
+  html[data-lan-admin-architecture="shared"] .pulse-card>a{position:absolute;top:.6rem;right:.6rem;width:1.75rem;height:1.75rem}
+  html[data-lan-admin-architecture="shared"] .pulse-card-live>div:nth-child(2){padding-right:1.7rem}
+  :root[data-theme="light"] .dashboard-welcome, :root[data-cms-theme-resolved="light"] .dashboard-welcome{border:0;background:transparent;box-shadow:none}
+}
+@container (max-width:24rem){
+  html[data-lan-admin-architecture="shared"] .dashboard-header{min-height:3.75rem;padding-inline:.5rem}
+  html[data-lan-admin-architecture="shared"] .dashboard-header-copy .editor-eyebrow{display:none}
+  html[data-lan-admin-architecture="shared"] .dashboard-header h1{font-size:1rem}
+  html[data-lan-admin-architecture="shared"] .dashboard-stage{padding-inline:.55rem;padding-bottom:1.25rem}
+  html[data-lan-admin-architecture="shared"] .dashboard-welcome{gap:.6rem}
+  html[data-lan-admin-architecture="shared"] .welcome-copy{gap:.6rem;padding:.85rem;border-radius:15px}
+  html[data-lan-admin-architecture="shared"] .welcome-identity{padding:.4rem .58rem;font-size:.53rem}
+  html[data-lan-admin-architecture="shared"] .welcome-copy h1, html[data-lan-admin-architecture="shared"] .welcome-copy h1.is-long, html[data-lan-admin-architecture="shared"] .welcome-copy h1.is-very-long, html[data-lan-admin-architecture="shared"] .welcome-copy h1.is-question{max-width:13ch;font-size:clamp(1.85rem,9.6vw,2.2rem)}
+  html[data-lan-admin-architecture="shared"] .welcome-message{font-size:.76rem}
+  html[data-lan-admin-architecture="shared"] .portfolio-pass-detail-grid{gap:5px}html[data-lan-admin-architecture="shared"] .portfolio-pass-detail-grid>span{min-height:32px;padding:5px 7px}html[data-lan-admin-architecture="shared"] .portfolio-pass-healthline{gap:4px}html[data-lan-admin-architecture="shared"] .portfolio-pass-healthline>span{min-height:32px;padding:4px 5px}
+  html[data-lan-admin-architecture="shared"] .dashboard-pulse-dock{grid-template-columns:1fr;gap:.5rem}
+  html[data-lan-admin-architecture="shared"] .pulse-card{min-height:4rem;padding:.62rem .68rem}
+}
+
+/* education component — only unique internals remain; workspace geometry is shared. */
+@container (max-width:48rem){
+  html[data-lan-admin-architecture="shared"] #educationForm>.education-panel--identity, html[data-lan-admin-architecture="shared"] #educationForm>.education-panel--publishing{grid-column:1}
+  html[data-lan-admin-architecture="shared"] .education-toolbar{flex-wrap:wrap}
+  html[data-lan-admin-architecture="shared"] .education-statistics{order:3;width:100%;margin-left:0;flex-wrap:wrap}
+  html[data-lan-admin-architecture="shared"] .education-media-grid{grid-template-columns:1fr}
+}
+@container (max-width:48rem){
+  html[data-lan-admin-architecture="shared"] .education-logo-workbench{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .dynamic-entry-row{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .dynamic-entry-row>.editor-danger-button{justify-self:start}
+}
+@container (max-width:36rem){
+  html[data-lan-admin-architecture="shared"] .education-stat-card{flex:1 1 82px}
+}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .education-card-content{grid-template-columns:46px minmax(0,1fr)}html[data-lan-admin-architecture="shared"] .education-card-actions{justify-content:flex-end}}
+
+/* experience component — only unique internals remain; workspace geometry is shared. */
+@container (max-width:48rem){
+  html[data-lan-admin-architecture="shared"] .experience-toolbar{flex-wrap:wrap}
+  html[data-lan-admin-architecture="shared"] .experience-statistics{order:3;width:100%;margin-left:0;flex-wrap:wrap}
+}
+@container (max-width:36rem){html[data-lan-admin-architecture="shared"] .experience-filter-row{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .experience-stat-card{flex:1 1 82px}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .experience-card-actions>*{min-width:0}}
+@container (max-width:60rem){html[data-lan-admin-architecture="shared"] .experience-capability-grid{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .experience-capability-section-header{align-items:flex-start}html[data-lan-admin-architecture="shared"] .experience-panel-header-actions{align-items:flex-end;flex-direction:column}html[data-lan-admin-architecture="shared"] .experience-panel-header-actions>a{order:2;max-width:100%;white-space:normal;text-align:center}}
+
+/* home component — selectors carry the page scope so the canonical adaptive
+   owner can override Home's base component geometry without !important. */
+@container (max-width:72rem){
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .preview-hero{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview__portrait-wrap{min-height:300px}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-portfolio-canvas{min-height:0}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-module{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-module-heading{margin-bottom:2px}
+}
+@container (max-width:60rem){
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .module-composition-switches, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .module-composition-grid, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .module-composition-public-controls{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-composer__preview{position:static;order:-1}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .feature-studio-grid{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview{min-height:0}
+}
+@container home-preview (max-width:40rem){
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview>nav{gap:10px;padding-inline:18px;flex-wrap:wrap}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .preview-hero{grid-template-columns:minmax(0,1fr);gap:22px;min-height:0;padding:28px clamp(18px,5cqi,28px)}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .preview-copy{width:100%;min-width:0}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview__name{font-size:clamp(2rem,11cqi,3.25rem);line-height:1;overflow-wrap:normal;word-break:normal}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview__headline, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview__roles, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview__introduction{max-width:none;overflow-wrap:break-word;word-break:normal}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview__portrait-wrap{order:-1;width:min(72%,260px);justify-self:center}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-layout-standard-half, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-layout-tall-half, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-layout-tall-narrow, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-layout-tall-wide{grid-column:span 12}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-project-grid, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-gallery--categories{grid-template-columns:repeat(2,minmax(0,1fr))}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-custom-showcase{grid-template-columns:1fr}
+}
+@container home-preview (max-width:24rem){
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview>nav span{display:none}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview>nav{padding-inline:14px}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .preview-hero{gap:18px;padding:22px 16px 26px}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview__name{font-size:clamp(1.9rem,12cqi,2.8rem)}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview__actions{display:grid;grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview__actions span{justify-content:center}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-project-grid, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-gallery--categories, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-custom-card-grid{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-section-stack{padding-inline:10px}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-portfolio-footer{align-items:flex-start;flex-direction:column}
+}
+@container (max-width:48rem){
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-project-grid, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-credentials{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-gallery{grid-template-columns:repeat(3,minmax(72px,1fr))}
+}
+@container (max-width:36rem){
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-module{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .studio-field-grid, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .manager-grid, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .portrait-workbench, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .about-workbench, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .cta-workbench, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .publishing-controls{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .studio-span, html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .manager-span{grid-column:auto}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .preview-hero{padding:clamp(16px,5vw,24px)}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview>nav{gap:8px;padding-inline:12px}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview>nav span{display:none}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .home-live-preview__portrait-wrap{width:min(100%,280px);justify-self:center}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .mini-portfolio-footer{align-items:flex-start;flex-direction:column;padding-inline:14px}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .about-presentation .studio-field-stack{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-overrides{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .module-composition-layout-controls{grid-template-columns:1fr;align-items:stretch}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .module-composition-layout-recommendation{grid-column:auto}
+}
+
+
+/* Home / Studio section controls reflow from the composer column's actual width.
+   The page may remain globally Wide while the composer is narrow beside Live Preview. */
+@container home-section-composer (max-width:44rem){
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-composer-row{grid-template-columns:auto auto minmax(0,1fr);grid-template-areas:"drag icon copy" ". . visibility" ". . switch" ". . order" ". . actions" "quick quick quick";align-items:start}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-visibility{justify-self:start}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-switch{width:100%;justify-content:space-between;min-width:0}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-order-field{width:100%;grid-template-columns:minmax(min-content,max-content) minmax(4.75rem,7rem);justify-content:space-between;justify-items:start;text-align:left}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-order-field input{width:100%}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-placement-summary{display:grid;justify-items:start}
+}
+@container home-section-composer (max-width:24rem){
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-composer-row{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"icon copy" "visibility visibility" "switch switch" "order order" "actions actions" "quick quick";align-items:start}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-drag-handle{display:none}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-visibility{justify-self:start}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-switch{width:100%;justify-content:space-between}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-order-field{width:100%;grid-template-columns:minmax(min-content,max-content) minmax(4.75rem,7rem);justify-content:space-between}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-order-field input{width:100%}
+  html[data-lan-admin-architecture="shared"] [data-lan-home-studio] .section-placement-summary{display:grid;justify-items:start}
+}
+
+/* Settings telemetry stacks from its own card width so the chart and Public
+   Readiness panel cannot overlap inside a narrow workspace. */
+@container settings-telemetry-card (max-width:54rem){
+  html[data-lan-admin-architecture="shared"] .settings-distribution-layout{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .settings-distribution-side{grid-template-columns:1fr;align-items:start}
+  html[data-lan-admin-architecture="shared"] .settings-portfolio-health{width:100%}
+}
+@container settings-telemetry-card (max-width:42rem){
+  html[data-lan-admin-architecture="shared"] .settings-telemetry-toolbar{grid-template-columns:1fr;align-items:stretch}
+  html[data-lan-admin-architecture="shared"] .settings-telemetry-toolbar-actions{max-width:none;justify-content:stretch}
+  html[data-lan-admin-architecture="shared"] .settings-telemetry-series-controls{width:100%}
+  html[data-lan-admin-architecture="shared"] .settings-health-summary-head{flex-wrap:wrap}
+  html[data-lan-admin-architecture="shared"] .settings-health-stat-grid{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .settings-health-stat-grid small{white-space:normal;overflow-wrap:break-word}
+}
+
+
+/* module component */
+@container custom-module-editor (max-width:52rem){html[data-lan-admin-architecture="shared"] .custom-module-filters{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] .custom-module-filters>label:first-child{grid-column:1/-1}html[data-lan-admin-architecture="shared"] .custom-module-view-switch{justify-content:flex-start}html[data-lan-admin-architecture="shared"] .custom-module-entry-list{grid-template-columns:1fr}}
+@container custom-module-editor (max-width:46rem){html[data-lan-admin-architecture="shared"] .module-admin-icon-control{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .module-admin-icon-preview{min-height:3rem}html[data-lan-admin-architecture="shared"] .custom-module-capability-grid, html[data-lan-admin-architecture="shared"] .custom-module-entry-form .simple-form-grid, html[data-lan-admin-architecture="shared"] .module-core-entry-editor, html[data-lan-admin-architecture="shared"] .module-entry-system-meta{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .custom-module-entry-form .full-field{grid-column:auto}html[data-lan-admin-architecture="shared"] .custom-module-subheading{align-items:flex-start;flex-direction:column}html[data-lan-admin-architecture="shared"] .custom-module-subheading>small{text-align:left}html[data-lan-admin-architecture="shared"] .custom-module-capability-picker{padding:.8rem}html[data-lan-admin-architecture="shared"] .custom-module-filters{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .custom-module-filters>label:first-child{grid-column:auto}html[data-lan-admin-architecture="shared"] .custom-module-view-switch{width:100%}html[data-lan-admin-architecture="shared"] .custom-module-view-switch>*{flex:1 1 0}}
+@container custom-module-library (max-width:44rem){html[data-lan-admin-architecture="shared"] .custom-module-filters{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] .custom-module-filters>label:first-child{grid-column:1/-1}html[data-lan-admin-architecture="shared"] .custom-module-view-switch{grid-column:1/-1;width:100%;justify-content:flex-start}html[data-lan-admin-architecture="shared"] .custom-module-view-switch>*{flex:1 1 0}html[data-lan-admin-architecture="shared"] .custom-module-entry-list{grid-template-columns:1fr}}
+@container custom-module-library (max-width:30rem){html[data-lan-admin-architecture="shared"] .custom-module-filters{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .custom-module-filters>label:first-child, html[data-lan-admin-architecture="shared"] .custom-module-view-switch{grid-column:auto}html[data-lan-admin-architecture="shared"] .custom-module-entry-library-panel>.editor-panel-header{align-items:flex-start;flex-direction:column}html[data-lan-admin-architecture="shared"] .custom-module-entry-library-panel>.editor-panel-header>div{min-width:0}html[data-lan-admin-architecture="shared"] .custom-module-pagination{align-items:stretch;flex-wrap:wrap}}
+@container custom-module-page (min-width:58.01rem){html[data-lan-admin-architecture="shared"] .custom-module-page[data-module-presentation="first-class"] .custom-module-entry-workbench:not(.lan-record-workspace)[data-entry-surface="editor"]{grid-template-columns:minmax(19rem,.68fr) minmax(0,1.32fr);align-items:start}html[data-lan-admin-architecture="shared"] .custom-module-page[data-module-presentation="first-class"] .custom-module-entry-workbench:not(.lan-record-workspace)[data-entry-surface="editor"]>.custom-module-entry-workspace-panel{grid-column:1}html[data-lan-admin-architecture="shared"] .custom-module-page[data-module-presentation="first-class"] .custom-module-entry-workbench:not(.lan-record-workspace)[data-entry-surface="editor"]>#moduleEntryForm{grid-column:2;grid-row:1}html[data-lan-admin-architecture="shared"] .custom-module-page[data-module-presentation="first-class"] .custom-module-entry-workbench[data-entry-surface="editor"] .custom-module-filters{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .custom-module-page[data-module-presentation="first-class"] .custom-module-entry-workbench[data-entry-surface="editor"] .custom-module-view-switch{justify-content:flex-start}}
+@container custom-module-page (max-width:92rem){html[data-lan-admin-architecture="shared"] .custom-module-three-column{grid-template-columns:minmax(14rem,.55fr) minmax(31rem,1.45fr) minmax(18rem,.72fr)}}
+@container custom-module-page (max-width:76rem){html[data-lan-admin-architecture="shared"] .custom-module-three-column{grid-template-columns:minmax(14rem,.55fr) minmax(0,1.45fr);grid-template-areas:"queue editor" "preview editor"}html[data-lan-admin-architecture="shared"] .custom-module-queue-column{grid-area:queue}html[data-lan-admin-architecture="shared"] .custom-module-editor-column{grid-area:editor}html[data-lan-admin-architecture="shared"] .custom-module-preview-column{grid-area:preview;position:static;max-height:none}html[data-lan-admin-architecture="shared"] .module-field-primary-grid, html[data-lan-admin-architecture="shared"] .module-field-context-grid, html[data-lan-admin-architecture="shared"] .custom-module-capability-grid, html[data-lan-admin-architecture="shared"] .module-entry-capabilities__layout{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .module-core-properties__grid{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] .custom-module-entry-mode{grid-template-columns:1fr}}
+@container custom-module-page (max-width:58rem){html[data-lan-admin-architecture="shared"] .custom-module-entry-workbench[data-entry-surface="editor"] #moduleEntryForm{order:-1}html[data-lan-admin-architecture="shared"] .module-studio-nav{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] .module-studio-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] .custom-module-create-layout{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .custom-module-register-form{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .custom-module-register-actions{justify-content:flex-start}html[data-lan-admin-architecture="shared"] .custom-module-three-column{grid-template-columns:1fr;grid-template-areas:"queue" "editor" "preview"}html[data-lan-admin-architecture="shared"] .custom-module-queue-column{position:static;max-height:none}html[data-lan-admin-architecture="shared"] .custom-module-registry-list{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] .custom-module-editor-head{flex-direction:column}html[data-lan-admin-architecture="shared"] .custom-module-head-actions{justify-content:flex-start}html[data-lan-admin-architecture="shared"] .custom-module-entry-list{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .custom-module-stats{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] .custom-module-entry-form .simple-form-grid, html[data-lan-admin-architecture="shared"] .custom-module-filters, html[data-lan-admin-architecture="shared"] .module-core-entry-editor, html[data-lan-admin-architecture="shared"] .module-entry-system-meta{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .module-core-properties__grid{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .custom-module-entry-form .full-field{grid-column:auto}html[data-lan-admin-architecture="shared"] .custom-module-subheading{align-items:flex-start;flex-direction:column}html[data-lan-admin-architecture="shared"] .custom-module-subheading>small{text-align:left}}
+@container custom-module-page (max-width:40rem){html[data-lan-admin-architecture="shared"] .module-studio-nav{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .module-studio-nav__item{min-height:3.9rem}html[data-lan-admin-architecture="shared"] .module-studio-metrics{grid-template-columns:1fr 1fr}html[data-lan-admin-architecture="shared"] .custom-module-registry-list{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .custom-module-stats{grid-template-columns:1fr 1fr}html[data-lan-admin-architecture="shared"] .custom-module-head-actions{display:grid;width:100%;grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .custom-module-head-actions>*{width:100%;min-width:0}html[data-lan-admin-architecture="shared"] .custom-module-filters{grid-template-columns:1fr}}
+@container custom-module-page (max-width:24rem){html[data-lan-admin-architecture="shared"] .custom-module-stats{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .custom-module-preview-shell, html[data-lan-admin-architecture="shared"] .custom-module-preview-meta{padding:.75rem}html[data-lan-admin-architecture="shared"] .custom-module-admin-preview__library, html[data-lan-admin-architecture="shared"] .custom-module-admin-preview__studio{padding:.6rem}}
+@container module-entry-capabilities (max-width:24rem){html[data-lan-admin-architecture="shared"] .module-schema-section-heading{align-items:stretch;flex-direction:column;gap:.5rem}html[data-lan-admin-architecture="shared"] .module-capabilities-optional{width:max-content;max-width:100%;white-space:normal;overflow-wrap:break-word;word-break:normal}html[data-lan-admin-architecture="shared"] .module-skills-tools-options{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .module-shared-capability-option .simple-check{min-width:0;white-space:normal;overflow-wrap:break-word;word-break:normal}}
+
+/* photo-editing component */
+@container photo-editor-shell (max-width:48rem){html[data-lan-admin-architecture="shared"] #sampleModal .photo-editor-body[data-display-type="comparison"] .photo-editor-section--before, html[data-lan-admin-architecture="shared"] #sampleModal .photo-editor-body[data-display-type="comparison"] .photo-editor-section--after{grid-column:1/-1}html[data-lan-admin-architecture="shared"] #sampleModal .photo-editor-body{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] #sampleModal .photo-editor-body>*{grid-column:1}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .display-type-grid, html[data-lan-admin-architecture="shared"] .form-grid, html[data-lan-admin-architecture="shared"] .toggle-grid{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .gallery-preview-grid{grid-template-columns:repeat(3,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] #sampleModal .photo-editor-tabs{top:auto}}
+@container (max-width:36rem){html[data-lan-admin-architecture="shared"] .gallery-preview-grid, html[data-lan-admin-architecture="shared"] .upload-information, html[data-lan-admin-architecture="shared"] .upload-limit-details{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] #sampleModal .modal-container{width:100%;max-height:calc(100dvh - 16px)}html[data-lan-admin-architecture="shared"] #sampleModal .photo-editor-tabs{top:auto;margin:0}html[data-lan-admin-architecture="shared"] .comparison-preview-large{min-height:260px}}
+@container (max-width:36rem){html[data-lan-admin-architecture="shared"] .photo-category-create-row{grid-template-columns:1fr}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .photo-category-manager-row{grid-template-columns:auto minmax(0,1fr)}html[data-lan-admin-architecture="shared"] .photo-category-manager-actions{grid-column:2}html[data-lan-admin-architecture="shared"] .photo-category-manager-edit{grid-template-columns:1fr auto auto}html[data-lan-admin-architecture="shared"] .photo-category-reassign{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .photo-category-create-manager{grid-template-columns:1fr}}
+@container (max-width:36rem){html[data-lan-admin-architecture="shared"] .photo-category-manager-edit{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .photo-category-manager-actions{flex-wrap:wrap}html[data-lan-admin-architecture="shared"] .photo-category-manager-row{align-items:start}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .photo-shared-capability-grid, html[data-lan-admin-architecture="shared"] .photo-capability-profile-grid{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .photo-capability-inheritance-head{align-items:stretch;flex-direction:column}}
+
+/* projects component */
+@container project-media-section (max-width:34rem){html[data-lan-admin-architecture="shared"] .project-media-notice{grid-template-columns:minmax(0,1fr)}html[data-lan-admin-architecture="shared"] .project-media-notice-heading{padding:0 0 10px;border-right:0;border-bottom:1px solid var(--border)}html[data-lan-admin-architecture="shared"] .project-media-status-list{grid-template-columns:repeat(auto-fit,minmax(min(12rem,100%),1fr))}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .project-secondary-action-head{flex-direction:column}html[data-lan-admin-architecture="shared"] .project-secondary-action-head-controls{width:100%;flex-wrap:wrap}html[data-lan-admin-architecture="shared"] .project-secondary-action-toggle{width:100%}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .project-public-tag-mode, html[data-lan-admin-architecture="shared"] .project-public-tag-groups{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .project-public-tags-head{flex-direction:column}}
+@container (max-width:60rem){html[data-lan-admin-architecture="shared"] .project-reference-grid{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .project-capabilities-heading{flex-direction:column;align-items:stretch}html[data-lan-admin-architecture="shared"] .project-capabilities-heading>a{align-self:flex-start}html[data-lan-admin-architecture="shared"] .project-skill-selector-heading{flex-direction:column;align-items:stretch}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .project-smart-suggestions{flex-direction:column}html[data-lan-admin-architecture="shared"] .project-smart-suggestion-list{justify-content:flex-start}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .project-inherited-capability-head{flex-direction:column}html[data-lan-admin-architecture="shared"] .project-inherited-capability-groups{grid-template-columns:1fr}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .project-action-assets-heading{flex-direction:column}html[data-lan-admin-architecture="shared"] .project-action-assets-status{align-self:flex-start}html[data-lan-admin-architecture="shared"] .project-video-source-tabs{display:flex;width:100%}html[data-lan-admin-architecture="shared"] .project-video-source-button{flex:1}}
+@container (max-width:60rem){html[data-lan-admin-architecture="shared"] .linked-connection-grid{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .linked-connection-rail{grid-template-columns:auto 1fr auto 1fr auto}html[data-lan-admin-architecture="shared"] .linked-source-fields{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .linked-preview-content{grid-template-columns:96px minmax(0,1fr)}html[data-lan-admin-architecture="shared"] .linked-source-thumbnail{width:96px}html[data-lan-admin-architecture="shared"] .project-linked-action-grid{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] .project-linked-action-label{grid-column:1/-1}}
+@container (max-width:36rem){html[data-lan-admin-architecture="shared"] .linked-connection-rail b{display:none}html[data-lan-admin-architecture="shared"] .linked-preview-content{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .linked-source-thumbnail{width:100%;max-height:180px}html[data-lan-admin-architecture="shared"] .linked-source-metadata{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .project-linked-actions-heading, html[data-lan-admin-architecture="shared"] .project-linked-action>header{align-items:stretch;flex-direction:column}html[data-lan-admin-architecture="shared"] .project-linked-actions-heading>button, html[data-lan-admin-architecture="shared"] .project-linked-action>header>button{width:100%;justify-content:center}html[data-lan-admin-architecture="shared"] .project-linked-action-grid{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .project-linked-action-label{grid-column:auto}html[data-lan-admin-architecture="shared"] .lan-project-preview-actions .lan-project-preview-action.is-secondary{flex-basis:100%}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .linked-success-state{grid-template-columns:44px minmax(0,1fr)}html[data-lan-admin-architecture="shared"] .linked-success-action{grid-column:1/-1;justify-self:stretch;justify-content:center}}
+@container (max-width:48rem){
+  html[data-lan-admin-architecture="shared"] .projects-toolbar{display:grid;grid-template-columns:1fr;align-items:stretch;gap:var(--space-3)}
+  html[data-lan-admin-architecture="shared"] .projects-statistics{order:initial;width:100%;margin-left:0;flex-wrap:wrap}html[data-lan-admin-architecture="shared"] .projects-statistics article{flex:1 1 min(5.5rem,100%);min-width:0}
+  html[data-lan-admin-architecture="shared"] .project-list, html[data-lan-admin-architecture="shared"] .project-type-selector, html[data-lan-admin-architecture="shared"] .editor-form-grid, html[data-lan-admin-architecture="shared"] .linked-source-fields, html[data-lan-admin-architecture="shared"] .project-media-grid, html[data-lan-admin-architecture="shared"] .project-resource-grid, html[data-lan-admin-architecture="shared"] .project-toggle-group{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .project-filters{grid-template-columns:1fr}
+}
+@container (max-width:48rem){
+  html[data-lan-admin-architecture="shared"] .project-filters, html[data-lan-admin-architecture="shared"] .project-list{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .project-library-panel{padding:var(--space-4)}
+}
+@container (max-width:48rem){
+  html[data-lan-admin-architecture="shared"] .projects-toolbar{flex-wrap:wrap}
+  html[data-lan-admin-architecture="shared"] .projects-statistics{order:3;width:100%;margin-left:0}
+}
+@container (max-width:60rem){html[data-lan-admin-architecture="shared"] .project-smart-target{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .project-smart-target input{width:100%;min-width:0}html[data-lan-admin-architecture="shared"] .project-smart-target-manage.editor-secondary-button{justify-self:stretch}html[data-lan-admin-architecture="shared"] .project-media-plan, html[data-lan-admin-architecture="shared"] .project-smart-media-controls{align-items:stretch;flex-direction:column}html[data-lan-admin-architecture="shared"] .project-media-plan-chips, html[data-lan-admin-architecture="shared"] .project-smart-media-buttons{justify-content:flex-start}html[data-lan-admin-architecture="shared"] .project-video-preview:not(.hidden){grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .project-video-preview-actions{justify-content:flex-start}}
+
+/* services component */
+@container (max-width:50rem){html[data-lan-admin-architecture="shared"] .services-record-main{grid-template-columns:minmax(0,1fr) minmax(8.5rem,.48fr);grid-template-areas:"primary controls" "description description";gap:.8rem}html[data-lan-admin-architecture="shared"] .services-side-controls{grid-template-columns:minmax(4rem,1fr) minmax(4.25rem,1fr)}html[data-lan-admin-architecture="shared"] .services-record-actions .service-delete{width:100%;min-width:0}}
+@container (max-width:38rem){html[data-lan-admin-architecture="shared"] .services-record-main{grid-template-columns:1fr;grid-template-areas:"primary" "description" "controls"}html[data-lan-admin-architecture="shared"] .services-description-field{height:auto}html[data-lan-admin-architecture="shared"] .services-description-field textarea{height:var(--service-description-min-height);flex:none}html[data-lan-admin-architecture="shared"] .services-side-controls{height:auto;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto auto;grid-template-areas:"order visible" "delete delete"}html[data-lan-admin-architecture="shared"] .services-record-actions .service-delete{width:100%;min-width:0}}
+@container (max-width:72rem){html[data-lan-admin-architecture="shared"] .services-preview{position:static}html[data-lan-admin-architecture="shared"] .services-contact-grid{grid-template-columns:1fr 1fr}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .services-band{align-items:flex-start;flex-direction:column}html[data-lan-admin-architecture="shared"] .services-band-actions{width:100%;justify-content:flex-start}html[data-lan-admin-architecture="shared"] .services-form-grid, html[data-lan-admin-architecture="shared"] .services-contact-grid, html[data-lan-admin-architecture="shared"] .services-preview-cards{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .services-availability-card{grid-template-columns:minmax(0,1fr) auto}html[data-lan-admin-architecture="shared"] .services-full{grid-column:auto}html[data-lan-admin-architecture="shared"] .services-icon-search-label{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .services-icon-options{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] .services-savebar>div:last-child{display:grid;width:100%;grid-template-columns:1fr 1fr}html[data-lan-admin-architecture="shared"] .services-savebar>div:last-child>*{min-width:0}}
+@container (max-width:30rem){html[data-lan-admin-architecture="shared"] .services-availability-card{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .services-availability-card .lan-toggle-compact{justify-self:start}html[data-lan-admin-architecture="shared"] .services-icon-options{grid-template-columns:1fr}}
+
+/* settings component */
+@container (max-width:72rem){html[data-lan-admin-architecture="shared"] .settings-identity-media-layout{grid-template-columns:minmax(22rem,24rem) minmax(0,1fr)}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .settings-identity-media-layout{grid-template-columns:1fr;align-items:start}html[data-lan-admin-architecture="shared"] .settings-communications-stack,html[data-lan-admin-architecture="shared"] .settings-identity-stack{width:100%;max-width:none;margin-inline:0;align-self:start}html[data-lan-admin-architecture="shared"] .settings-communications-stack>.settings-message-center,html[data-lan-admin-architecture="shared"] .settings-identity-stack>.settings-card-greeting{height:auto}}
+@container settings-security (max-width:62rem){html[data-lan-admin-architecture="shared"] .settings-security-detail-grid{grid-template-columns:1fr}}
+@container settings-security (max-width:38rem){html[data-lan-admin-architecture="shared"] .settings-security-hero,html[data-lan-admin-architecture="shared"] .settings-security-section>header{display:grid;grid-template-columns:minmax(0,1fr);justify-items:stretch}html[data-lan-admin-architecture="shared"] .settings-security-header-actions,html[data-lan-admin-architecture="shared"] .settings-security-section>header>.settings-actions{width:100%;justify-content:flex-start}html[data-lan-admin-architecture="shared"] .settings-security-section>header>.settings-actions>button,html[data-lan-admin-architecture="shared"] .settings-security-header-actions>button{flex:1 1 11rem}html[data-lan-admin-architecture="shared"] .settings-security-item{align-items:flex-start;flex-direction:column}html[data-lan-admin-architecture="shared"] .settings-security-item>.settings-actions{width:100%}html[data-lan-admin-architecture="shared"] .settings-security-item>.settings-actions>button{flex:1 1 8rem}html[data-lan-admin-architecture="shared"] .settings-security-danger-zone{align-items:stretch;flex-direction:column}html[data-lan-admin-architecture="shared"] .settings-security-danger-zone>button{width:100%}html[data-lan-admin-architecture="shared"] .settings-security-activity .settings-security-list{max-height:none;overflow:visible;padding-right:0;scrollbar-gutter:auto}}
+@container (max-width:72rem){html[data-lan-admin-architecture="shared"] .settings-diagnostic-summary{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] .settings-diagnostic-grid{grid-template-columns:1fr}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .settings-diagnostic-summary{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .settings-diagnostic-service{grid-template-columns:2rem minmax(0,1fr)}html[data-lan-admin-architecture="shared"] .settings-diagnostic-service-actions{grid-column:1/-1;justify-content:flex-end}html[data-lan-admin-architecture="shared"] .settings-history-item{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .settings-diagnostic-heading-actions{justify-content:flex-start}}
+@media (prefers-reduced-motion:reduce){html[data-lan-admin-architecture="shared"] .settings-portfolio-health::before, html[data-lan-admin-architecture="shared"] .settings-readiness-badge i, html[data-lan-admin-architecture="shared"] .settings-readiness-progress::after, html[data-lan-admin-architecture="shared"] .settings-telemetry-grid-vertical{animation:none}}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .settings-identity-stack{grid-template-rows:auto}html[data-lan-admin-architecture="shared"] .settings-card-storage, html[data-lan-admin-architecture="shared"] .settings-card-greeting, html[data-lan-admin-architecture="shared"] .settings-card-account{grid-column:1;grid-row:auto}}
+@container lan-admin-shell (max-width:72rem) {
+  html[data-lan-admin-architecture="shared"] .settings-content{ grid-template-columns: 5rem minmax(0,1fr); }
+  html[data-lan-admin-architecture="shared"] .settings-hero{ grid-template-columns: 1fr; }
+  html[data-lan-admin-architecture="shared"] .settings-radar-monitor{ grid-template-columns:minmax(31rem,1fr) 12rem; }
+  html[data-lan-admin-architecture="shared"] .settings-card-distribution{ grid-column:span 8; }
+  html[data-lan-admin-architecture="shared"] .settings-dashboard-side{ grid-column:span 4; }
+  html[data-lan-admin-architecture="shared"] .settings-card-storage, html[data-lan-admin-architecture="shared"] .settings-card-greeting, html[data-lan-admin-architecture="shared"] .settings-card-account{grid-column:auto;grid-row:auto;align-self:stretch}
+  html[data-lan-admin-architecture="shared"] .settings-card-branding{ grid-template-columns:6rem 1fr; }
+  html[data-lan-admin-architecture="shared"] .settings-branding-body{ grid-column:2; grid-template-columns:1fr 1fr; }
+  html[data-lan-admin-architecture="shared"] .settings-branding-body .settings-actions{ grid-column:1/-1; }
+  html[data-lan-admin-architecture="shared"] .settings-backup-actions{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  html[data-lan-admin-architecture="shared"] .settings-backup-actions .backup-action-card:last-child{ grid-column:1/-1; min-height:7rem; }
+}
+@container lan-admin-shell (max-width:60rem) {
+  html[data-lan-admin-architecture="shared"] .settings-content{ grid-template-columns:1fr; }
+  html[data-lan-admin-architecture="shared"] .settings-control-rail{ position:static; grid-column:1; height:max-content; }
+  html[data-lan-admin-architecture="shared"] .settings-control-rail .workspace-tab{ min-height:3.9rem; }
+  html[data-lan-admin-architecture="shared"] .settings-primary-grid{ grid-column:1; }
+  html[data-lan-admin-architecture="shared"] .settings-overview-strip{ grid-template-columns:repeat(2,1fr); }
+  html[data-lan-admin-architecture="shared"] .settings-general-dashboard{ grid-template-columns:1fr; }
+  html[data-lan-admin-architecture="shared"] .settings-card-distribution, html[data-lan-admin-architecture="shared"] .settings-dashboard-side, html[data-lan-admin-architecture="shared"] .settings-identity-media-layout, html[data-lan-admin-architecture="shared"] .settings-card-branding{ grid-column:1; }
+  html[data-lan-admin-architecture="shared"] .settings-card-storage{grid-row:auto}
+  html[data-lan-admin-architecture="shared"] .settings-distribution-layout, html[data-lan-admin-architecture="shared"] .settings-portfolio-layout, html[data-lan-admin-architecture="shared"] .settings-backup-layout, html[data-lan-admin-architecture="shared"] .settings-appearance-layout, html[data-lan-admin-architecture="shared"] .dashboard-visual-setting{ grid-template-columns:1fr; }
+  html[data-lan-admin-architecture="shared"] .settings-card-branding{ grid-template-columns:5.5rem 1fr; }
+  html[data-lan-admin-architecture="shared"] .settings-tab-kpis{ grid-template-columns:repeat(2,1fr); }
+  html[data-lan-admin-architecture="shared"] .settings-backup-visual{ min-height:19rem; }
+  html[data-lan-admin-architecture="shared"] .settings-advanced-body{ grid-template-columns:minmax(0,1fr); }
+  html[data-lan-admin-architecture="shared"] .settings-advanced-section, html[data-lan-admin-architecture="shared"] .settings-advanced-section:first-child{ grid-column:1; }
+}
+@container lan-admin-shell (max-width:48rem) {
+  html[data-lan-admin-architecture="shared"] .settings-hero{min-height:0}
+  html[data-lan-admin-architecture="shared"] .settings-radar-monitor{min-height:0}
+  html[data-lan-admin-architecture="shared"] .module-lifecycle-summary-card{grid-template-columns:minmax(0,1fr) auto}html[data-lan-admin-architecture="shared"] .module-lifecycle-summary-card>button{grid-column:1/-1;width:100%}
+  html[data-lan-admin-architecture="shared"] .settings-hero{ padding:1rem; }
+  html[data-lan-admin-architecture="shared"] .settings-hero-copy{ align-items:flex-start; }
+  html[data-lan-admin-architecture="shared"] .settings-hero-mark{ width:3.8rem;height:3.8rem; }
+  html[data-lan-admin-architecture="shared"] .settings-celestial-layer .lan-header-astronaut{width:3rem;height:3rem}
+  html[data-lan-admin-architecture="shared"] .settings-radar-monitor{ grid-template-columns:1fr; }
+  html[data-lan-admin-architecture="shared"] .settings-radar-stage{ min-height:12rem; }
+  html[data-lan-admin-architecture="shared"] .settings-radar-summary{ border-top:1px solid var(--border);border-left:0; }
+  html[data-lan-admin-architecture="shared"] .radar-auth, html[data-lan-admin-architecture="shared"] .radar-cloudinary{ left:.4rem; }html[data-lan-admin-architecture="shared"] .radar-firestore, html[data-lan-admin-architecture="shared"] .radar-public{right:.2rem}
+  html[data-lan-admin-architecture="shared"] .settings-control-rail .workspace-tab{ min-width:0; padding-inline:.2rem; }
+  html[data-lan-admin-architecture="shared"] .settings-control-rail .settings-tab-icon{width:2rem;height:2rem}
+  html[data-lan-admin-architecture="shared"] .settings-control-rail .workspace-tab b{font-size:.58rem}
+  html[data-lan-admin-architecture="shared"] .settings-overview-strip, html[data-lan-admin-architecture="shared"] .settings-tab-kpis, html[data-lan-admin-architecture="shared"] .settings-tab-kpis-compact, html[data-lan-admin-architecture="shared"] .settings-backup-actions, html[data-lan-admin-architecture="shared"] .settings-backup-footprint, html[data-lan-admin-architecture="shared"] .simple-report.settings-report{ grid-template-columns:1fr; }
+  html[data-lan-admin-architecture="shared"] .settings-overview-metric{ grid-template-columns:auto 1fr 3.6rem; }
+  html[data-lan-admin-architecture="shared"] .settings-distribution-layout{ display:grid; grid-template-columns:1fr; }
+  html[data-lan-admin-architecture="shared"] .settings-distribution-side{grid-template-columns:1fr;}
+  html[data-lan-admin-architecture="shared"] .pipeline-stage{ grid-template-columns:auto 1fr auto; }html[data-lan-admin-architecture="shared"] .pipeline-stage-readout{grid-column:3}html[data-lan-admin-architecture="shared"] .pipeline-rail{display:none}html[data-lan-admin-architecture="shared"] .settings-pipeline-engine{grid-template-columns:1fr;gap:.55rem}
+  html[data-lan-admin-architecture="shared"] .settings-operation-stage{ grid-template-columns:1fr; text-align:center; justify-items:center; }
+  html[data-lan-admin-architecture="shared"] .settings-backup-vault{width:11rem}html[data-lan-admin-architecture="shared"] .settings-backup-visual{min-height:17rem}
+  html[data-lan-admin-architecture="shared"] .preview-metrics{grid-template-columns:repeat(2,1fr)}html[data-lan-admin-architecture="shared"] .preview-dashboard-grid{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .preview-dashboard-grid aside{display:none}
+  html[data-lan-admin-architecture="shared"] .settings-branding-body{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .settings-info-list>div{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .settings-info-list dd{text-align:left}
+}
+@container (max-width:72rem){
+  html[data-lan-admin-architecture="shared"] .settings-distribution-layout{grid-template-columns:minmax(0,1fr) 16.5rem}
+}
+@container (max-width:60rem){
+  html[data-lan-admin-architecture="shared"] .settings-distribution-layout{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .settings-distribution-side{grid-template-columns:minmax(17rem,.68fr) minmax(0,1fr);align-items:start}
+}
+@container (max-width:48rem){
+  html[data-lan-admin-architecture="shared"] .settings-distribution-side{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .settings-telemetry-plot{height:14.5rem;min-height:14.5rem}
+  html[data-lan-admin-architecture="shared"] .settings-telemetry-scroll{inset:1rem 2.75rem 2.1rem 2.5rem}
+}
+@container (max-width:36rem){
+  html[data-lan-admin-architecture="shared"] .settings-telemetry-series-controls button{min-width:0}
+  html[data-lan-admin-architecture="shared"] .settings-telemetry-trace-caption span{display:none}
+  html[data-lan-admin-architecture="shared"] .settings-live-axis{width:2.2rem}
+  html[data-lan-admin-architecture="shared"] .settings-cloudinary-usage{grid-template-columns:1fr 1fr}
+  html[data-lan-admin-architecture="shared"] .settings-media-legend{grid-template-columns:1fr 1fr}
+}
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .settings-greeting-stage{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .greeting-energy{justify-self:end}html[data-lan-admin-architecture="shared"] .settings-identity-fields, html[data-lan-admin-architecture="shared"] .settings-identity-actions{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .settings-identity-fields .settings-field small{min-height:0}}
+
+/* simple-manager component */
+@container (max-width:72rem){
+  html[data-lan-admin-architecture="shared"] .lan-record-workspace[data-preview-open="true"]{grid-template-columns:minmax(15rem,.68fr) minmax(0,1.32fr)}
+  html[data-lan-admin-architecture="shared"] .certificate-media-workbench{grid-template-columns:1fr}
+}
+@container (max-width:60rem){
+  html[data-lan-admin-architecture="shared"] .lan-record-workspace{grid-template-columns:minmax(15rem,.68fr) minmax(0,1.32fr);grid-template-areas:"stats stats" "library editor"}
+  html[data-lan-admin-architecture="shared"] .lan-record-workspace[data-preview-open="true"]{grid-template-columns:minmax(15rem,.68fr) minmax(0,1.32fr);grid-template-areas:"stats stats" "library preview"}
+  html[data-lan-admin-architecture="shared"] .lan-record-workspace>.lan-record-workspace__preview{position:static}
+  html[data-lan-admin-architecture="shared"] .lan-resume-frame{min-height:560px}
+  html[data-lan-admin-architecture="shared"] .lan-contact-live-preview{position:static}
+}
+@container (max-width:48rem){
+  html[data-lan-admin-architecture="shared"] .lan-record-workspace{display:grid;grid-template-columns:1fr;grid-template-areas:"stats" "library" "editor"}
+  html[data-lan-admin-architecture="shared"] .lan-record-workspace[data-preview-open="true"]{grid-template-columns:1fr;grid-template-areas:"stats" "library" "preview"}
+  html[data-lan-admin-architecture="shared"] .lan-record-workspace>.lan-record-workspace__library{position:static}
+  html[data-lan-admin-architecture="shared"] .certificate-media-workbench{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .certificate-upload-actions{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .certificate-upload-actions .editor-danger-button{grid-column:auto}
+  html[data-lan-admin-architecture="shared"] .lan-resume-frame{min-height:470px}
+  html[data-lan-admin-architecture="shared"] .lan-resume-preview-actions{align-items:stretch;flex-direction:column}
+  html[data-lan-admin-architecture="shared"] .lan-resume-preview-action-buttons{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+  html[data-lan-admin-architecture="shared"] .lan-resume-preview-action-buttons>*{min-width:0}
+  html[data-lan-admin-architecture="shared"] .contact-method-manager{grid-template-columns:1fr;align-items:start}
+  html[data-lan-admin-architecture="shared"] .contact-method-manager-actions{width:100%;grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .contact-savebar>div:last-child{width:100%;display:grid;grid-template-columns:1fr 1fr}html[data-lan-admin-architecture="shared"] .contact-savebar>div:last-child>*{min-width:0}
+  html[data-lan-admin-architecture="shared"] .contact-method-extra-grid{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .lan-contact-preview-card{min-height:460px;padding:22px}
+  html[data-lan-admin-architecture="shared"] .lan-contact-preview-card dl div{grid-template-columns:1fr;gap:3px}
+}
+@container (max-width:30rem){
+  html[data-lan-admin-architecture="shared"] .lan-record-workspace .simple-card{padding:.75rem}
+  html[data-lan-admin-architecture="shared"] .certificate-card, html[data-lan-admin-architecture="shared"] .resume-card{grid-template-columns:42px minmax(0,1fr);gap:9px}
+  html[data-lan-admin-architecture="shared"] .certificate-card-media, html[data-lan-admin-architecture="shared"] .resume-card-mark{width:42px;height:42px;border-radius:12px}
+  html[data-lan-admin-architecture="shared"] .lan-resume-preview-action-buttons{grid-template-columns:1fr}
+  html[data-lan-admin-architecture="shared"] .lan-resume-frame{min-height:360px}
+  html[data-lan-admin-architecture="shared"] .contact-savebar>div:last-child{grid-template-columns:1fr}
+}
+
+/* Canonical overview reflow: overview copy and actions stack from available
+   workspace geometry, not page identity or device names. */
+html[data-lan-admin-architecture="shared"]:is([data-lan-admin-mode="compact"],[data-lan-admin-mode="mobile"]) [data-lan-page-overview]{align-items:flex-start;flex-direction:column;flex-wrap:nowrap}
+html[data-lan-admin-architecture="shared"]:is([data-lan-admin-mode="compact"],[data-lan-admin-mode="mobile"]) [data-lan-page-overview]>:first-child{width:100%;flex-basis:auto}
+html[data-lan-admin-architecture="shared"]:is([data-lan-admin-mode="compact"],[data-lan-admin-mode="mobile"]) [data-lan-page-actions]{display:grid;width:100%;grid-template-columns:repeat(auto-fit,minmax(min(10rem,100%),1fr));align-items:stretch}
+html[data-lan-admin-architecture="shared"]:is([data-lan-admin-mode="compact"],[data-lan-admin-mode="mobile"]) [data-lan-page-actions]>[data-lan-primary-action]{width:100%;min-width:0}
+
+/* skills component */
+@container (max-width:72rem){html[data-lan-admin-architecture="shared"] .skills-filter-grid{grid-template-columns:1fr 1fr}html[data-lan-admin-architecture="shared"] .skills-filter-grid .skills-search-field{grid-column:1/-1}html[data-lan-admin-architecture="shared"] .skills-list{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .skills-tool-shelf-list{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .skills-tool-filter-grid{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .skills-tool-filter-grid .skills-search-field{grid-column:auto}}
+@container (max-width:60rem){html[data-lan-admin-architecture="shared"] .skills-statistics{grid-template-columns:repeat(2,1fr)}html[data-lan-admin-architecture="shared"] .skills-list, html[data-lan-admin-architecture="shared"] .skills-tool-shelf-list{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] .skills-tool-filter-grid{grid-template-columns:minmax(170px,1fr) repeat(2,minmax(120px,.7fr))}}
+@container (max-width:36rem){html[data-lan-admin-architecture="shared"] .skills-statistics, html[data-lan-admin-architecture="shared"] .skills-filter-grid, html[data-lan-admin-architecture="shared"] .skills-tool-filter-grid{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .skills-filter-grid .skills-search-field{grid-column:auto}html[data-lan-admin-architecture="shared"] .skills-list, html[data-lan-admin-architecture="shared"] .skills-tool-shelf-list{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .skill-card{grid-template-columns:1fr;grid-template-areas:"identity" "meta" "progress" "links" "actions"}html[data-lan-admin-architecture="shared"] .skill-card:not(.has-links){grid-template-areas:"identity" "meta" "progress" "actions"}html[data-lan-admin-architecture="shared"] .skill-card-actions{justify-content:flex-end}}
+
+@container (max-width:60rem){html[data-lan-admin-architecture="shared"] .storage-hub-defaults{grid-template-columns:repeat(2,minmax(0,1fr))}html[data-lan-admin-architecture="shared"] .storage-hub-profile-grid{grid-template-columns:repeat(auto-fit,minmax(min(16rem,100%),1fr))}}
+@container (max-width:36rem){html[data-lan-admin-architecture="shared"] .storage-hub-defaults{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .storage-hub-profile-grid{grid-template-columns:1fr}html[data-lan-admin-architecture="shared"] .storage-hub-profile header{align-items:flex-start;flex-direction:column}html[data-lan-admin-architecture="shared"] .storage-hub-profile header>b{white-space:normal}}
+
+@container (max-width:48rem){html[data-lan-admin-architecture="shared"] .storage-hub-setup>header{display:grid}html[data-lan-admin-architecture="shared"] .storage-hub-setup-status{grid-template-columns:1fr}}
+
+
+/* Generated Module saved cards adapt from their own inline size. The page
+   stylesheet owns base visuals; canonical layout owns all adaptive reflow. */
+
+
+/* Persistent Admin workspace vertical-flow contract ----------------------
+   Wide, Compact and Mobile all use the same viewport-bound document and one
+   internal content scroller. Mode changes never replace scroll ownership.
+   Modals/viewers remain intentional internal-scroll exceptions. */
+html[data-lan-workspace-document="true"],html[data-lan-workspace-document="true"] body{width:100%;height:100%;min-height:0;overflow:hidden}
+html[data-lan-workspace-document="true"] :is(.editor-layout,.dashboard-shell,.composer-shell){display:block;width:100%;height:100dvh;min-height:0;overflow:hidden}
+html[data-lan-workspace-document="true"] :is(.editor-main,.editor-workspace,.dashboard-workspace,.about-main,.composer-main){width:100%;height:100dvh;min-width:0;min-height:0;overflow:hidden}
+html[data-lan-workspace-document="true"] :is(.editor-content,.dashboard-stage,.about-canvas,.composer-canvas){position:relative;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;touch-action:pan-y;scrollbar-gutter:stable;scroll-padding-bottom:max(2rem,env(safe-area-inset-bottom,0px));padding-bottom:max(var(--admin-page-bottom),calc(env(safe-area-inset-bottom,0px) + 2rem))}
+html[data-lan-workspace-document="true"] :is(.composer-savebar,.about-savebar,.project-sticky-actions,.editor-savebar,.sticky-form-actions,.contact-savebar){max-width:100%}
+html[data-lan-workspace-document="true"] .lan-admin-sticky-pane,
+html[data-lan-workspace-document="true"] .lan-record-workspace>.lan-record-workspace__library,
+html[data-lan-workspace-document="true"] .lan-record-workspace>.lan-record-workspace__preview{max-height:none}
+
+.lan-admin-page-footer{grid-column:1/-1;display:flex;width:min(100%,var(--admin-page-content-max));min-width:0;align-items:center;justify-content:space-between;gap:1rem;margin:var(--space-3) auto 0;padding:1rem 0 max(.5rem,env(safe-area-inset-bottom,0px));border-top:1px solid color-mix(in srgb,var(--border-strong) 72%,transparent);color:var(--text-muted);font-size:var(--text-caption);line-height:var(--line-ui)}
+.lan-admin-page-footer strong{color:var(--text-secondary);font-size:var(--text-caption)}
+.lan-admin-page-footer small{min-width:0;text-align:right;overflow-wrap:break-word;word-break:normal}
+@container (max-width:32rem){.lan-admin-page-footer{align-items:flex-start;flex-direction:column;gap:.25rem}.lan-admin-page-footer small{text-align:left}}
+
+/* Persistent shell uses one viewport-bound frame/scroll architecture in every
+   adaptive mode. Wide, Compact and Mobile differ only in presentation. */
+.lan-admin-shell-page{width:100%;height:100dvh;min-height:0;overflow:hidden}
+.lan-admin-shell{height:100dvh;min-height:0;overflow:hidden}
+.lan-admin-workspace-host{position:relative;min-width:0;min-height:0;height:100dvh;overflow:hidden;background:var(--page)}
+.lan-admin-workspace-host[data-lan-workspace-state="loading"]::before{content:"Loading secure workspace…";position:absolute;inset:0;display:grid;place-items:center;color:var(--text-muted);font-size:var(--text-caption);letter-spacing:.02em;background:var(--page);z-index:0}
+.lan-admin-workspace-frame{position:absolute;inset:0;display:block;width:100%;height:100%;min-height:0;border:0;background:var(--page);opacity:1;transform:translateY(0);transition:opacity 180ms var(--motion-ease),transform 180ms var(--motion-ease)}
+.lan-admin-workspace-frame.is-preparing{visibility:hidden;pointer-events:none}
+.lan-admin-workspace-frame.is-entering{opacity:0;transform:translateY(3px)}
+.lan-admin-workspace-frame.is-leaving{opacity:0;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.lan-admin-workspace-frame{transition:none}.lan-admin-workspace-frame.is-entering{transform:none}}
+
+/* Settings communications adapts from its actual component width. */
+@container settings-communications (max-width:22rem){.settings-password-new-grid{grid-template-columns:1fr}.settings-password-actions{display:grid;grid-template-columns:1fr}.settings-password-actions>*{width:100%;min-width:0}.settings-message-app-header{grid-template-columns:auto minmax(0,1fr)}.settings-message-header-actions{grid-column:2;justify-self:start}.settings-message-thread-row{grid-template-columns:2.25rem minmax(0,1fr)}.settings-message-avatar{width:2.25rem;height:2.25rem}.settings-message-thread-meta{grid-column:2;grid-row:2;display:flex;justify-items:start;align-items:center;justify-content:flex-start;padding:0}.settings-message-conversation-meta{grid-template-columns:auto minmax(0,1fr)}.settings-message-conversation-meta>.editor-danger-button{grid-column:2;justify-self:start}.settings-message-reply{grid-template-columns:1fr}.settings-message-reply button{width:100%}}

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en" data-lan-workspace-document="true" data-lan-admin-architecture="shared">
+<head>
+  <link rel="icon" href="/assets/brand/lan-mark.svg" type="image/svg+xml">
+<meta charset="utf-8"/>
+<script src="../js/theme-controller.js" defer></script>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="description" content="Manage Work With Me services and direct client contact options"/>
+<title>Services | LΛN Portfolio CMS</title>
+<link href="../css/theme.css" rel="stylesheet"/>
+<link href="../css/shared-ui.css" rel="stylesheet"/>
+<link href="../css/services.css" rel="stylesheet"/>
+  <link href="../css/admin-layout.css" rel="stylesheet"/>
+</head>
+<body class="services-page">
+<div class="editor-layout">
+<main class="editor-main">
+  <header class="editor-topbar"><div><p class="editor-eyebrow">Hiring experience</p><h1>Services</h1></div><div class="editor-topbar-actions"><div class="editor-status-badge" id="saveStatus">Loading…</div><a class="editor-secondary-button" href="home.html#sections">Visibility in Home / Studio</a><button class="editor-secondary-button" id="previewServicesButton" type="button">Preview popup</button></div></header>
+  <section class="editor-content services-content lan-admin-workspace">
+    <form id="servicesForm" class="services-workspace lan-admin-grid lan-admin-grid--split" data-lan-adaptive-split="services-preview" novalidate>
+      <div class="services-editor-stack">
+        <section class="editor-panel services-panel"><div class="editor-panel-header" data-lan-action-header><div><p class="editor-eyebrow">Overview</p><h2>Public message</h2><p>Keep the copy short enough for clients who skim.</p></div></div><div class="services-form-grid"><label>Popup heading<input id="servicesHeading" maxlength="80" required/></label><label class="services-full">Intro<textarea id="servicesIntro" maxlength="360" rows="4" required></textarea></label></div></section>
+
+        <section class="editor-panel services-panel"><div class="editor-panel-header" data-lan-action-header><div><p class="editor-eyebrow">What I can help with</p><h2>Services offered</h2><p>All visible services are shown immediately in the popup; visitors do not need to open each one.</p></div><button class="editor-secondary-button button-compact" id="addServiceButton" data-lan-primary-action data-lan-create-action type="button">+ Add Service</button></div><div id="serviceRows" class="services-record-list"></div></section>
+
+        <section class="editor-panel services-panel"><div class="editor-panel-header" data-lan-action-header><div><p class="editor-eyebrow">Availability</p><h2>Work arrangements</h2><p>Choose the kinds of opportunities you want clients to see.</p></div></div><div id="availabilityRows" class="lan-option-grid services-availability-grid"></div></section>
+
+        <section class="editor-panel services-panel"><div class="editor-panel-header" data-lan-action-header><div><p class="editor-eyebrow">Direct contact</p><h2>Contact choices</h2><p>Email is the primary action; LinkedIn and Copy Email are optional supporting choices.</p></div></div><div class="services-contact-grid">
+          <article><label class="services-switch"><span class="services-switch-copy"><strong>Email</strong><small>Primary direct contact method</small></span><input id="servicesEmailEnabled" type="checkbox" role="switch"></label><label>Button label<input id="servicesEmailLabel" maxlength="40"></label><label>Email address<input id="servicesEmail" type="email" autocomplete="email"></label></article>
+          <article><label class="services-switch"><span class="services-switch-copy"><strong>LinkedIn</strong><small>Professional profile/contact path</small></span><input id="servicesLinkedinEnabled" type="checkbox" role="switch"></label><label>Button label<input id="servicesLinkedinLabel" maxlength="40"></label><label>LinkedIn URL<input id="servicesLinkedinUrl" type="url" placeholder="https://www.linkedin.com/in/..."></label></article>
+          <article><label class="services-switch"><span class="services-switch-copy"><strong>Copy Email</strong><small>Copies the same email address</small></span><input id="servicesCopyEmailEnabled" type="checkbox" role="switch"></label><label>Button label<input id="servicesCopyEmailLabel" maxlength="40"></label></article>
+        </div></section>
+
+        <section class="editor-panel services-panel"><div class="editor-panel-header" data-lan-action-header><div><p class="editor-eyebrow">Email template</p><h2>Prepared message</h2><p>The Email Me button opens the client's mail app with this subject and message ready to edit.</p></div></div><div class="services-form-grid"><label class="services-full">Subject<input id="servicesEmailSubject" maxlength="160"></label><label class="services-full">Message template<textarea id="servicesEmailTemplate" rows="9"></textarea></label></div></section>
+
+        <div class="editor-savebar services-savebar"><div><strong>Services publishing</strong><span id="servicesSaveHint">Draft changes stay private until you publish.</span></div><div><button class="editor-secondary-button" id="saveServicesDraft" type="button">Save as Draft</button><button class="editor-primary-button" id="publishServices" type="button">Publish Services</button></div></div>
+      </div>
+
+      <aside class="editor-panel services-preview lan-admin-sticky-pane" aria-label="Work With Me preview"><div class="lan-live-preview__header"><span>Public popup preview</span><b id="servicesPreviewStatus">Draft</b></div><div class="services-preview-canvas"><div class="services-preview-head"><p class="editor-eyebrow">Work With Me</p><h2 id="servicesPreviewHeading"></h2><p id="servicesPreviewIntro"></p></div><div id="servicesPreviewAvailability" class="services-preview-chips"></div><div id="servicesPreviewCards" class="services-preview-cards"></div><div class="services-preview-contact"><strong>Ready to discuss your work?</strong><div id="servicesPreviewContactButtons"></div></div></div></aside>
+    </form>
+  </section>
+</main>
+</div>
+<script src="../js/workspace-host.js" type="module"></script>
+<script src="../js/admin-ui.js" type="module"></script>
+
+<script src="../js/services.js" type="module"></script>
+</body>
+</html>

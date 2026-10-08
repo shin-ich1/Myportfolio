@@ -1,16 +1,21 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <link rel="icon" href="/assets/brand/lan-mark.svg" type="image/svg+xml">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#050b14" />
   <meta name="description" content="Professional portfolio of Rolando Lagmay Jr. — IT, data management, software projects, and creative work." />
   <title>Rolando Lagmay Jr. | Portfolio</title>
+  <script>(function(){try{var t=localStorage.getItem("theme")==="light"?"light":"dark";document.documentElement.dataset.theme=t;document.documentElement.dataset.cmsThemeResolved=t;if(t==="light")document.documentElement.classList.add("light");}catch(e){document.documentElement.dataset.theme="dark";}})();</script>
   <link rel="stylesheet" href="styles.css" />
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
-  <script src="config.js" defer></script>
-  <script src="content.js" defer></script>
-  <script src="app.js" defer></script>
 </head>
-<body><div id="app"></div></body>
+<body>
+  <div class="site-loader" id="siteLoader" aria-live="polite"><div class="site-loader-mark">LΛN</div><span>Loading portfolio</span></div>
+  <div id="app"></div>
+
+  <script type="module" src="app.js"></script>
+  <script>setTimeout(function(){document.getElementById('siteLoader')?.classList.add('is-hidden')},7000)</script>
+</body>
 </html>

@@ -1,0 +1,14 @@
+{
+  "name": "lan-cloudinary-telemetry-worker",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "wrangler": "4.131.2"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev": "wrangler dev --persist-to ../../../LAN-Portfolio-CMS-Runtime/wrangler"
+  }
+}

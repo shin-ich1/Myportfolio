@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+
+<html lang="en" data-lan-workspace-document="true" data-lan-admin-architecture="shared">
+<head>
+  <link rel="icon" href="/assets/brand/lan-mark.svg" type="image/svg+xml">
+<meta charset="utf-8"/>
+    <script src="../js/theme-controller.js"></script>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="Manage professional experience for the LΛN Portfolio" name="description"/>
+<title>Experience Editor | LΛN Portfolio CMS</title>
+<link href="../css/theme.css" rel="stylesheet"/>
+<link href="../css/shared-ui.css" rel="stylesheet"/>
+<link href="../css/experience.css" rel="stylesheet"/>
+  <link href="../css/admin-layout.css" rel="stylesheet"/>
+</head>
+<body class="experience-page">
+<div class="editor-layout">
+<!-- =====================================================
+         SIDEBAR
+         ===================================================== -->
+<!-- =====================================================
+         MAIN CONTENT
+         ===================================================== -->
+<main class="editor-main">
+<!-- ===================================================
+           TOPBAR
+           =================================================== -->
+<header class="editor-topbar">
+<div>
+<p class="editor-eyebrow">
+            Portfolio content
+          </p>
+<h1>Experience</h1>
+</div>
+<div class="editor-topbar-actions"><div class="editor-status-badge" id="saveStatus">
+            Ready
+          </div>
+<a class="editor-secondary-button" href="../dashboard.html">
+            Back to dashboard
+          </a>
+<a class="editor-preview-button" href="../../index.html#experience" rel="noopener noreferrer" target="_blank">
+            Preview Experience
+          </a>
+</div>
+</header>
+<!-- ===================================================
+           EDITOR CONTENT
+           =================================================== -->
+<section class="editor-content lan-admin-workspace lan-admin-record-surface lan-admin-master-detail">
+<!-- =================================================
+             EXPERIENCE TOOLBAR
+             ================================================= -->
+<section class="editor-panel experience-toolbar lan-admin-toolbar" data-lan-record-toolbar>
+<div class="experience-toolbar-content" data-lan-action-header>
+<div>
+<p class="editor-eyebrow">
+                Experience records
+              </p>
+<h2>Your experience</h2>
+<p class="editor-panel-description">
+                Published entries will appear on your public portfolio.
+              </p>
+</div>
+<button class="editor-save-button editor-primary-button" id="addExperienceButton" data-lan-primary-action data-lan-create-action type="button">
+              + Add Experience
+            </button>
+</div>
+<div class="experience-statistics lan-admin-toolbar-stats">
+<article class="experience-stat-card">
+<span>Total</span>
+<strong id="totalExperienceCount">
+                0
+              </strong>
+</article>
+<article class="experience-stat-card">
+<span>Published</span>
+<strong id="publishedExperienceCount">
+                0
+              </strong>
+</article>
+<article class="experience-stat-card">
+<span>Drafts</span>
+<strong id="draftExperienceCount">
+                0
+              </strong>
+</article>
+</div>
+</section>
+<!-- =================================================
+             EXPERIENCE LIST
+             ================================================= -->
+<section class="editor-panel lan-admin-record-library">
+<div class="editor-panel-header">
+<div>
+<p class="editor-eyebrow">
+                Existing entries
+              </p>
+<h2>Experience library</h2>
+</div>
+<span class="editor-section-number">
+              01
+            </span>
+</div>
+<div class="experience-filter-row">
+<div class="editor-field experience-search-field">
+<label for="experienceSearch">
+                Search experience
+              </label>
+<input id="experienceSearch" placeholder="Search by job title, company or category" type="search"/>
+</div>
+<div class="editor-field">
+<label for="statusFilter">
+                Status
+              </label>
+<select id="statusFilter">
+<option value="all">
+                  All entries
+                </option>
+<option value="published">
+                  Published
+                </option>
+<option value="draft">
+                  Draft
+                </option>
+</select>
+</div>
+</div>
+<div class="experience-list lan-admin-grid lan-admin-grid--records" id="experienceList">
+<div class="experience-empty-state" id="experienceEmptyState">
+<span class="experience-empty-icon">
+                ▣
+              </span>
+<h3>No experience entries yet</h3>
+<p>
+                Add your first professional experience to begin
+                building your portfolio timeline.
+              </p>
+<button class="editor-primary-button" id="emptyStateAddButton" type="button">
+                Add First Experience
+              </button>
+</div>
+</div>
+</section>
+<!-- =================================================
+             EXPERIENCE FORM
+             ================================================= -->
+<form class="editor-form experience-form hidden experience-bento-form lan-admin-record-editor lan-admin-form-grid" id="experienceForm">
+<input id="experienceId" name="experienceId" type="hidden"/>
+<!-- ===============================================
+               BASIC INFORMATION
+               =============================================== -->
+<section class="experience-form-section experience-panel--basic">
+<div class="editor-panel-header">
+<div>
+<p class="editor-eyebrow">
+                  Basic information
+                </p>
+<h2 id="experienceFormTitle">
+                  Add experience
+                </h2>
+</div>
+<span class="editor-section-number">
+                02
+              </span>
+</div>
+<div class="editor-form-grid lan-form-grid">
+<div class="editor-field">
+<label for="jobTitle">
+                  Job title
+                </label>
+<input id="jobTitle" maxlength="120" name="jobTitle" placeholder="Database Management Officer" required="" type="text"/>
+<small>
+                  Enter your official role or position.
+                </small>
+</div>
+<div class="editor-field">
+<label for="company">
+                  Company or organization
+                </label>
+<input id="company" maxlength="120" name="company" placeholder="DENR – Mts. Iglit-Baco Natural Park" required="" type="text"/>
+</div>
+<div class="editor-field">
+<label for="publicCompanyDisplay">
+                  Public company display
+                </label>
+<select id="publicCompanyDisplay" name="publicCompanyDisplay">
+<option value="full">Show full name</option>
+<option value="masked">Masked</option>
+<option value="private">Private Company</option>
+<option value="hidden">Hidden</option>
+</select>
+<small>
+                  Keep the real company name in Admin while controlling how it appears publicly.
+                </small>
+</div>
+<div class="editor-field">
+<label for="employmentType">
+                  Employment type
+                </label>
+<select id="employmentType" name="employmentType" required="">
+<option value="">
+                    Select employment type
+                  </option>
+<option value="full-time">
+                    Full-time
+                  </option>
+<option value="part-time">
+                    Part-time
+                  </option>
+<option value="contract">
+                    Contract
+                  </option>
+<option value="freelance">
+                    Freelance
+                  </option>
+<option value="internship">
+                    Internship / OJT
+                  </option>
+<option value="temporary">
+                    Temporary
+                  </option>
+<option value="volunteer">
+                    Volunteer
+                  </option>
+<option value="self-employed">
+                    Self-employed
+                  </option>
+<option value="project">
+                    Project-based
+                  </option>
+<option value="other">
+                    Other
+                  </option>
+</select>
+</div>
+<div class="editor-field hidden" id="employmentTypeOtherField">
+<label for="employmentTypeOther">
+                  Specify employment type
+                </label>
+<input id="employmentTypeOther" maxlength="80" name="employmentTypeOther" placeholder="Seasonal contract" type="text"/>
+</div>
+<div class="editor-field">
+<label for="experienceCategory">
+                  Category
+                </label>
+<select id="experienceCategory" name="experienceCategory" required="">
+<option value="">
+                    Select category
+                  </option>
+<option value="data-administration">
+                    Data and Administration
+                  </option>
+<option value="technology">
+                    Technology and IT
+                  </option>
+<option value="multimedia">
+                    Multimedia and Creative
+                  </option>
+<option value="ecommerce">
+                    E-commerce and Retail
+                  </option>
+<option value="sales">
+                    Sales and Business Development
+                  </option>
+<option value="customer-service">
+                    Customer Service
+                  </option>
+<option value="operations">
+                    Operations and Logistics
+                  </option>
+<option value="government">
+                    Government Service
+                  </option>
+<option value="education">
+                    Education and Training
+                  </option>
+<option value="other">
+                    Other Industry
+                  </option>
+</select>
+</div>
+<div class="editor-field hidden" id="experienceCategoryOtherField">
+<label for="experienceCategoryOther">
+                  Specify category
+                </label>
+<input id="experienceCategoryOther" maxlength="80" name="experienceCategoryOther" placeholder="Environmental conservation" type="text"/>
+</div>
+<div class="editor-field">
+<label for="workSetup">
+                  Work setup
+                </label>
+<select id="workSetup" name="workSetup" required="">
+<option value="">
+                    Select work setup
+                  </option>
+<option value="onsite">
+                    On-site
+                  </option>
+<option value="remote">
+                    Remote
+                  </option>
+<option value="hybrid">
+                    Hybrid
+                  </option>
+<option value="other">
+                    Other
+                  </option>
+</select>
+<small>
+                  Select how the work was performed.
+                </small>
+</div>
+<div class="editor-field hidden" id="workSetupOtherField">
+<label for="workSetupOther">
+                  Specify work setup
+                </label>
+<input id="workSetupOther" maxlength="80" name="workSetupOther" placeholder="Field-based" type="text"/>
+</div>
+<div class="editor-field">
+<label for="location">
+                  Location
+                </label>
+<input id="location" maxlength="120" name="location" placeholder="San Jose, Occidental Mindoro, Philippines" type="text"/>
+<small>
+                  Enter the company or assigned work location.
+                </small>
+</div>
+</div>
+</section>
+<!-- ===============================================
+               EMPLOYMENT PERIOD
+               =============================================== -->
+<section class="experience-form-section experience-panel--dates">
+<div class="editor-panel-header">
+<div>
+<p class="editor-eyebrow">
+                  Employment period
+                </p>
+<h2>Dates and duration</h2>
+</div>
+<span class="editor-section-number">
+                03
+              </span>
+</div>
+<div class="editor-form-grid lan-form-grid experience-date-grid">
+<fieldset class="editor-field experience-date-field">
+<legend>Start date</legend>
+<div class="experience-date-selects">
+<div>
+<label for="startMonth">
+                      Month
+                    </label>
+<select id="startMonth" name="startMonth" required="">
+<option value="">
+                        Select month
+                      </option>
+<option value="01">January</option>
+<option value="02">February</option>
+<option value="03">March</option>
+<option value="04">April</option>
+<option value="05">May</option>
+<option value="06">June</option>
+<option value="07">July</option>
+<option value="08">August</option>
+<option value="09">September</option>
+<option value="10">October</option>
+<option value="11">November</option>
+<option value="12">December</option>
+</select>
+</div>
+<div>
+<label for="startYear">
+                      Year
+                    </label>
+<select id="startYear" name="startYear" required="">
+<option value="">
+                        Select year
+                      </option>
+</select>
+</div>
+</div>
+</fieldset>
+<fieldset class="editor-field experience-date-field">
+<legend>End date</legend>
+<div class="experience-date-selects">
+<div>
+<label for="endMonth">
+                      Month
+                    </label>
+<select id="endMonth" name="endMonth">
+<option value="">
+                        Select month
+                      </option>
+<option value="01">January</option>
+<option value="02">February</option>
+<option value="03">March</option>
+<option value="04">April</option>
+<option value="05">May</option>
+<option value="06">June</option>
+<option value="07">July</option>
+<option value="08">August</option>
+<option value="09">September</option>
+<option value="10">October</option>
+<option value="11">November</option>
+<option value="12">December</option>
+</select>
+</div>
+<div>
+<label for="endYear">
+                      Year
+                    </label>
+<select id="endYear" name="endYear">
+<option value="">
+                        Select year
+                      </option>
+</select>
+</div>
+</div>
+</fieldset>
+</div>
+<small class="form-help" id="experienceDateRules">
+                  Start dates cannot be in the future. End dates must be on or after the start date and cannot be later than the current month. Use “Currently working here” for active roles.
+                </small>
+<div class="editor-toggle-list">
+<label class="editor-toggle-option">
+<span>
+<strong>Currently working here</strong>
+<small>
+                    Enable this when the experience is still active.
+                  </small>
+</span>
+<input id="currentlyWorking" name="currentlyWorking" type="checkbox"/>
+<span class="editor-toggle"></span>
+</label>
+</div>
+</section>
+<!-- ===============================================
+               DESCRIPTION
+               =============================================== -->
+<section class="experience-form-section experience-panel--details">
+<div class="editor-panel-header">
+<div>
+<p class="editor-eyebrow">
+                  Experience details
+                </p>
+<h2>Description and responsibilities</h2>
+</div>
+<span class="editor-section-number">
+                04
+              </span>
+</div>
+<div class="editor-field">
+<label for="experienceSummary">
+                Experience summary
+              </label>
+<textarea id="experienceSummary" maxlength="700" name="experienceSummary" placeholder="Provide a professional overview of your role, responsibilities and contribution." required="" rows="5"></textarea>
+<div class="editor-character-row">
+<small>
+                  Recommended: three to five clear sentences.
+                </small>
+<span id="experienceSummaryCount">
+                  0 / 700
+                </span>
+</div>
+</div>
+<div class="editor-field">
+<span class="field-label">
+                Key responsibilities
+              </span>
+<div class="dynamic-entry-list" id="responsibilityList"></div>
+<button class="editor-secondary-button dynamic-add-button" id="addResponsibilityButton" type="button">
+                + Add Responsibility
+              </button>
+</div>
+<div class="editor-field">
+<span class="field-label">
+                Achievements
+              </span>
+<div class="dynamic-entry-list" id="achievementList"></div>
+<button class="editor-secondary-button dynamic-add-button" id="addAchievementButton" type="button">
+                + Add Achievement
+              </button>
+</div>
+</section>
+<!-- ===============================================
+               SKILLS AND TOOLS
+               =============================================== -->
+<section class="experience-form-section experience-panel--capabilities">
+<div class="editor-panel-header experience-capability-section-header">
+<div>
+<p class="editor-eyebrow">
+                  Professional capabilities
+                </p>
+<h2>Skills and tools</h2>
+</div>
+<div class="experience-panel-header-actions">
+<a aria-label="Open Skills & Tools Used library in a new tab" class="editor-secondary-button button-compact" href="skills.html" id="openSkillsToolsLibrary" rel="noopener noreferrer" target="_blank">Open Skills &amp; Tools ↗</a>
+<span class="editor-section-number">
+                05
+              </span>
+</div>
+</div>
+<div class="experience-capability-grid">
+<div class="experience-capability-picker">
+<div class="experience-capability-head"><div><label for="experienceSkillSearch">Skills used</label><small>Professional capabilities linked from the shared Skills &amp; Tools Used library. Software and platforms belong under Tools.</small></div></div>
+<input id="skillIds" name="skillIds" type="hidden"/>
+<input id="skillsUsed" name="skillsUsed" type="hidden"/>
+<div class="experience-capability-picker-host" id="experienceSkillPicker" aria-live="polite"></div>
+<small class="experience-capability-library-note">Use <strong>+ Link Skill</strong> to search the library. New names entered with Enter are added once to the shared Skill library and linked here.</small>
+</div>
+<div class="experience-capability-picker">
+<div class="experience-capability-head"><div><label for="experienceToolSearch">Tools and technologies</label><small>Managed software, platforms and technologies linked from the shared Tools Used library.</small></div></div>
+<input id="toolIds" name="toolIds" type="hidden"/>
+<input id="toolsUsed" name="toolsUsed" type="hidden"/>
+<div class="experience-capability-picker-host" id="experienceToolPicker" aria-live="polite"></div>
+<small class="experience-capability-library-note">Use <strong>+ Link Tool</strong> to search the library. Product logos remain owned by the shared Tool record.</small>
+</div>
+</div>
+</section>
+<!-- ===============================================
+               DISPLAY SETTINGS
+               =============================================== -->
+<section class="experience-form-section experience-panel--publishing">
+<div class="editor-panel-header">
+<div>
+<p class="editor-eyebrow">
+                  Publishing
+                </p>
+<h2>Portfolio display settings</h2>
+</div>
+<span class="editor-section-number">
+                06
+              </span>
+</div>
+<div class="editor-form-grid lan-form-grid">
+<div class="editor-field">
+<label for="experienceStatus">
+                  Status
+                </label>
+<select id="experienceStatus" name="experienceStatus">
+<option value="draft">
+                    Draft
+                  </option>
+<option value="published">
+                    Published
+                  </option>
+</select>
+<small>
+                  Draft entries are only visible inside the admin CMS.
+                </small>
+</div>
+<div class="editor-field">
+<label for="displayOrder">
+                  Display order
+                </label>
+<input id="displayOrder" max="999" min="0" name="displayOrder" type="number" value="0"/>
+<small>
+                  Lower numbers appear first.
+                </small>
+</div>
+</div>
+<div class="editor-toggle-list">
+<label class="editor-toggle-option">
+<span>
+<strong>Featured experience</strong>
+<small>
+                    Give this experience greater emphasis on the portfolio.
+                  </small>
+</span>
+<input id="featuredExperience" name="featuredExperience" type="checkbox"/>
+<span class="editor-toggle"></span>
+</label>
+<label class="editor-toggle-option">
+<span>
+<strong>Show on public portfolio</strong>
+<small>
+                    Control whether visitors can see this experience.
+                  </small>
+</span>
+<input checked="" id="experienceVisible" name="experienceVisible" type="checkbox"/>
+<span class="editor-toggle"></span>
+</label>
+</div>
+</section>
+<!-- ===============================================
+               FORM ACTIONS
+               =============================================== -->
+<div class="editor-form-actions">
+<button class="editor-reset-button editor-secondary-button" id="cancelExperienceButton" type="button">
+              Cancel
+            </button>
+<button class="experience-delete-button editor-danger-button hidden" id="deleteExperienceButton" type="button">
+              Delete Experience
+            </button>
+<button class="editor-save-button editor-primary-button" id="saveExperienceButton" type="submit">
+<span id="saveExperienceButtonText">
+                Save Experience
+              </span>
+
+</button>
+</div>
+</form>
+</section>
+</main>
+</div>
+<!-- =======================================================
+       DELETE CONFIRMATION MODAL
+       ======================================================= -->
+<div aria-labelledby="deleteModalTitle" aria-modal="true" class="experience-modal hidden" id="deleteConfirmationModal" role="dialog">
+<div class="experience-modal-card"><div aria-hidden="true" class="lan-modal-emblem is-danger"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path></svg></div>
+<p class="editor-eyebrow">
+        Delete experience
+      </p>
+<h2 id="deleteModalTitle">
+        Are you sure?
+      </h2>
+<p>
+        This experience will be permanently removed from
+        Firestore and cannot be restored.
+      </p>
+<div class="experience-modal-actions">
+<button class="editor-reset-button editor-secondary-button" id="cancelDeleteButton" type="button">
+          Cancel
+        </button>
+<button class="experience-delete-button editor-danger-button" id="confirmDeleteButton" type="button">
+          Delete Permanently
+        </button>
+</div>
+</div>
+</div>
+<script src="../js/workspace-host.js" type="module"></script>
+<script src="../js/admin-ui.js" type="module"></script>
+<script src="../js/experience.js" type="module"></script>
+</body>
+</html>

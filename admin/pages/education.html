@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+
+<html lang="en" data-lan-workspace-document="true" data-lan-admin-architecture="shared">
+<head>
+  <link rel="icon" href="/assets/brand/lan-mark.svg" type="image/svg+xml">
+<meta charset="utf-8"/>
+    <script src="../js/theme-controller.js"></script>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="Manage education records for the LΛN Portfolio" name="description"/>
+<title>Education Editor | LΛN Portfolio CMS</title>
+<link href="../css/theme.css" rel="stylesheet"/>
+<link href="../css/shared-ui.css" rel="stylesheet"/>
+<link href="../css/education.css" rel="stylesheet"/>
+  <link href="../css/admin-layout.css" rel="stylesheet"/>
+</head>
+<body class="education-page">
+<div class="editor-layout">
+<!-- =====================================================
+         SIDEBAR
+         ===================================================== -->
+<!-- =====================================================
+         MAIN CONTENT
+         ===================================================== -->
+<main class="editor-main">
+<!-- ===================================================
+           TOPBAR
+           =================================================== -->
+<header class="editor-topbar">
+<div>
+<p class="editor-eyebrow">
+            Portfolio content
+          </p>
+<h1>Education</h1>
+</div>
+<div class="editor-topbar-actions"><div class="editor-status-badge" id="saveStatus">
+            Ready
+          </div>
+<a class="editor-secondary-button" href="../dashboard.html">
+            Back to dashboard
+          </a>
+<a class="editor-preview-button" href="../../index.html#education" rel="noopener noreferrer" target="_blank">
+            Preview Education
+          </a>
+</div>
+</header>
+<!-- ===================================================
+           EDITOR CONTENT
+           =================================================== -->
+<section class="editor-content lan-admin-workspace lan-admin-record-surface lan-admin-master-detail">
+<!-- =================================================
+             EDUCATION TOOLBAR
+             ================================================= -->
+<section class="editor-panel education-toolbar lan-admin-toolbar" data-lan-record-toolbar>
+<div class="education-toolbar-content" data-lan-action-header>
+<div>
+<p class="editor-eyebrow">
+                Education records
+              </p>
+<h2>Your education</h2>
+<p class="editor-panel-description">
+                Published entries will appear on your public portfolio.
+              </p>
+</div>
+<button class="editor-save-button editor-primary-button" id="addEducationButton" data-lan-primary-action data-lan-create-action type="button">
+              + Add Education
+            </button>
+</div>
+<div class="education-statistics lan-admin-toolbar-stats">
+<article class="education-stat-card">
+<span>Total</span>
+<strong id="totalEducationCount">
+                0
+              </strong>
+</article>
+<article class="education-stat-card">
+<span>Published</span>
+<strong id="publishedEducationCount">
+                0
+              </strong>
+</article>
+<article class="education-stat-card">
+<span>Drafts</span>
+<strong id="draftEducationCount">
+                0
+              </strong>
+</article>
+<article class="education-stat-card">
+<span>Featured</span>
+<strong id="featuredEducationCount">
+                0
+              </strong>
+</article>
+</div>
+</section>
+<!-- =================================================
+             EDUCATION LIBRARY
+             ================================================= -->
+<section class="editor-panel lan-admin-record-library">
+<div class="editor-panel-header">
+<div>
+<p class="editor-eyebrow">
+                Existing entries
+              </p>
+<h2>Education library</h2>
+</div>
+<span class="editor-section-number">
+              01
+            </span>
+</div>
+<div class="education-filter-row">
+<div class="editor-field education-search-field">
+<label for="educationSearch">
+                Search education
+              </label>
+<input id="educationSearch" placeholder="Search by school, degree, major or location" type="search"/>
+</div>
+<div class="editor-field">
+<label for="educationStatusFilter">
+                Status
+              </label>
+<select id="educationStatusFilter">
+<option value="all">
+                  All entries
+                </option>
+<option value="published">
+                  Published
+                </option>
+<option value="draft">
+                  Draft
+                </option>
+</select>
+</div>
+<div class="editor-field">
+<label for="educationSortFilter">
+                Sort
+              </label>
+<select id="educationSortFilter">
+<option value="order">
+                  Display order
+                </option>
+<option value="newest">
+                  Newest first
+                </option>
+<option value="school">
+                  School A–Z
+                </option>
+<option value="graduation">
+                  Latest graduation
+                </option>
+</select>
+</div>
+</div>
+<div class="education-list lan-admin-grid lan-admin-grid--records" id="educationList">
+<div class="education-empty-state" id="educationEmptyState">
+<span class="education-empty-icon">
+                ◇
+              </span>
+<h3>No education entries yet</h3>
+<p>
+                Add your first academic record to begin
+                building your portfolio education timeline.
+              </p>
+<button class="editor-primary-button" id="emptyStateAddEducationButton" type="button">
+                Add First Education
+              </button>
+</div>
+</div>
+</section>
+<!-- =================================================
+             EDUCATION FORM
+             ================================================= -->
+<form class="editor-form education-form hidden education-bento-form lan-admin-record-editor lan-admin-form-grid" id="educationForm">
+<input id="educationId" name="educationId" type="hidden"/>
+<!-- ===============================================
+               BASIC INFORMATION
+               =============================================== -->
+<section class="education-form-section education-panel--basic">
+<div class="editor-panel-header">
+<div>
+<p class="editor-eyebrow">
+                  Basic information
+                </p>
+<h2 id="educationFormTitle">
+                  Add education
+                </h2>
+</div>
+<span class="editor-section-number">
+                02
+              </span>
+</div>
+<div class="editor-form-grid lan-form-grid">
+<div class="editor-field">
+<label for="schoolName">
+                  School or institution
+                </label>
+<input id="schoolName" maxlength="140" name="schoolName" placeholder="Divine Word College of San Jose" required="" type="text"/>
+<small>
+                  Enter the official school or institution name.
+                </small>
+</div>
+<div class="editor-field">
+<label for="degreeName">
+                  Full degree / qualification
+                </label>
+<input id="degreeName" maxlength="160" name="degreeName" placeholder="Bachelor of Science in Information Technology" required="" type="text"/>
+</div>
+<div class="editor-field">
+<label for="degreeShortName">
+                  Degree abbreviation / short name
+                </label>
+<input id="degreeShortName" maxlength="40" name="degreeShortName" placeholder="BSIT" type="text"/>
+<small>
+                  Optional. Used as the concise public degree title when provided.
+                </small>
+</div>
+<div class="editor-field">
+<label for="majorName">
+                  Major or specialization
+                </label>
+<input id="majorName" maxlength="120" name="majorName" placeholder="Multimedia" type="text"/>
+</div>
+<div class="editor-field">
+<label for="educationLevel">
+                  Education level
+                </label>
+<select id="educationLevel" name="educationLevel" required="">
+<option value="">
+                    Select education level
+                  </option>
+<option value="preschool">
+                    Preschool / Kindergarten
+                  </option>
+<option value="elementary">
+                    Elementary / Primary School (Grades 1–6)
+                  </option>
+<option value="junior-high">
+                    Junior High / Secondary School (Grades 7–10)
+                  </option>
+<option value="senior-high">
+                    Senior High School (Grades 11–12)
+                  </option>
+<option value="associate">
+                    Associate Degree
+                  </option>
+<option value="college">
+                    Bachelor’s Degree
+                  </option>
+<option value="masters">
+                    Master’s Degree
+                  </option>
+<option value="doctoral">
+                    Doctoral Degree
+                  </option>
+<option value="postgraduate">
+                    Postgraduate / Graduate Study (Other)
+                  </option>
+<option value="vocational">
+                    Vocational / Technical
+                  </option>
+<option value="certification">
+                    Certification Program
+                  </option>
+<option value="other">
+                    Other
+                  </option>
+</select>
+</div>
+<div class="editor-field hidden" id="educationLevelOtherField">
+<label for="educationLevelOther">
+                  Custom education level
+                </label>
+<input id="educationLevelOther" maxlength="120" name="educationLevelOther" placeholder="e.g. Alternative Learning System (ALS)" type="text"/>
+<small>
+                  Shown only when Education level is set to Other.
+                </small>
+</div>
+<div class="editor-field">
+<label for="educationLocation">
+                  Location
+                </label>
+<input id="educationLocation" maxlength="140" name="educationLocation" placeholder="San Jose, Occidental Mindoro, Philippines" type="text"/>
+</div>
+<div class="editor-field">
+<label for="schoolWebsite">
+                  School website
+                </label>
+<input id="schoolWebsite" maxlength="240" name="schoolWebsite" placeholder="https://example.edu" type="url"/>
+</div>
+</div>
+</section>
+<!-- ===============================================
+               STUDY PERIOD
+               =============================================== -->
+<section class="education-form-section education-panel--dates">
+<div class="editor-panel-header">
+<div>
+<p class="editor-eyebrow">
+                  Study period
+                </p>
+<h2>Dates and attendance</h2>
+</div>
+<span class="editor-section-number">
+                03
+              </span>
+</div>
+<div class="editor-form-grid lan-form-grid education-date-grid">
+<fieldset class="editor-field education-date-field">
+<legend>Start date</legend>
+<div class="education-date-selects">
+<div>
+<label for="startMonth">
+                      Month
+                    </label>
+<select id="startMonth" name="startMonth">
+<option value="">
+                        Select month
+                      </option>
+<option value="01">January</option>
+<option value="02">February</option>
+<option value="03">March</option>
+<option value="04">April</option>
+<option value="05">May</option>
+<option value="06">June</option>
+<option value="07">July</option>
+<option value="08">August</option>
+<option value="09">September</option>
+<option value="10">October</option>
+<option value="11">November</option>
+<option value="12">December</option>
+</select>
+</div>
+<div>
+<label for="startYear">
+                      Year
+                    </label>
+<select id="startYear" name="startYear" required="">
+<option value="">
+                        Select year
+                      </option>
+</select>
+</div>
+</div>
+</fieldset>
+<fieldset class="editor-field education-date-field">
+<legend>End date</legend>
+<div class="education-date-selects">
+<div>
+<label for="endMonth">
+                      Month
+                    </label>
+<select id="endMonth" name="endMonth">
+<option value="">
+                        Select month
+                      </option>
+<option value="01">January</option>
+<option value="02">February</option>
+<option value="03">March</option>
+<option value="04">April</option>
+<option value="05">May</option>
+<option value="06">June</option>
+<option value="07">July</option>
+<option value="08">August</option>
+<option value="09">September</option>
+<option value="10">October</option>
+<option value="11">November</option>
+<option value="12">December</option>
+</select>
+</div>
+<div>
+<label for="endYear">
+                      Year
+                    </label>
+<select id="endYear" name="endYear">
+<option value="">
+                        Select year
+                      </option>
+</select>
+</div>
+</div>
+</fieldset>
+</div>
+<div class="editor-toggle-list">
+<label class="editor-toggle-option">
+<span>
+<strong>Currently studying here</strong>
+<small>
+                    Enable this when your education is still in progress.
+                  </small>
+</span>
+<input id="currentlyStudying" name="currentlyStudying" type="checkbox"/>
+<span class="editor-toggle"></span>
+</label>
+</div>
+</section>
+<!-- ===============================================
+               DETAILS
+               =============================================== -->
+<section class="education-form-section education-panel--details">
+<div class="editor-panel-header">
+<div>
+<p class="editor-eyebrow">
+                  Education details
+                </p>
+<h2>Description and achievements</h2>
+</div>
+<span class="editor-section-number">
+                04
+              </span>
+</div>
+<div class="editor-field">
+<label for="educationSummary">
+                Education summary
+              </label>
+<textarea id="educationSummary" maxlength="700" name="educationSummary" placeholder="Describe your academic program, relevant coursework and important learning experiences." required="" rows="5"></textarea>
+<div class="editor-character-row">
+<small>
+                  Recommended: two to four clear sentences.
+                </small>
+<span id="educationSummaryCount">
+                  0 / 700
+                </span>
+</div>
+</div>
+<div class="editor-field">
+<span class="field-label">
+                Achievements and activities
+              </span>
+<div class="dynamic-entry-list" id="educationAchievementList"></div>
+<button class="editor-secondary-button dynamic-add-button" id="addEducationAchievementButton" type="button">
+                + Add Achievement
+              </button>
+</div>
+<div class="editor-field">
+<span class="field-label">
+                Relevant coursework
+              </span>
+<div class="dynamic-entry-list" id="courseworkList"></div>
+<button class="editor-secondary-button dynamic-add-button" id="addCourseworkButton" type="button">
+                + Add Coursework
+              </button>
+</div>
+</section>
+<!-- ===============================================
+               SCHOOL LOGO
+               =============================================== -->
+<section class="education-form-section education-panel--identity">
+<div class="editor-panel-header">
+<div>
+<p class="editor-eyebrow">
+                  School identity
+                </p>
+<h2>School logo</h2>
+</div>
+<span class="editor-section-number">
+                05
+              </span>
+</div>
+
+<div class="education-logo-workbench"><label class="lan-image-uploader education-logo-preview" for="schoolLogoFile"><input accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden="" id="schoolLogoFile" type="file"/><div class="lan-image-uploader__content education-logo-placeholder" id="schoolLogoPlaceholder"><span class="lan-image-uploader__icon">⇧</span><strong>Choose school logo</strong><small>PNG, JPG, WEBP or SVG · Maximum 1.5 MB</small></div><div class="lan-image-uploader__preview" id="schoolLogoPreviewStage" hidden=""><img alt="School logo preview" class="lan-image-uploader__image" hidden="" id="schoolLogoPreview"/></div></label><div class="education-logo-controls"><div class="education-upload-actions"><button class="editor-primary-button" id="uploadSchoolLogoButton" type="button">Upload logo</button><button class="editor-secondary-button hidden" id="replaceSchoolLogoButton" type="button">Replace logo</button><button class="editor-danger-button" id="removeSchoolLogoButton" type="button">Remove</button></div><p class="education-logo-note" id="schoolLogoStatus">No logo has been selected.</p><details class="education-logo-url-option"><summary>Use an image URL instead</summary><label class="editor-field" for="schoolLogoUrl">School logo URL<input id="schoolLogoUrl" inputmode="url" maxlength="500" name="schoolLogoUrl" placeholder="https://example.com/logo.png" type="text"/><small>A public URL is optional when you upload a local logo.</small></label><button class="editor-secondary-button" id="previewSchoolLogoButton" type="button">Preview URL</button></details></div></div></section>
+<!-- ===============================================
+               DISPLAY SETTINGS
+               =============================================== -->
+<section class="education-form-section education-panel--publishing">
+<div class="editor-panel-header">
+<div>
+<p class="editor-eyebrow">
+                  Publishing
+                </p>
+<h2>Portfolio display settings</h2>
+</div>
+<span class="editor-section-number">
+                06
+              </span>
+</div>
+<div class="editor-form-grid lan-form-grid">
+<div class="editor-field">
+<label for="educationStatus">
+                  Status
+                </label>
+<select id="educationStatus" name="educationStatus">
+<option value="draft">
+                    Draft
+                  </option>
+<option value="published">
+                    Published
+                  </option>
+</select>
+<small>
+                  Draft entries are only visible inside the admin CMS.
+                </small>
+</div>
+<div class="editor-field">
+<label for="educationDisplayOrder">
+                  Display order
+                </label>
+<input id="educationDisplayOrder" max="999" min="0" name="educationDisplayOrder" type="number" value="0"/>
+<small>
+                  Lower numbers appear first.
+                </small>
+</div>
+</div>
+<div class="editor-toggle-list">
+<label class="editor-toggle-option">
+<span>
+<strong>Featured education</strong>
+<small>
+                    Give this education greater emphasis on the portfolio.
+                  </small>
+</span>
+<input id="featuredEducation" name="featuredEducation" type="checkbox"/>
+<span class="editor-toggle"></span>
+</label>
+<label class="editor-toggle-option">
+<span>
+<strong>Show on public portfolio</strong>
+<small>
+                    Control whether visitors can see this education.
+                  </small>
+</span>
+<input checked="" id="educationVisible" name="educationVisible" type="checkbox"/>
+<span class="editor-toggle"></span>
+</label>
+</div>
+</section>
+<!-- ===============================================
+               FORM ACTIONS
+               =============================================== -->
+<div class="editor-form-actions">
+<button class="editor-reset-button editor-secondary-button" id="cancelEducationButton" type="button">
+              Cancel
+            </button>
+<button class="education-delete-button editor-danger-button hidden" id="deleteEducationButton" type="button">
+              Delete Education
+            </button>
+<button class="editor-save-button editor-primary-button" id="saveEducationButton" type="submit">
+<span id="saveEducationButtonText">
+                Save Education
+              </span>
+
+</button>
+</div>
+</form>
+</section>
+</main>
+</div>
+<!-- =======================================================
+       DELETE CONFIRMATION MODAL
+       ======================================================= -->
+<div aria-labelledby="deleteEducationModalTitle" aria-modal="true" class="education-modal hidden" id="deleteEducationConfirmationModal" role="dialog">
+<div class="education-modal-card"><div aria-hidden="true" class="lan-modal-emblem is-danger"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path></svg></div>
+<p class="editor-eyebrow">
+        Delete education
+      </p>
+<h2 id="deleteEducationModalTitle">
+        Are you sure?
+      </h2>
+<p>
+        This education record will be permanently removed and
+        cannot be restored.
+      </p>
+<div class="education-modal-actions">
+<button class="editor-reset-button editor-secondary-button" id="cancelDeleteEducationButton" type="button">
+          Cancel
+        </button>
+<button class="education-delete-button editor-danger-button" id="confirmDeleteEducationButton" type="button">
+          Delete Permanently
+        </button>
+</div>
+</div>
+</div>
+<script src="../js/workspace-host.js" type="module"></script>
+<script src="../js/admin-ui.js" type="module"></script>
+
+<script src="../js/education.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" href="/assets/brand/lan-mark.svg" type="image/svg+xml">
+<meta charset="UTF-8">
+    <script src="js/theme-controller.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>LΛN Admin Portal</title>
+
+  <link rel="stylesheet" href="admin.css">
+</head>
+
+<body>
+  <main class="admin-login-page">
+    <section class="login-layout">
+
+      <div class="brand-panel">
+        <a href="../index.html" class="lan-logo">
+          LΛN
+        </a>
+
+        <div class="profile-wrapper">
+          <div class="profile-glow"></div>
+
+          <img
+            src="../assets/images/hero.png"
+            alt="Rolando Lagmay Jr."
+            class="profile-photo"
+          >
+        </div>
+
+        <p class="portal-label">Portfolio Administration</p>
+
+        <h1>
+          Manage your
+          <span>digital portfolio.</span>
+        </h1>
+
+        <p class="brand-description">
+          Update your portfolio content securely through the
+          LΛN administration portal.
+        </p>
+
+        <div class="system-status">
+          <div class="status-item">
+            <span class="status-dot"></span>
+            Firebase connected
+          </div>
+
+          <div class="status-item">
+            <span class="status-dot"></span>
+            Authentication enabled
+          </div>
+
+          <div class="status-item">
+            <span class="status-dot"></span>
+            Firestore ready
+          </div>
+        </div>
+      </div>
+
+      <div class="login-panel">
+        <div class="login-card">
+          <p class="login-eyebrow">Secure Access</p>
+
+          <h2>Welcome back</h2>
+
+          <p class="login-description">
+            Sign in using your administrator account.
+          </p>
+
+          <form id="loginForm" novalidate>
+            <div class="form-group">
+              <label for="email">Email address</label>
+
+              <input
+                type="email"
+                id="email"
+                name="email"
+                autocomplete="email"
+                placeholder="Enter your email"
+                required
+              >
+            </div>
+
+            <div class="form-group">
+              <label for="password">Password</label>
+
+              <div class="password-field">
+                <input
+                  type="password"
+                  id="password"
+                  name="password"
+                  autocomplete="current-password"
+                  placeholder="Enter your password"
+                  required
+                >
+
+                <button
+                  type="button"
+                  id="togglePassword"
+                  class="password-toggle"
+                  aria-label="Show password"
+                >
+                  Show
+                </button>
+              </div>
+            </div>
+
+            <p
+              id="loginMessage"
+              class="login-message"
+              aria-live="polite"
+            ></p>
+
+            <button
+              type="submit"
+              id="loginButton"
+              class="login-button"
+            >
+              Login to Dashboard
+            </button>
+
+            <div id="loginVerificationOverlay" class="login-verification-overlay" data-mode="password" hidden aria-live="polite" aria-busy="true">
+              <div class="login-verification-content">
+                <div class="login-verification-password-visual" aria-hidden="true">
+                  <div class="login-verification-password-shield">
+                    <span class="login-verification-password-lock"></span>
+                    <span class="login-verification-password-scan"></span>
+                  </div>
+                </div>
+                <div class="login-verification-code-visual" aria-hidden="true">
+                  <div class="login-verification-code-wheel">
+                    <div class="login-verification-code-orbit">
+                      <span data-code-index="0" style="--code-i:0">•</span>
+                      <span data-code-index="1" style="--code-i:1">•</span>
+                      <span data-code-index="2" style="--code-i:2">•</span>
+                      <span data-code-index="3" style="--code-i:3">•</span>
+                      <span data-code-index="4" style="--code-i:4">•</span>
+                      <span data-code-index="5" style="--code-i:5">•</span>
+                    </div>
+                    <span id="loginVerificationCodeCenter" class="login-verification-code-center">•</span>
+                  </div>
+                </div>
+                <p class="login-verification-eyebrow">Secure verification</p>
+                <h3 id="loginVerificationTitle">Verifying…</h3>
+                <p id="loginVerificationDetail">Securely checking your credentials.</p>
+              </div>
+            </div>
+
+            <section id="totpStage" class="login-security-stage" hidden aria-labelledby="totpStageHeading">
+              <h3 id="totpStageHeading">Authenticator verification</h3>
+              <p>Enter the current 6-digit code from your authenticator app.</p>
+              <label for="totpCode">6-digit code</label>
+              <input id="totpCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" aria-describedby="totpError">
+              <p id="totpError" class="login-field-error" aria-live="polite" hidden></p>
+              <button type="button" id="totpVerifyButton" class="login-button">Verify code</button>
+            </section>
+
+            <section id="totpEnrollmentStage" class="login-security-stage" hidden aria-labelledby="totpEnrollmentHeading">
+              <h3 id="totpEnrollmentHeading">Set up authenticator</h3>
+              <p>Scan this one-time setup QR with a compatible authenticator app, then enter the 6-digit code.</p>
+              <div id="totpEnrollmentQr" class="login-security-qr" role="img" aria-label="Authenticator setup QR code"></div>
+              <p class="login-security-secret">Manual key: <code id="totpManualSecret"></code></p>
+              <label for="totpEnrollmentCode">6-digit code</label>
+              <input id="totpEnrollmentCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000">
+              <button type="button" id="totpEnrollmentButton" class="login-button">Finish authenticator setup</button>
+            </section>
+
+            <section id="emailVerificationStage" class="login-security-stage" hidden>
+              <h3>Verify administrator email</h3>
+              <p>Firebase must report this administrator email as verified before authenticator enrollment can start.</p>
+              <button type="button" id="sendVerificationButton" class="login-button">Send verification email</button>
+            </section>
+
+            <button type="button" id="showRecoveryButton" class="login-recovery-link">Use Recovery Kit</button>
+            <section id="recoveryStage" class="login-security-stage" hidden aria-labelledby="recoveryStageHeading">
+              <h3 id="recoveryStageHeading">Emergency recovery</h3>
+              <p>Recovery requires the Admin password plus the offline Master Recovery Key. Successful use revokes prior sessions, trusted devices, Firebase tokens, and enrolled MFA before fresh setup.</p>
+              <label for="recoveryEmail">Admin email</label>
+              <input id="recoveryEmail" type="email" autocomplete="email">
+              <label for="recoveryPassword">Current password</label>
+              <input id="recoveryPassword" type="password" autocomplete="current-password">
+              <label for="recoveryMasterKey">Master Recovery Key</label>
+              <input id="recoveryMasterKey" autocomplete="off" spellcheck="false" aria-describedby="recoveryError">
+              <p id="recoveryError" class="login-field-error" aria-live="polite" hidden></p>
+              <label for="recoveryNewEmail">Replacement email <small>(optional)</small></label>
+              <input id="recoveryNewEmail" type="email" autocomplete="email">
+              <button type="button" id="recoverySubmitButton" class="login-button">Reset Security</button>
+              <div id="recoveryResult" class="login-recovery-result" hidden></div>
+            </section>
+          </form>
+
+          <a href="../index.html" class="back-link">
+            ← Return to portfolio
+          </a>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>

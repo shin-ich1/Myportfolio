@@ -1,0 +1,42 @@
+/* About — profile editor composition. Shared controls are owned by shared-ui.css. */
+.about-page .about-canvas{display:grid;align-content:start}
+.about-page .about-editor{display:grid;min-width:0;align-content:start;gap:var(--space-4)}
+.about-page .about-loading-state{display:none;min-height:220px;place-items:center;grid-template-columns:auto minmax(0,1fr);gap:14px;padding:var(--space-6);border:1px solid var(--border);border-radius:var(--radius-lg);background:radial-gradient(circle at 18% 30%,color-mix(in srgb,var(--page-accent) 10%,transparent),transparent 36%),var(--surface);box-shadow:var(--inner-highlight)}
+.about-page .about-loading-state .loading-spinner{width:30px;height:30px;border-width:3px}
+.about-page .about-loading-state strong{display:block;color:var(--text-primary);font-size:var(--text-ui)}
+.about-page .about-loading-state small{display:block;margin-top:4px;color:var(--text-muted);font-size:var(--text-caption);line-height:var(--line-ui)}
+.about-page .about-editor.is-loading .about-loading-state{display:grid}
+.about-page .about-editor.is-loading .about-workspace,.about-page .about-editor.is-loading .about-savebar{display:none}
+
+/* One active editor panel and one preview occupy the same row. This removes the artificial empty tracks that made the Content tab look unfinished. */
+.about-page .about-workspace{--lan-adaptive-split-wide:minmax(0,1.05fr) minmax(24.375rem,.95fr);--lan-adaptive-split-gap:var(--space-5);align-items:stretch}
+.about-page .profile-column,.about-page .biography-column{display:contents}
+.about-page .identity-card,.about-page .biography-card,.about-page .visibility-card{grid-column:1;grid-row:1;min-height:100%}
+.about-page .profile-preview{grid-column:2;grid-row:1;position:sticky;top:var(--space-4);display:flex;min-height:100%;align-self:stretch;flex-direction:column;justify-content:center;overflow:hidden;padding:var(--space-6);border:1px solid var(--preview-border);border-radius:var(--radius-lg);background:radial-gradient(circle at 88% 8%,color-mix(in srgb,var(--success) 13%,transparent),transparent 30%),radial-gradient(circle at 14% 78%,color-mix(in srgb,var(--page-accent) 10%,transparent),transparent 34%),var(--preview-surface);box-shadow:var(--shadow-xs)}
+.about-page .profile-preview::after{content:"Λ";position:absolute;right:-.2em;bottom:-.28em;color:color-mix(in srgb,var(--preview-text) 4%,transparent);font-size:15rem;font-weight:var(--weight-bold);line-height:1;pointer-events:none}
+.about-page .profile-preview__ambient,.about-page .profile-portrait-placeholder{display:none}
+.about-page .profile-preview>.about-kicker{position:relative;z-index:2;margin-bottom:10px;color:var(--page-accent)}
+.about-page .profile-preview h2,.about-page .profile-preview>p,.about-page .profile-preview__meta{position:relative;z-index:2}
+.about-page .profile-preview h2{margin:0;color:var(--preview-text);font-size:clamp(1.8rem,2.6vw,2.7rem);line-height:1.05;letter-spacing:-.045em}
+.about-page .profile-preview__meta{display:grid;gap:0;margin-top:var(--space-6);overflow:hidden;border:1px solid var(--preview-border);border-radius:var(--radius-md);background:var(--preview-bg)}
+.about-page .profile-preview__meta span{display:flex;min-height:46px;align-items:center;padding:0 14px;border-bottom:1px solid var(--preview-border);color:var(--preview-muted);font-size:var(--text-label)}
+.about-page .profile-preview__meta span:last-child{border-bottom:0}
+.about-page .profile-preview__actions{position:relative;z-index:2;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-3);margin-top:var(--space-4)}
+.about-page .profile-preview__actions>*{width:100%;min-width:0}
+
+/* Section headings intentionally use no numeric badges: the tab determines context, so 01/02/03 was misleading when only one panel was visible. */
+.about-page .about-card>header{position:relative;display:block;margin-bottom:var(--space-5);padding-left:14px}
+.about-page .about-card>header::before{content:"";position:absolute;top:2px;bottom:2px;left:0;width:3px;border-radius:999px;background:linear-gradient(var(--page-accent),var(--accent-secondary))}
+.about-page .about-card>header h2{margin:0;font-size:var(--text-subtitle);font-weight:var(--weight-semibold)}
+.about-page .about-card>header p{margin:4px 0 0;color:var(--text-muted);font-size:var(--text-caption)}
+.about-page .about-field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4)}
+.about-page .about-span{grid-column:1/-1}
+.about-page .biography-card textarea{min-height:280px}
+.about-page .about-source-note{display:grid;gap:5px;margin-top:var(--space-5);padding:14px 16px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-soft)}
+.about-page .about-source-note strong{color:var(--text-primary);font-size:var(--text-label)}
+.about-page .about-source-note span{color:var(--text-muted);font-size:var(--text-caption);line-height:var(--line-ui)}
+.about-page .about-source-note a{width:max-content;margin-top:4px;color:var(--page-accent);font-size:var(--text-label);font-weight:var(--weight-semibold);text-decoration:none}
+.about-page .about-source-note a:hover{text-decoration:underline}
+.about-page .visibility-options{display:grid;gap:var(--space-3)}
+.about-page .visibility-options .editor-toggle-option{border-radius:var(--radius-md)}
+.about-page .about-savebar>div:last-child>button{min-width:9rem}

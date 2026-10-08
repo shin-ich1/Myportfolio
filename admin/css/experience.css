@@ -1,0 +1,91 @@
+/* Experience — career library + detail editor. Shared components live in shared-ui.css. */
+.experience-page .editor-content{
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  
+}
+
+/* Operational header */
+.experience-page .experience-toolbar{
+  display:flex;
+  min-height:78px;
+  align-items:center;
+  gap:var(--space-4);
+  width:100%;
+  margin:0;
+  padding:12px 14px;
+}
+
+.experience-page .experience-toolbar-content>div{flex:1 1 auto;min-width:0}
+.experience-page .experience-toolbar-content>button{flex:0 0 auto;align-self:center}
+.experience-page .experience-toolbar-content h2{margin:1px 0 2px;font-size:var(--text-section)}
+.experience-page .experience-toolbar .editor-panel-description{margin:0}
+.experience-page .experience-statistics{display:flex;flex:0 0 auto;align-items:center;gap:7px;margin-left:auto}
+.experience-page .experience-stat-card{min-width:68px;padding:6px 9px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-muted)}
+.experience-page .experience-stat-card span{display:block;color:var(--text-muted);font-size:var(--text-caption)}
+.experience-page .experience-stat-card strong{display:block;margin-top:2px;font-size:var(--text-label)}
+
+/* Library */
+.experience-page .editor-content>.editor-panel:not(.experience-toolbar){width:100%;min-width:0;margin:0;padding:var(--space-4)}
+.experience-page .experience-filter-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,190px);gap:var(--space-2);margin-bottom:var(--space-3)}
+.experience-page #experienceList{display:grid;gap:var(--space-3);margin-top:var(--space-3)}
+.experience-page .experience-empty-state{grid-column:1/-1}
+.experience-page .experience-card{
+  position:relative;
+  border:1px solid color-mix(in srgb,var(--page-accent) 14%,var(--border));
+  border-radius:var(--radius-lg);
+  background:radial-gradient(circle at 100% 0,color-mix(in srgb,var(--page-accent) 9%,transparent),transparent 42%),linear-gradient(145deg,var(--surface-raised),var(--surface-muted));
+  box-shadow:var(--inner-highlight);
+  transition:border-color var(--motion-fast),background var(--motion-fast),transform var(--motion-fast),box-shadow var(--motion-fast);
+}
+.experience-page .experience-card-content{display:grid;grid-template-columns:46px minmax(0,1fr);align-items:start;gap:14px;min-width:0;padding:15px 14px 10px}
+.experience-page .experience-card::before{content:"";position:absolute;top:0;left:0;width:42%;height:2px;background:linear-gradient(90deg,var(--page-accent),transparent);opacity:.62;pointer-events:none}
+.experience-page .experience-card:hover{border-color:color-mix(in srgb,var(--page-accent) 34%,var(--border-strong));background:radial-gradient(circle at 100% 0,color-mix(in srgb,var(--page-accent) 13%,transparent),transparent 44%),linear-gradient(145deg,var(--surface-raised),var(--surface));transform:translateY(-2px);box-shadow:var(--shadow-xs),var(--inner-highlight)}
+.experience-page .experience-card.is-active,.experience-page .experience-card[aria-current="true"]{border-color:color-mix(in srgb,var(--page-accent) 60%,var(--border));box-shadow:inset 3px 0 0 var(--page-accent),var(--shadow-xs);background:linear-gradient(100deg,color-mix(in srgb,var(--page-accent) var(--record-active-fill),var(--surface-raised)),var(--surface-raised) 42%)}
+.experience-page .experience-card-logo{display:grid;width:46px;height:46px;place-items:center;overflow:hidden;border:1px solid color-mix(in srgb,var(--page-accent) 42%,var(--border));border-radius:14px;background:linear-gradient(145deg,color-mix(in srgb,var(--page-accent) 18%,var(--surface-raised)),var(--surface));color:var(--page-accent);box-shadow:inset 0 1px color-mix(in srgb,var(--text-primary) 7%,transparent),0 .6rem 1.3rem color-mix(in srgb,var(--page-accent) 8%,transparent)}
+.experience-page .experience-card-main{display:grid;align-content:start;gap:7px;min-width:0}
+.experience-page .experience-card-title-row{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:7px;min-width:0}
+.experience-page .experience-card-title{min-width:0;margin:0;color:var(--text-primary);font-size:var(--text-ui);line-height:var(--line-compact);overflow-wrap:break-word;word-break:normal}
+.experience-page .experience-card-company{margin:0;color:var(--text-secondary);font-size:var(--text-label);font-weight:var(--weight-medium);line-height:var(--line-ui)}
+.experience-page .experience-card-summary{min-width:0;margin:0;color:var(--text-muted);font-size:var(--text-caption);line-height:1.55;}
+.experience-page .experience-card-capabilities{display:flex;min-width:0;gap:5px;flex-wrap:wrap}
+.experience-page .experience-card-capabilities span{display:inline-flex;min-height:22px;align-items:center;max-width:100%;padding:2px 7px;border:1px solid color-mix(in srgb,var(--page-accent) 20%,var(--border));border-radius:999px;background:color-mix(in srgb,var(--page-accent) 6%,var(--surface-soft));color:var(--text-secondary);font-size:var(--text-caption);line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.experience-page .experience-card-badges{display:flex;justify-content:flex-start;gap:5px;flex-wrap:wrap;max-width:none}
+.experience-page .experience-status.published{border-color:color-mix(in srgb,var(--success) 35%,var(--border));background:var(--success-soft);color:var(--success)}
+.experience-page .experience-status.draft{border-color:color-mix(in srgb,var(--danger) 34%,var(--border));background:var(--danger-soft);color:var(--danger)}
+.experience-page .experience-featured-badge{border-color:color-mix(in srgb,var(--warning) 35%,var(--border));background:var(--warning-soft);color:var(--warning)}
+.experience-page .experience-linked-badge{border-color:color-mix(in srgb,var(--accent) 35%,var(--border));background:var(--accent-soft);color:var(--accent)}
+.experience-page .experience-linked-badge small{display:none}
+.experience-page .experience-card-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px;color:var(--text-muted);font-size:var(--text-caption);line-height:var(--line-ui)}
+.experience-page .experience-card-meta span{display:inline-flex;align-items:center;min-height:24px;max-width:100%;padding:3px 7px;border:1px solid var(--border);border-radius:999px;background:var(--surface-soft);overflow-wrap:break-word;word-break:normal}
+.experience-page .experience-card-actions{display:flex;min-width:0;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap;padding:8px 14px 13px;border-top:1px solid var(--border);background:color-mix(in srgb,var(--surface) 52%,transparent)}.experience-page .experience-card-actions>*{width:auto;min-width:72px;flex:0 0 auto;justify-content:center}
+
+/* Edit-mode workspace geometry is owned by admin-layout.css shared master-detail primitives. */
+.experience-page #experienceForm{
+  min-width:0;
+  min-width:0;
+  padding:var(--space-5);
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  background:var(--surface);
+  box-shadow:var(--inner-highlight);
+}
+.experience-page #experienceForm.hidden{display:none}
+.experience-page #experienceForm>.experience-form-section{grid-column:1/-1;margin:0;padding:0 0 var(--space-5);border:0;border-radius:0;background:transparent;box-shadow:none}
+.experience-page #experienceForm>.experience-form-section+.experience-form-section{padding-top:var(--space-5);border-top:1px solid var(--border)}
+.experience-page #experienceForm .editor-form-actions,.experience-page #experienceForm .form-actions{grid-column:1/-1}
+.experience-page .dynamic-entry-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+
+
+/* Skills Library connection ------------------------------------------------ */
+.experience-page .experience-capability-section-header{align-items:center}
+.experience-page .experience-panel-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.experience-page .experience-panel-header-actions .editor-section-number{position:static;flex:0 0 auto}.experience-page .experience-panel-header-actions>a{white-space:nowrap}
+.experience-page .experience-capability-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4)}
+.experience-page .experience-capability-picker{position:relative;display:grid;align-content:start;gap:10px;min-width:0;padding:14px;border:1px solid var(--border);border-radius:var(--radius-md);background:linear-gradient(145deg,var(--surface-muted),color-mix(in srgb,var(--page-accent) 5%,var(--surface-raised)));box-shadow:var(--inner-highlight)}
+.experience-page .experience-capability-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.experience-page .experience-capability-head>div{display:grid;gap:3px}.experience-page .experience-capability-head label{color:var(--text-primary);font-size:var(--text-label);font-weight:var(--weight-bold)}.experience-page .experience-capability-head small{color:var(--text-muted);font-size:var(--text-caption);line-height:var(--line-ui)}
+.experience-page .experience-capability-picker-host{min-width:0}
+.experience-page .experience-capability-picker-host .lan-relationship-list{border-color:color-mix(in srgb,var(--page-accent) 14%,var(--border-strong));background:linear-gradient(180deg,color-mix(in srgb,var(--surface-raised) 78%,transparent),color-mix(in srgb,var(--surface-muted) 90%,transparent))}
+.experience-page .experience-capability-picker-host .lan-capability-add{color:var(--text-primary)}
+.experience-page .experience-capability-library-note{color:var(--text-muted);font-size:var(--text-caption);line-height:var(--line-ui)}
+.experience-page .experience-capability-library-note strong{color:var(--text-secondary);font-weight:var(--weight-semibold)}

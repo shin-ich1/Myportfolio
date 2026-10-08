@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" href="/assets/brand/lan-mark.svg" type="image/svg+xml">
+<meta charset="utf-8"/>
+<script src="js/theme-controller.js"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="description" content="LΛN Portfolio CMS persistent Admin workspace"/>
+<title>LΛN Portfolio CMS</title>
+<link href="css/theme.css" rel="stylesheet"/>
+<link href="css/shared-ui.css" rel="stylesheet"/>
+<link href="css/admin-layout.css" rel="stylesheet"/>
+</head>
+<body class="lan-admin-shell-page">
+<div class="editor-layout lan-admin-shell">
+<aside class="editor-sidebar" id="sidebar">
+<div class="editor-brand"><a href="shell.html" data-lan-workspace="dashboard.html"><span class="editor-brand-logo">LΛN</span><span><strong>Portfolio CMS</strong><small>Owner workspace</small></span></a></div>
+<nav aria-label="Admin navigation" class="editor-navigation">
+<p class="editor-navigation-label">Main</p>
+<a href="dashboard.html" data-lan-workspace="dashboard.html"><span class="navigation-icon" aria-hidden="true"></span><span class="lan-nav-label">Dashboard</span></a>
+<a href="pages/home.html" data-lan-workspace="pages/home.html"><span class="navigation-icon" aria-hidden="true"></span><span class="lan-nav-label">Home / Studio</span></a>
+<a href="pages/about.html" data-lan-workspace="pages/about.html"><span class="navigation-icon" aria-hidden="true"></span><span class="lan-nav-label">About</span></a>
+<a href="pages/experience.html" data-lan-workspace="pages/experience.html"><span class="navigation-icon" aria-hidden="true"></span><span class="lan-nav-label">Experience</span></a>
+<a href="pages/education.html" data-lan-workspace="pages/education.html"><span class="navigation-icon" aria-hidden="true"></span><span class="lan-nav-label">Education</span></a>
+<a href="pages/skills.html" data-lan-workspace="pages/skills.html"><span class="navigation-icon" aria-hidden="true"></span><span class="lan-nav-label">Skills &amp; Tools Used</span></a>
+<a href="pages/projects.html" data-lan-workspace="pages/projects.html"><span class="navigation-icon" aria-hidden="true"></span><span class="lan-nav-label">Projects</span></a>
+<a href="pages/photo-editing.html" data-lan-workspace="pages/photo-editing.html"><span class="navigation-icon" aria-hidden="true"></span><span class="lan-nav-label">Photo Editing</span></a>
+<a href="pages/certificates.html" data-lan-workspace="pages/certificates.html"><span class="navigation-icon" aria-hidden="true"></span><span class="lan-nav-label">Certificates</span></a>
+<a href="pages/resume.html" data-lan-workspace="pages/resume.html"><span class="navigation-icon" aria-hidden="true"></span><span class="lan-nav-label">Resume</span></a>
+<a href="pages/contact.html" data-lan-workspace="pages/contact.html"><span class="navigation-icon" aria-hidden="true"></span><span class="lan-nav-label">Contact</span></a>
+<div class="lan-system-nav" data-lan-system-nav>
+<p class="editor-navigation-label">System</p>
+<a href="pages/settings.html" data-lan-workspace="pages/settings.html"><span class="navigation-icon" aria-hidden="true"></span><span class="lan-nav-label">Settings</span><span class="lan-nav-message-badge" data-admin-message-unread hidden aria-label="0 unread messages">0</span></a>
+</div>
+</nav>
+<section class="lan-sidebar-status is-collapsed"><button class="lan-sidebar-status-toggle" type="button" aria-expanded="false"><span><i></i> LIVE</span><strong>Public Portfolio</strong><b aria-hidden="true">⌃</b></button><div class="lan-sidebar-status-details"><small>Open the published portfolio in a new tab.</small><a href="../index.html" target="_blank" rel="noopener noreferrer">View Portfolio ↗</a></div></section>
+<div class="editor-sidebar-footer"><div class="editor-admin-card"><span class="editor-avatar lan-user-avatar" data-lan-avatar><span>RL</span></span><div><strong>Rolando</strong><small>Administrator</small></div></div><button class="editor-logout-button" id="logoutButton" type="button">Log out</button></div>
+</aside>
+<button class="menu-button lan-shell-menu-button" id="menuButton" type="button" aria-label="Open navigation" aria-expanded="false"><span aria-hidden="true">☰</span></button>
+<main class="lan-admin-workspace-host" id="adminWorkspaceHost" aria-live="polite"></main>
+</div>
+<script src="js/auth-guard.js" type="module"></script>
+<script src="js/admin-ui.js" type="module"></script>
+<script src="js/admin-shell.js" type="module"></script>
+<script src="js/admin-message-notifications.js" type="module"></script>
+</body>
+</html>

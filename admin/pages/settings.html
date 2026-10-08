@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+
+<html lang="en" data-lan-workspace-document="true" data-lan-admin-architecture="shared">
+<head>
+  <link rel="icon" href="/assets/brand/lan-mark.svg" type="image/svg+xml">
+<meta charset="utf-8"/>
+<script src="../js/theme-controller.js"></script>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>Settings | LΛN Portfolio CMS</title>
+<link href="../css/theme.css" rel="stylesheet"/>
+<link href="../css/shared-ui.css" rel="stylesheet"/>
+<link href="../css/settings.css" rel="stylesheet"/>
+  <link href="../css/admin-layout.css" rel="stylesheet"/>
+</head>
+<body class="settings-page">
+<svg aria-hidden="true" class="settings-icon-sprite" focusable="false">
+<symbol id="settings-icon-control" viewbox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M12 12l4-4"></path><path d="M7.8 16.2a6 6 0 0 1 8.4 0"></path></symbol>
+<symbol id="settings-icon-publish" viewbox="0 0 24 24"><path d="M12 16V4"></path><path d="m8 8 4-4 4 4"></path><path d="M5 13v6h14v-6"></path></symbol>
+<symbol id="settings-icon-vault" viewbox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v6c0 1.7 3.1 3 7 3 1.4 0 2.7-.2 3.8-.5"></path><path d="M5 12v5c0 1.7 3.1 3 7 3 1.1 0 2.1-.1 3-.3"></path><path d="M18 15v5m0 0-2-2m2 2 2-2"></path></symbol>
+<symbol id="settings-icon-display" viewbox="0 0 24 24"><rect height="13" rx="2" width="18" x="3" y="4"></rect><path d="M8 21h8M12 17v4"></path></symbol>
+<symbol id="settings-icon-security" viewbox="0 0 24 24"><path d="M12 3 19 6v5c0 4.6-2.8 8-7 10-4.2-2-7-5.4-7-10V6l7-3Z"></path><path d="m8.8 12.1 2.1 2.1 4.5-5"></path></symbol>
+<symbol id="settings-icon-diagnostics" viewbox="0 0 24 24"><path d="M3 12h4l2-5 4 10 2-5h6"></path></symbol>
+<symbol id="settings-icon-firestore" viewbox="0 0 24 24"><ellipse cx="12" cy="5" rx="7" ry="3"></ellipse><path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"></path></symbol>
+<symbol id="settings-icon-admin" viewbox="0 0 24 24"><rect height="12" rx="2" width="18" x="3" y="4"></rect><path d="M8 20h8M12 16v4M7 9h10M7 12h6"></path></symbol>
+<symbol id="settings-icon-public" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path><path d="m15 9 3-3m0 0h-3m3 0v3"></path></symbol>
+</svg>
+<div class="editor-layout">
+<main class="editor-main">
+<header class="editor-topbar"><div><p class="editor-eyebrow">Private systems console</p><h1>Settings</h1></div><div class="editor-status-badge" id="saveStatus">Checking...</div></header>
+<section class="editor-content settings-content lan-admin-workspace">
+<section aria-label="Settings control center" class="settings-hero">
+<div class="settings-hero-copy"><div class="settings-hero-mark">LΛN</div><div><p class="editor-eyebrow">Private control system</p><h2>LΛN Control Center</h2><p>Monitor · switch · verify · recover</p><div class="settings-hero-chips"><span>CMS LIVE</span><span>PRIVATE</span><span>REAL DATA</span></div></div></div>
+<div class="settings-radar-monitor" data-radar-state="checking" id="settingsRadarMonitor">
+<div aria-label="Live service radar" class="settings-radar-stage" id="productionStatusOrb" role="group">
+<span aria-hidden="true" class="settings-radar-disc"><i></i><i></i><i></i><i></i><b class="settings-radar-sweep"></b></span>
+<span aria-hidden="true" class="settings-radar-link radar-link-auth" data-health-link="0"></span>
+<span aria-hidden="true" class="settings-radar-link radar-link-firestore" data-health-link="1"></span>
+<span aria-hidden="true" class="settings-radar-link radar-link-cloudinary" data-health-link="2"></span>
+<span aria-hidden="true" class="settings-radar-link radar-link-public" data-health-link="3"></span>
+<button aria-label="Authentication status: checking" class="settings-radar-node radar-auth" data-health="checking" data-health-node="0" data-service-name="Authentication" type="button"><i class="settings-radar-dot"></i><span><b>Authentication</b><small data-radar-service-state="">Checking</small></span></button>
+<button aria-label="Firestore status: checking" class="settings-radar-node radar-firestore" data-health="checking" data-health-node="1" data-service-name="Firestore" type="button"><i class="settings-radar-dot"></i><span><b>Firestore</b><small data-radar-service-state="">Checking</small></span></button>
+<button aria-label="Cloudinary status: checking" class="settings-radar-node radar-cloudinary" data-health="checking" data-health-node="2" data-service-name="Cloudinary" type="button"><i class="settings-radar-dot"></i><span><b>Cloudinary</b><small data-radar-service-state="">Checking</small></span></button>
+<button aria-label="Public portfolio status: checking" class="settings-radar-node radar-public" data-health="checking" data-health-node="3" data-service-name="Public portfolio" type="button"><i class="settings-radar-dot"></i><span><b>Public Portfolio</b><small data-radar-service-state="">Checking</small></span></button>
+<button aria-label="Run live service diagnostics" class="settings-radar-core" id="radarScanButton" title="Run live diagnostics" type="button"><span aria-hidden="true"></span><i aria-hidden="true"></i></button>
+</div>
+<button aria-controls="productionStatusDetails" aria-expanded="false" class="settings-radar-summary" id="productionStatusToggle" type="button">
+<small>Live systems radar</small><strong id="productionStatusText">Scanning live services</strong><em id="settingsHealthScore">0 of 4 checked</em><span id="settingsLastHealthScan">Live scan starting</span><i aria-hidden="true" class="settings-radar-heartbeat"><svg focusable="false" viewbox="0 0 128 22"><polyline points="0,11 22,11 28,9 33,14 39,3 46,19 53,11 65,11 71,8 76,13 82,5 88,17 95,11 128,11"></polyline></svg><span></span></i><b aria-hidden="true">⌄</b>
+</button>
+</div>
+</section>
+<div class="production-status-details" hidden="" id="productionStatusDetails"><div class="production-service-summary" id="productionStatusSummary"><span>Running diagnostics.</span></div></div>
+<nav aria-label="Settings control rooms" class="workspace-tabs settings-tabs settings-control-rail" id="settingsRoomNav" data-lan-tabs="settings">
+<button aria-selected="true" class="workspace-tab is-active" data-lan-tab="general" type="button"><span class="settings-tab-icon"><svg><use href="#settings-icon-control"></use></svg></span><b>Control</b><small>Overview</small></button>
+<button aria-selected="false" class="workspace-tab" data-lan-tab="portfolio" type="button"><span class="settings-tab-icon"><svg><use href="#settings-icon-publish"></use></svg></span><b>Publish</b><small>Portfolio state</small></button>
+<button aria-selected="false" class="workspace-tab" data-lan-tab="backup" type="button"><span class="settings-tab-icon"><svg><use href="#settings-icon-vault"></use></svg></span><b>Vault</b><small>Sync &amp; backup</small></button>
+<button aria-selected="false" class="workspace-tab" data-lan-tab="appearance" type="button"><span class="settings-tab-icon"><svg><use href="#settings-icon-display"></use></svg></span><b>Display</b><small>Admin appearance</small></button>
+<button aria-selected="false" class="workspace-tab" data-lan-tab="security" type="button"><span class="settings-tab-icon" aria-hidden="true"><svg><use href="#settings-icon-security"></use></svg></span><b>Security &amp; Access</b><small>Devices &amp; recovery</small></button>
+<button aria-selected="false" class="workspace-tab" data-lan-tab="advanced" type="button"><span class="settings-tab-icon"><svg><use href="#settings-icon-diagnostics"></use></svg></span><b>Diagnostics</b><small>Runtime tools</small></button>
+</nav>
+<div class="settings-primary-grid">
+<section aria-label="Portfolio settings overview" class="settings-general-dashboard" data-lan-panel="general">
+<div aria-label="Live CMS telemetry" class="settings-overview-strip">
+<article class="settings-overview-metric metric-records">
+<span aria-hidden="true" class="settings-overview-icon">▦</span>
+<div><small>Portfolio records</small><strong id="settingsPortfolioRecords">—</strong><p>Across managed modules</p></div>
+<span aria-hidden="true" class="metric-motion metric-motion-bars"><i></i><i></i><i></i><i></i><i></i></span>
+</article>
+<article class="settings-overview-metric metric-published">
+<span aria-hidden="true" class="settings-overview-icon">✓</span>
+<div><small>Published</small><strong id="settingsPublishedRecords">—</strong><p>Visible public records</p></div>
+<span aria-hidden="true" class="metric-motion metric-motion-flow"><i></i><i></i><i></i><i></i><i></i></span>
+</article>
+<article class="settings-overview-metric metric-media">
+<span aria-hidden="true" class="settings-overview-icon">◫</span>
+<div><small>Media assets</small><strong id="settingsMediaTotal">—</strong><p>Images and PDFs tracked</p></div>
+<span aria-hidden="true" class="metric-motion metric-motion-orbit"><i></i><b></b><em></em></span>
+</article>
+<article class="settings-overview-metric metric-services" data-state="checking" id="settingsServicesMetric">
+<span aria-hidden="true" class="settings-overview-icon">◎</span>
+<div><small>Live services</small><strong id="settingsHealthScoreCard">0</strong><p>Runtime connections</p></div>
+<span aria-hidden="true" class="metric-motion metric-motion-nodes"><i></i><i></i><i></i><i></i></span>
+</article>
+</div>
+<section aria-labelledby="distributionHeading" class="editor-panel settings-card settings-ornamented-card settings-card-distribution">
+<div class="settings-card-heading settings-card-heading-action" data-lan-action-header><div><p class="editor-eyebrow">Portfolio data</p><h2 id="distributionHeading">System Telemetry</h2><p>Live module media and record footprint across managed modules, with public readiness alongside the chart.</p></div><span class="health-pill neutral" id="settingsDistributionState">Loading</span></div>
+<div class="settings-distribution-layout">
+<div aria-label="Portfolio live telemetry" class="settings-distribution-chart" id="settingsDistributionChart">
+<div class="settings-telemetry-toolbar">
+<div><strong>Live portfolio telemetry</strong><small>Real CMS signals drawn as an active monitor trace. Select Published, Draft, or Storage to promote that signal to the main live line; the other two stay visible as supporting context.</small></div>
+<div class="settings-telemetry-toolbar-actions">
+<div aria-label="Choose main telemetry line" class="settings-telemetry-series-controls" role="group">
+<button aria-label="Published, main telemetry line" aria-pressed="true" class="is-primary series-published" data-telemetry-primary="published" type="button"><i></i><span>Published</span><b id="settingsTelemetryPublishedTotal">0</b></button>
+<button aria-label="Draft, make main telemetry line" aria-pressed="false" class="series-draft" data-telemetry-primary="draft" type="button"><i></i><span>Draft</span><b id="settingsTelemetryDraftTotal">0</b></button>
+<button aria-label="Storage, make main telemetry line" aria-pressed="false" class="series-storage" data-telemetry-primary="storage" type="button"><i></i><span>Storage</span><b id="settingsTelemetryStorageTotal">0 B</b></button>
+</div>
+</div>
+</div>
+<div aria-label="Published, draft, and storage telemetry by public portfolio module" class="settings-telemetry-plot" role="img">
+<div class="settings-live-axis-label settings-live-axis-label-left" id="settingsTelemetryPrimaryLabel">Published · Main</div>
+<div class="settings-live-axis-label settings-live-axis-label-right">Storage scale</div>
+<div aria-hidden="true" class="settings-live-axis settings-live-axis-left" id="settingsTelemetryRecordAxis"></div>
+<div aria-hidden="true" class="settings-live-axis settings-live-axis-right" id="settingsTelemetryStorageAxis"></div>
+<div class="settings-telemetry-scroll">
+<div class="settings-telemetry-canvas" id="settingsTelemetryCanvas">
+<svg id="settingsTelemetrySvg" preserveaspectratio="none" viewbox="0 0 700 190">
+<defs>
+<filter id="settingsTelemetryPrimaryGlow" x="-20%" y="-30%" width="140%" height="160%"><fegaussianblur stddeviation="2.05" result="blur"></fegaussianblur><femerge><femergenode in="blur"></femergenode><femergenode in="SourceGraphic"></femergenode></femerge></filter>
+</defs>
+<g class="settings-telemetry-grid" id="settingsTelemetryGrid"></g>
+<g id="settingsTelemetrySeries"></g>
+</svg>
+<div aria-hidden="true" class="settings-telemetry-axis-x" id="settingsTelemetryModuleAxis"></div>
+<div aria-hidden="true" class="settings-market-crosshair" hidden="" id="settingsTelemetryCrosshair"><i></i><span id="settingsTelemetryCrosshairLabel">Live signal</span></div>
+</div>
+</div>
+<div class="settings-telemetry-trace-caption"><span id="settingsTelemetryCaption">Real public modules · published records · draft records · tracked storage</span><strong id="settingsTelemetryHistoryState">PUBLISHED · LIVE DRAW</strong></div>
+</div>
+</div>
+<div class="settings-distribution-side">
+
+
+<aside aria-labelledby="portfolioHealthTitle" class="settings-portfolio-health">
+<div class="settings-health-summary-head">
+<div><p class="editor-eyebrow">Portfolio health</p><h3 id="portfolioHealthTitle">Public readiness</h3></div>
+<span class="settings-readiness-badge" id="settingsReadinessBadge"><i aria-hidden="true"></i><span>Checking</span></span>
+</div>
+<div class="settings-health-primary">
+<div><strong><span id="settingsPublishedLegend">0</span><small>/</small><span id="settingsPortfolioHealthTotal">0</span></strong><p>Published + visible</p></div>
+<span id="settingsPublishedShare">0%</span>
+</div>
+<div aria-label="Public readiness percentage" class="settings-readiness-progress"><i id="settingsReadinessProgress"></i></div>
+<div class="settings-health-stat-grid">
+<article><small>Published</small><strong id="settingsHealthReadyCount">0</strong></article>
+<article><small>Draft / hidden</small><strong id="settingsHiddenLegend">0</strong></article>
+<article><small>Modules</small><strong id="settingsHealthModuleCount">0</strong></article>
+<article><small>Coverage</small><strong id="settingsHealthCoverage">0%</strong></article>
+</div>
+<div class="settings-health-profile">
+<div><span>Module coverage</span><strong id="settingsHealthProfileLabel">Waiting for data</strong></div>
+<div aria-hidden="true" class="settings-health-coverage-bars" id="settingsHealthCoverageBars"></div>
+</div>
+<p class="settings-health-note" id="settingsHealthNote">Waiting for portfolio telemetry.</p>
+</aside></div>
+</div>
+<div class="settings-telemetry-module-rail" aria-label="Module telemetry rail">
+<div class="settings-telemetry-module-rail-head"><strong>Module telemetry</strong><small>Each managed module keeps the same card width. Scroll horizontally as the portfolio grows.</small></div>
+<div class="settings-telemetry-modules" id="settingsTelemetryModules"></div>
+</div>
+</section>
+<div class="settings-dashboard-side">
+<section aria-labelledby="healthHeading" class="editor-panel settings-card settings-ornamented-card settings-card-services">
+<div class="settings-card-heading settings-card-heading-action" data-lan-action-header><div><p class="editor-eyebrow">Connected services</p><h2 id="healthHeading">Service Health</h2><p>Live service signals.</p></div><button aria-label="Refresh portfolio health" class="editor-icon-button" id="refreshHealthButton" type="button">↻</button></div>
+<div aria-live="polite" class="health-list settings-health-grid" id="healthList"></div>
+</section>
+<section aria-labelledby="publicPortfolioQrHeading" class="editor-panel settings-card settings-ornamented-card settings-public-qr">
+<div class="settings-card-heading"><div><p class="editor-eyebrow">Public access</p><h2 id="publicPortfolioQrHeading">Portfolio QR</h2><p>Branded direct link to the public portfolio.</p></div></div>
+<div class="settings-public-qr-frame"><canvas id="publicPortfolioQrCanvas" aria-label="QR code for the public portfolio"></canvas></div>
+<div class="settings-public-qr-meta"><div><strong>LΛN · PUBLIC PORTFOLIO</strong><span class="settings-public-qr-status" id="publicPortfolioQrStatus">Checking…</span></div><small id="publicPortfolioQrUrl">Public Portfolio</small></div>
+<div class="settings-public-qr-actions"><button class="editor-secondary-button button-compact" id="openPublicPortfolioQrButton" type="button">Open Portfolio</button><button class="editor-primary-button button-compact" id="downloadPublicPortfolioQrButton" type="button">Download QR</button></div>
+</section>
+</div>
+<section class="editor-panel settings-card settings-ornamented-card settings-storage-hub" aria-labelledby="storageHeading">
+<div class="settings-card-heading settings-card-heading-action" data-lan-action-header><div><p class="editor-eyebrow">Connected storage</p><h2 id="storageHeading">Storage Hub</h2><p>Multiple storage providers can stay connected at the same time. Existing assets remain on the provider that owns them.</p></div><button class="editor-primary-button" id="connectStorageButton" data-lan-primary-action type="button">+ Connect Storage</button></div>
+<div class="storage-hub-defaults" aria-label="Default storage destinations">
+<label><span>Images</span><select data-lan-select="native" data-storage-default-family="image" id="storageDefaultImage" name="storageDefaultImage"></select></label>
+<label><span>Video</span><select data-lan-select="native" data-storage-default-family="video" id="storageDefaultVideo" name="storageDefaultVideo"></select></label>
+<label><span>Documents</span><select data-lan-select="native" data-storage-default-family="document" id="storageDefaultDocument" name="storageDefaultDocument"></select></label>
+<label><span>Other files</span><select data-lan-select="native" data-storage-default-family="file" id="storageDefaultFile" name="storageDefaultFile"></select></label>
+</div>
+<div class="storage-hub-provider-chooser" id="storageProviderChooser" hidden><strong>Connect storage</strong><button class="editor-secondary-button" data-connect-storage-provider="google-drive" type="button">Google Drive</button><button class="editor-ghost-button" data-storage-provider-close type="button">Cancel</button></div>
+<div class="storage-hub-setup" id="googleDriveSetupPanel" hidden>
+<header><div><p class="editor-eyebrow">Google Drive setup</p><h3>Connect your Google account securely</h3><p>The portfolio never stores your Google password or OAuth client secret in Firestore or the browser. Google sign-in can start after the Worker prerequisites below are ready.</p></div><button class="editor-ghost-button button-compact" data-google-drive-setup-close type="button">Close</button></header>
+<div class="storage-hub-setup-status"><span><small>OAuth state store</small><strong id="googleDriveSetupKvStatus">Checking…</strong></span><span><small>Google OAuth client</small><strong id="googleDriveSetupOAuthStatus">Checking…</strong></span></div>
+<div class="storage-hub-setup-steps"><p><strong>1.</strong> In Google Cloud, enable the Google Drive API and create an OAuth 2.0 Client ID for a Web application.</p><p><strong>2.</strong> Add this exact Authorized redirect URI:</p><code id="googleDriveSetupCallback">Checking Worker callback…</code><p><strong>3.</strong> For local testing, add <code>GOOGLE_DRIVE_CLIENT_ID</code> and <code>GOOGLE_DRIVE_CLIENT_SECRET</code> to <code>telemetry-worker/.dev.vars</code>. For the deployed Worker, store them as Wrangler secrets:</p><pre id="googleDriveSetupCommands">npx.cmd wrangler secret put GOOGLE_DRIVE_CLIENT_ID
+npx.cmd wrangler secret put GOOGLE_DRIVE_CLIENT_SECRET</pre><p><strong>4.</strong> Restart <code>wrangler dev</code>, then choose <strong>Check Again</strong>. When ready, click Google Drive again and Google will open the official account chooser.</p></div>
+<footer><button class="editor-secondary-button" data-google-drive-setup-check type="button">Check Again</button></footer>
+</div>
+<div class="storage-hub-profile-grid" id="storageHubProfiles" aria-live="polite"><div class="lan-empty-state"><strong>Loading Storage Hub…</strong><p>Reading connected providers.</p></div></div>
+</section>
+<div class="settings-identity-media-layout">
+<section class="settings-communications-stack" aria-label="Account and private messages">
+  <section class="editor-panel settings-card settings-ornamented-card settings-message-center" aria-labelledby="settingsMessagesHeading" data-message-screen="list">
+    <header class="settings-message-app-header">
+      <button class="settings-message-back" id="settingsMessageBackButton" type="button" aria-label="Back to conversations" hidden>‹</button>
+      <div><p class="editor-eyebrow">Private portfolio messaging</p><h2 id="settingsMessagesHeading">Messages</h2><p id="settingsMessageSubtitle">Private visitor conversations from the Public Portfolio.</p></div>
+      <div class="settings-message-header-actions"><span class="settings-message-unread-badge" id="settingsMessageUnreadBadge" hidden>0</span><button class="editor-icon-button" id="settingsEnableMessageNotifications" type="button" aria-label="Enable message notifications" title="Enable message notifications">🔔</button></div>
+    </header>
+
+    <div class="settings-message-list-screen" data-message-list-screen>
+      <label class="settings-message-search"><span aria-hidden="true">⌕</span><input id="settingsMessageSearch" type="search" placeholder="Search conversations" autocomplete="off"/></label>
+      <div class="settings-message-thread-list" id="settingsMessageThreadList" aria-live="polite"><div class="lan-empty-state"><strong>Loading messages…</strong><p>Reading private conversations.</p></div></div>
+    </div>
+
+    <div class="settings-message-conversation-screen" data-message-conversation-screen hidden>
+      <div class="settings-message-conversation-meta"><div class="settings-message-avatar" id="settingsMessageAvatar">?</div><div><strong id="settingsMessageVisitorName">Visitor</strong><span id="settingsMessageConversationState">Private conversation</span></div><button class="editor-danger-button button-compact" id="settingsDeleteConversationButton" type="button">Delete</button></div>
+      <div class="settings-message-thread" id="settingsMessageConversation" aria-live="polite"></div>
+      <form class="settings-message-reply" id="settingsMessageReplyForm"><textarea id="settingsMessageReplyInput" maxlength="2000" rows="2" required placeholder="Reply…"></textarea><button class="editor-primary-button" id="settingsMessageReplyButton" type="submit">Send</button><small aria-live="polite" id="settingsMessageReplyStatus"></small></form>
+    </div>
+  </section>
+</section>
+<div class="settings-identity-stack">
+<section aria-labelledby="greetingHeading" class="editor-panel settings-card settings-ornamented-card settings-card-greeting">
+<div class="settings-card-heading"><div><p class="editor-eyebrow">Dashboard identity</p><h2 id="greetingHeading">Automatic Greeting</h2><p>Time-aware Dashboard identity.</p></div></div>
+<div class="settings-greeting-stage"><div class="settings-greeting-copy"><span>Dashboard preview</span><strong id="settingsGreetingPreview">Welcome back, Rolando.</strong><small>Time-aware phrases stay responsive even when the message is longer.</small></div><div aria-hidden="true" class="greeting-energy"><i></i><i></i><i></i><i></i><i></i></div></div>
+<div class="settings-identity-fields">
+<label class="settings-field"><span>Admin display name</span><input autocomplete="off" id="dashboardGreetingName" maxlength="24" placeholder="Rolando" type="text"/><small>Used by the Dashboard greeting and private Admin identity.</small></label>
+<label class="settings-field"><span>Portfolio Pass name</span><input autocomplete="off" id="portfolioPassName" maxlength="18" placeholder="LΛN" type="text"/><small>Used only on the private LΛN e-wallet pass.</small></label>
+</div>
+<div class="settings-actions settings-identity-actions"><button class="editor-primary-button" id="saveGreetingNameButton" type="button">Save Admin identity</button><button class="editor-secondary-button" id="savePortfolioPassNameButton" type="button">Save Pass name</button></div>
+</section>
+
+</div>
+</div>
+<section aria-labelledby="brandingHeading" class="editor-panel settings-card settings-ornamented-card settings-card-branding">
+<div aria-hidden="true" class="settings-brand-beacon"><span>Λ</span><i></i><i></i></div><div class="settings-card-heading"><div><p class="editor-eyebrow">Brand identity</p><h2 id="brandingHeading">LΛN Portfolio Workspace</h2><p>Private CMS identity; public presentation stays in Home / Studio.</p></div></div><div class="settings-branding-body"><div class="settings-brand-lockup"><strong>LΛN</strong><span>Portfolio CMS v2</span></div><dl class="settings-info-list"><div><dt>Admin product</dt><dd>LΛN Portfolio CMS v2</dd></div><div><dt>Public presentation</dt><dd>Home / Studio</dd></div></dl><div class="settings-actions"><a class="editor-secondary-button" href="home.html">Open Home / Studio</a></div></div>
+</section>
+</section>
+<section aria-labelledby="initializationHeading" class="editor-panel settings-card settings-ornamented-card settings-card-publishing settings-workspace-panel settings-portfolio-workspace workspace-panel-hidden" data-lan-panel="portfolio">
+<div class="settings-workspace-head"><div class="settings-card-heading settings-card-heading-action settings-workspace-status-head"><div class="settings-workspace-title-group"><span class="settings-card-icon"><svg class="settings-ui-icon"><use href="#settings-icon-publish"></use></svg></span><div><p class="editor-eyebrow">Portfolio &amp; publishing</p><h2 id="initializationHeading">Portfolio Status</h2><p id="initializationStatus">Checking initialization status...</p></div></div><span class="health-pill neutral" id="initializationHealth">Checking</span></div><p class="settings-workspace-intro"></p></div>
+<div aria-label="Portfolio status summary" class="settings-tab-kpis">
+<article><small>Managed records</small><strong data-settings-mirror="settingsPortfolioRecords">—</strong><span>Across CMS modules</span></article>
+<article><small>Published</small><strong data-settings-mirror="settingsPublishedRecords">—</strong><span>Visible public records</span></article>
+<article><small>Media assets</small><strong data-settings-mirror="settingsMediaTotal">—</strong><span>Images and PDFs</span></article>
+<article><small>Services</small><strong data-settings-mirror="settingsHealthScoreCard">0/4</strong><span>Runtime readiness</span></article>
+</div>
+<div aria-label="Live publishing pipeline" class="settings-pipeline-engine" data-state="idle" id="settingsPipelineEngine">
+<div aria-hidden="true" class="pipeline-rail"><span></span><i></i><i></i><i></i></div>
+<article class="pipeline-stage pipeline-firestore" data-pipeline-step="01">
+<span class="pipeline-stage-icon"><svg class="settings-ui-icon"><use href="#settings-icon-firestore"></use></svg></span>
+<div class="pipeline-stage-copy"><small>Source</small><strong>Firestore</strong><em>Live portfolio records</em></div>
+<div class="pipeline-stage-readout"><b data-settings-mirror="settingsPortfolioRecords">—</b><span>records</span></div>
+</article>
+<article class="pipeline-stage pipeline-admin" data-pipeline-step="02">
+<span class="pipeline-stage-icon"><svg class="settings-ui-icon"><use href="#settings-icon-admin"></use></svg></span>
+<div class="pipeline-stage-copy"><small>Controller</small><strong>Admin CMS</strong><em id="pipelineAdminState">Ready</em></div>
+<div class="pipeline-stage-readout"><b id="pipelineSchemaValue">v—</b><span>schema</span></div>
+</article>
+<article class="pipeline-stage pipeline-public" data-pipeline-step="03">
+<span class="pipeline-stage-icon"><svg class="settings-ui-icon"><use href="#settings-icon-public"></use></svg></span>
+<div class="pipeline-stage-copy"><small>Destination</small><strong>Public Portfolio</strong><em id="pipelinePublicState">Waiting for verification</em></div>
+<div class="pipeline-stage-readout"><b data-settings-mirror="settingsPublishedRecords">—</b><span>visible</span></div>
+</article>
+</div>
+<div class="settings-portfolio-layout">
+<div class="settings-operation-column">
+<div class="settings-operation-stage" data-state="idle" id="portfolioOperationStage">
+<div aria-hidden="true" class="settings-operation-visual"><span class="settings-operation-core">LΛN</span><i></i><i></i><i></i><b></b></div>
+<div class="settings-operation-copy"><p class="editor-eyebrow" id="portfolioOperationKicker">System ready</p><h3 id="portfolioOperationTitle">Publishing engine is standing by</h3><p id="portfolioOperationMessage">Run verification to send a live pulse through Firestore, the Admin CMS and the public portfolio.</p></div>
+<strong class="settings-operation-percent" id="portfolioOperationPercent">Ready</strong>
+</div>
+<div class="settings-progress-row"><div aria-hidden="true" class="progress-track"><span id="initializationProgress"></span></div><p aria-live="polite" class="settings-live-message" id="initializationProgressLabel">Ready.</p></div>
+</div>
+<aside class="settings-publishing-console"><p class="editor-eyebrow">Publishing snapshot</p><dl class="settings-summary-grid"><div><dt>Last initialization</dt><dd id="lastInitializationTime">—</dd></div><div><dt>Synchronization</dt><dd id="synchronizationStatus">Not verified</dd></div><div><dt>Schema</dt><dd id="initializationVersion">—</dd></div></dl><div class="settings-publishing-note"><strong>Safe workflow</strong><p>Verify first. Repair missing records only when recovery is actually needed.</p></div></aside>
+</div>
+<section class="settings-module-lifecycle" aria-labelledby="moduleLifecycleHeading"><div class="settings-card-heading settings-card-heading-action" data-lan-action-header><div><p class="editor-eyebrow">Custom Modules</p><h3 id="moduleLifecycleHeading">Module Lifecycle</h3><p>Structural validation, maturity, and promotion status at a glance. Advanced controls stay inside the lifecycle console.</p></div></div><div class="module-lifecycle-list" id="moduleLifecycleList" aria-live="polite"><div class="lan-empty-state"><strong>Loading module lifecycle…</strong><p>Reading lifecycle state.</p></div></div></section>
+<div id="moduleLifecycleConsoleHost"></div>
+<div class="settings-actions settings-portfolio-actions"><button class="editor-primary-button" id="verifyPortfolioButton" type="button">Verify Portfolio</button><button class="editor-secondary-button" id="repairMissingButton" type="button">Repair Missing Records</button></div>
+</section>
+<section aria-labelledby="backupHeading" class="editor-panel settings-card settings-ornamented-card settings-card-backup settings-workspace-panel settings-backup-workspace workspace-panel-hidden" data-lan-panel="backup">
+<div class="settings-workspace-head"><div class="settings-card-heading"><span class="settings-card-icon"><svg class="settings-ui-icon"><use href="#settings-icon-vault"></use></svg></span><div><p class="editor-eyebrow">Backup &amp; recovery</p><h2 id="backupHeading">Sync &amp; Backup Vault</h2><p>Export, restore and inspect supported portfolio records without changing the CMS architecture.</p></div></div><p class="settings-workspace-intro"></p></div>
+<div class="settings-backup-layout">
+<div class="settings-backup-visual" data-state="ready" id="settingsBackupCore">
+<div aria-hidden="true" class="settings-backup-vault">
+<div class="vault-core"><span>LΛN</span><small id="backupCoreState">READY</small></div>
+<span class="vault-ring ring-one"></span><span class="vault-ring ring-two"></span><span class="vault-ring ring-three"></span>
+<i class="vault-transfer transfer-one"></i><i class="vault-transfer transfer-two"></i><i class="vault-transfer transfer-three"></i>
+</div>
+<div class="backup-vault-caption"><span class="health-pill success" id="backupCorePill">READY</span><strong>Backup Core</strong><small id="backupCoreMessage">Protected records are ready for export, restore or diagnostics.</small></div>
+</div>
+<div class="settings-backup-copy">
+<div aria-label="Backup snapshot" class="settings-tab-kpis settings-tab-kpis-compact"><article><small>Managed records</small><strong data-settings-mirror="settingsPortfolioRecords">—</strong><span>Current CMS content</span></article><article><small>Media refs</small><strong data-settings-mirror="settingsMediaTotal">—</strong><span>Tracked in records</span></article><article><small>Services</small><strong data-settings-mirror="settingsHealthScoreCard">0/4</strong><span>Connection status</span></article></div>
+<input accept="application/json,.json" class="visually-hidden" id="importPortfolioInput" type="file"/ hidden="">
+<div class="settings-backup-actions">
+<button class="backup-action-card primary" id="exportPortfolioButton" type="button"><b>Export Portfolio</b><span>Create a portable JSON backup of supported records.</span><em>Export ↗</em></button>
+<button class="backup-action-card" id="importPortfolioButton" type="button"><b>Import Backup</b><span>Restore supported records from a previously exported file.</span><em>Choose file ↗</em></button>
+<button class="backup-action-card" id="downloadDiagnosticsButton" type="button"><b>Download Diagnostics</b><span>Save runtime and environment details for troubleshooting.</span><em>Download ↗</em></button>
+</div>
+<p aria-live="polite" class="settings-live-message backup-live-status" id="backupStatus">No backup action performed.</p>
+</div>
+</div>
+<div class="settings-backup-footprint"><div><small>Protected architecture</small><strong>7 managed collections</strong><span>Projects, photos, experience, education, skills, certificates and resumes.</span></div><div><small>Singleton portfolio docs</small><strong>4 supported records</strong><span>Home, profile, contact and initialization state.</span></div><div><small>Public safety</small><strong>No visual overwrite</strong><span>Admin appearance preferences remain outside public portfolio content.</span></div></div>
+</section>
+<section aria-labelledby="preferencesHeading" class="editor-panel settings-card settings-ornamented-card settings-card-appearance settings-workspace-panel settings-appearance-workspace workspace-panel-hidden" data-lan-panel="appearance">
+<div class="settings-workspace-head"><div class="settings-card-heading"><span class="settings-card-icon"><svg class="settings-ui-icon"><use href="#settings-icon-display"></use></svg></span><div><p class="editor-eyebrow">Appearance</p><h2 id="preferencesHeading">Interface Preferences</h2><p>Private interface controls for this Admin workspace.</p></div></div><p class="settings-workspace-intro"></p></div>
+<div class="settings-appearance-layout">
+<div aria-label="Live Admin interface preview" class="appearance-preview" data-preview-compact="false" data-preview-motion="true" data-preview-theme="system" id="appearanceLivePreview">
+<div class="preview-browser-bar"><b>LΛN Admin</b><span></span><i>CMS ready</i></div>
+<div class="preview-shell">
+<aside class="preview-sidebar"><strong>LΛN</strong><i class="active"></i><i></i><i></i><i></i><i></i></aside>
+<div class="preview-main">
+<header><div><small>Dashboard</small><strong id="previewGreetingMirror">Welcome back, Boss.</strong></div><span class="preview-status-dot"></span></header>
+<div class="preview-metrics">
+<article><small>Records</small><b data-settings-mirror="settingsPortfolioRecords">—</b><i></i></article>
+<article><small>Published</small><b data-settings-mirror="settingsPublishedRecords">—</b><i></i></article>
+<article><small>Media</small><b data-settings-mirror="settingsMediaTotal">—</b><i></i></article>
+<article><small>Services</small><b data-settings-mirror="settingsHealthScoreCard">0</b><i></i></article>
+</div>
+<div class="preview-dashboard-grid"><section><span></span><i></i><i></i><i></i><i></i></section><aside><b></b><b></b><b></b><b></b></aside></div>
+</div>
+</div>
+<div aria-hidden="true" class="preview-device-switcher"><i class="is-active"></i><i></i><i></i></div>
+<div class="appearance-glow"></div>
+</div>
+<div class="settings-appearance-controls"><div class="settings-theme-control"><div><small>THEME MODE</small><strong id="themeModeLabel">System</strong></div><div aria-label="Admin theme" class="theme-choice-group" role="group"><button class="editor-secondary-button" data-theme-choice="system" type="button">System</button><button class="editor-secondary-button" data-theme-choice="dark" type="button">Dark</button><button class="editor-secondary-button" data-theme-choice="light" type="button">Light</button></div><select aria-hidden="true" class="visually-hidden" id="themePreference" tabindex="-1"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></div><div class="settings-toggle-list"><label class="settings-switch"><span><strong>Reduced motion</strong><small>Quiet animations</small></span><input id="reducedMotionPreference" role="switch" type="checkbox"/></label><label class="settings-switch"><span><strong>Compact workspace</strong><small>Tighter control density</small></span><input id="compactModePreference" role="switch" type="checkbox"/></label><label class="settings-switch"><span><strong>Show Portfolio Status in Sidebar</strong><small>Keep the compact LIVE portfolio control available in the Admin sidebar.</small></span><input id="sidebarPortfolioStatusPreference" role="switch" type="checkbox"/></label></div><div class="appearance-scope-note"><strong>ADMIN ONLY</strong><p>Never changes the public portfolio.</p></div></div>
+</div>
+<section aria-labelledby="dashboardVisualHeading" class="dashboard-visual-setting">
+<div class="dashboard-visual-preview"><img alt="Current Admin Dashboard visual" class="dashboard-visual-foreground" id="dashboardVisualPreview" src="../../assets/images/editor-workstation.png"/><span class="admin-only-badge">ADMIN ONLY</span><div class="dashboard-visual-overlay"><strong>Dashboard hero visual</strong><small id="dashboardVisualName">Default editor workstation</small></div></div>
+<div class="dashboard-visual-controls"><p class="editor-eyebrow">Dashboard identity</p><h3 id="dashboardVisualHeading">Admin Dashboard Picture</h3><p>Private Dashboard visual. Full image, no crop, no public changes.</p><input accept="image/png,image/jpeg,image/webp" class="visually-hidden" id="dashboardVisualInput" type="file"/ hidden=""><div class="settings-actions"><button class="editor-primary-button" id="changeDashboardVisualButton" type="button">Change Picture</button><button class="editor-secondary-button" id="resetDashboardVisualButton" type="button">Restore Default</button></div><p aria-live="polite" class="settings-live-message" id="dashboardVisualStatus">Using the default Admin Dashboard image.</p><div class="dashboard-visual-rules"><span><b>16:9</b><small>Fixed frame</small></span><span><b>Fit</b><small>No crop</small></span><span><b>Admin</b><small>Private UI</small></span></div></div>
+</section>
+</section>
+<section class="editor-panel settings-security-panel settings-workspace-panel workspace-panel-hidden" data-lan-panel="security" aria-labelledby="securityAccessHeading">
+<header class="settings-security-hero"><div><p class="editor-eyebrow">Account protection</p><h2 id="securityAccessHeading">Security &amp; Access</h2><p>Trusted devices and active sessions are separate. Sensitive changes require recent password + authenticator verification.</p></div><span class="health-pill neutral" id="securityGatewayState">Checking</span></header>
+<div class="settings-security-grid">
+<section class="settings-security-section settings-security-devices" aria-labelledby="trustedDevicesHeading"><header><div><p class="editor-eyebrow">Permanent approvals</p><h3 id="trustedDevicesHeading">Trusted Devices</h3><p>Devices explicitly enrolled with their own non-exportable cryptographic key.</p></div><div class="settings-security-header-actions"><span class="health-pill success" id="currentTrustedDeviceState" hidden>This device is trusted</span><button class="editor-primary-button button-compact" id="registerTrustedDeviceButton" type="button">Trust This Device</button></div></header><div id="trustedDevicesList" class="settings-security-list" aria-live="polite"></div><small id="trustedDeviceStatus" class="settings-live-message" aria-live="polite"></small><div id="trustedDeviceEnrollment" class="settings-security-enrollment" hidden><div id="trustedDeviceQr" class="settings-security-qr"></div><p><strong>One-time enrollment link</strong><code id="trustedDeviceEnrollmentUrl"></code></p><div class="settings-actions"><button class="editor-primary-button" id="completeTrustedDeviceEnrollmentButton" type="button">Complete Enrollment</button><button class="editor-secondary-button" id="approveTrustedDeviceButton" type="button">Approve with this trusted device</button><button class="editor-ghost-button" id="closeTrustedDeviceEnrollmentButton" type="button">Close</button></div></div></section>
+<section class="settings-security-section settings-security-sessions" aria-labelledby="activeSessionsHeading"><header><div><p class="editor-eyebrow">Current &amp; recent access</p><h3 id="activeSessionsHeading">Active Sessions</h3><p>Temporary and trusted sessions appear here independently from device enrollment.</p></div><div class="settings-actions"><button class="editor-secondary-button button-compact" id="revokeTemporarySessionsButton" type="button" hidden>Sign Out Temporary</button><button class="editor-danger-button button-compact" id="revokeOtherSessionsButton" type="button" hidden>Sign Out All Others</button></div></header><div id="activeSessionsList" class="settings-security-list" aria-live="polite"></div></section>
+<div class="settings-security-detail-grid">
+<div class="settings-security-main-stack">
+<section class="settings-security-section settings-security-verification" aria-labelledby="verificationHeading"><header><div><p class="editor-eyebrow">Verification &amp; Account Security</p><h3 id="verificationHeading">Verification / TOTP &amp; Change Password</h3><p>Account-changing actions always use recent password + authenticator step-up.</p></div><span class="health-pill neutral" id="securityStepUpState">Step-up required</span></header><div class="settings-security-status-grid"><div><small>Verified email</small><strong id="securityVerifiedEmail">Checking</strong></div><div><small>Authenticator</small><strong id="securityTotpState">Checking</strong></div></div><form id="securityChangePasswordForm" class="settings-security-form"><label class="settings-field"><span>Current password</span><input id="securityCurrentPassword" type="password" autocomplete="current-password" required></label><div class="settings-password-new-grid"><label class="settings-field"><span>New password</span><input id="securityNewPassword" type="password" autocomplete="new-password" minlength="8" required></label><label class="settings-field"><span>Confirm new password</span><input id="securityConfirmPassword" type="password" autocomplete="new-password" minlength="8" required></label></div><button class="editor-primary-button" type="submit">Change Password</button><small id="securityPasswordStatus" aria-live="polite"></small></form><div class="settings-security-danger-zone"><div><strong>Reset Authenticator</strong><p>Removes the current TOTP enrollment, revokes every session and trusted device, then requires a fresh security bootstrap.</p></div><button class="editor-danger-button button-compact" id="resetAuthenticatorButton" type="button">Reset Authenticator</button></div></section>
+<section class="settings-security-section settings-security-activity" aria-labelledby="activityHeading"><header><div><p class="editor-eyebrow">Audit trail</p><h3 id="activityHeading">Security Activity</h3><p>Meaningful login, TOTP, device, session, password, recovery, and defensive events.</p></div><button class="editor-secondary-button button-compact" id="refreshSecurityActivityButton" type="button">Refresh</button></header><div id="securityActivityList" class="settings-security-list" aria-live="polite"></div></section>
+</div>
+<div class="settings-security-side-stack">
+<section class="settings-security-section settings-security-recovery" aria-labelledby="recoveryHeading"><header><div><p class="editor-eyebrow">Offline emergency access</p><h3 id="recoveryHeading">Recovery</h3><p>The Master Recovery Key is shown only when generated. Only a keyed hash is stored server-side.</p></div><span class="health-pill neutral" id="recoveryKitState">Checking</span></header><div class="settings-actions"><button class="editor-primary-button" id="generateRecoveryKitButton" type="button">Generate / Rotate Recovery Kit</button></div><div id="recoveryKitOutput" class="settings-recovery-output" hidden></div></section>
+<section class="settings-security-section settings-security-branding" aria-labelledby="emailBrandingHeading"><header><div><p class="editor-eyebrow">Alert presentation</p><h3 id="emailBrandingHeading">Security Email Branding</h3><p>Brand presentation is editable; security event content, recipients, action URLs, and tokens stay server-controlled.</p></div><span class="health-pill neutral" id="securityEmailProviderState">Checking</span></header><form id="securityEmailBrandingForm" class="settings-security-form"><label class="settings-field"><span>Sender display name</span><input id="securityEmailSenderName" maxlength="80"></label><label class="settings-field"><span>Portrait / logo URL</span><input id="securityEmailLogoUrl" type="url"></label><label class="settings-field"><span>Heading</span><input id="securityEmailHeading" maxlength="100"></label><label class="settings-field"><span>Footer copy</span><textarea id="securityEmailFooter" maxlength="240" rows="3"></textarea></label><button class="editor-primary-button" type="submit">Save Branding</button><small id="securityEmailBrandingStatus" aria-live="polite"></small></form></section>
+</div>
+</div>
+</div>
+</section>
+<section class="editor-panel settings-advanced settings-workspace-panel workspace-panel-hidden" data-lan-panel="advanced">
+<div class="settings-advanced-body">
+<section aria-labelledby="systemDiagnosticsHeading" class="settings-advanced-section settings-diagnostics-console" id="settingsDiagnosticsConsole">
+<div class="settings-card-heading settings-card-heading-action" data-lan-action-header><div><p class="editor-eyebrow">System diagnostics &amp; recovery</p><h2 id="systemDiagnosticsHeading">Monitor · Diagnose · Repair · Verify</h2><p>One control center for Authentication, Firestore, Cloudinary, public delivery, storage and custom-module integrity.</p></div><div class="settings-diagnostic-heading-actions" data-lan-action-group><span class="health-pill neutral" id="systemDiagnosticState">Waiting</span><button class="editor-primary-button" id="runFullDiagnosticButton" data-lan-primary-action type="button">Run Full Diagnostic</button></div></div>
+<div aria-label="Diagnostic summary" class="settings-diagnostic-summary"><article><small>Monitored services</small><strong id="diagnosticCoreScore">0 / 6</strong><span>Authentication · Firestore · Cloudinary · Public · Storage · Modules</span></article><article><small>Current issues</small><strong id="diagnosticIssueCount">0</strong><span id="diagnosticIssueSummary">No scan completed yet</span></article><article><small>Storage</small><strong id="diagnosticStorageState">—</strong><span id="diagnosticStorageDetail">Waiting for Cloudinary capacity data</span></article><article><small>Last scan</small><strong id="diagnosticLastScan">—</strong><span>Global Admin monitor</span></article></div>
+<div class="settings-diagnostic-grid">
+<div class="settings-diagnostic-column"><div class="settings-diagnostic-section-head"><div><strong>Service diagnostics</strong><span>Core systems and supporting CMS checks.</span></div></div><div aria-live="polite" class="settings-diagnostic-services" id="diagnosticServiceGrid"><p class="settings-diagnostic-empty">Run diagnostics to inspect services.</p></div></div>
+<div class="settings-diagnostic-column"><div class="settings-diagnostic-section-head"><div><strong>Issues requiring attention</strong><span>Only active warnings and critical failures appear here.</span></div></div><div aria-live="polite" class="settings-diagnostic-issues" id="diagnosticIssueList"><div class="settings-diagnostic-empty"><strong>No scan completed</strong><span>Run a full diagnostic to inspect the CMS.</span></div></div><div aria-live="polite" class="settings-repair-stage" data-state="idle" id="settingsRepairStage"><span class="settings-repair-indicator" aria-hidden="true"></span><div><strong id="settingsRepairTitle">Recovery engine ready</strong><span id="settingsRepairMessage">Safe repairs run only when a known recovery procedure exists.</span></div></div></div>
+</div>
+<div class="settings-diagnostic-history"><div class="settings-diagnostic-section-head"><div><strong>Diagnostic &amp; repair history</strong><span>Local Admin history of detected issues, recoveries and repair attempts.</span></div><button class="editor-secondary-button button-compact" id="clearDiagnosticHistoryButton" type="button">Clear history</button></div><div class="settings-history-list" id="diagnosticHistoryList"><p class="settings-diagnostic-empty">No diagnostic events recorded yet.</p></div></div>
+</section>
+<section aria-labelledby="syncHeading" class="settings-advanced-section"><div class="settings-card-heading settings-card-heading-action" data-lan-action-header><div><h2 id="syncHeading">Admin ↔ Public synchronization</h2><p>Read-only Firestore checks for publish state and module availability.</p></div><span class="health-pill neutral" id="syncHealth">Not verified</span></div><div class="collection-table-wrap"><table class="collection-table"><thead><tr><th>Module</th><th>Firestore</th><th>Published</th><th>Hidden / Draft</th><th>Status</th></tr></thead><tbody id="collectionVerificationBody"><tr><td colspan="5">Run verification to inspect collections.</td></tr></tbody></table></div><div class="settings-actions"><button class="editor-primary-button" id="verifySynchronizationButton" type="button">Verify Synchronization</button></div></section>
+<section class="settings-advanced-section"><h2>Initialization report</h2><div class="simple-report settings-report"><div class="settings-metric"><strong id="importedCount">0</strong><span>Imported</span></div><div class="settings-metric"><strong id="existingCount">0</strong><span>Existing</span></div><div class="settings-metric"><strong id="skippedCount">0</strong><span>Skipped</span></div><div class="settings-metric"><strong id="linkedCount">0</strong><span>Linked</span></div><div class="settings-metric"><strong id="standaloneCount">0</strong><span>Standalone</span></div><div class="settings-metric"><strong id="unresolvedCount">0</strong><span>Unresolved</span></div><div class="settings-metric"><strong id="failedCount">0</strong><span>Failed</span></div></div><details class="settings-inline-details"><summary>Initialization activity</summary><div aria-live="polite" class="initialization-log"><ol id="initializationLog"><li>No initialization activity in this session.</li></ol></div></details><div class="nested-report" hidden="" id="migrationDetailsPanel"><pre aria-live="polite" class="migration-details" id="migrationDetails"></pre></div><div class="settings-actions"><button class="editor-secondary-button" disabled="" id="downloadMigrationReportButton" type="button">Download Initialization Report</button></div></section>
+<section aria-labelledby="systemHeading" class="settings-advanced-section"><h2 id="systemHeading">Environment</h2><dl class="settings-info-list" id="systemInformation"></dl></section>
+<section aria-labelledby="diagnosticsHeading" class="settings-advanced-section"><h2 id="diagnosticsHeading">Runtime state</h2><dl class="settings-info-list"><div><dt>Startup errors</dt><dd id="startupErrorCount">0</dd></div><div><dt>Firestore connection</dt><dd id="firestoreConnectionState">Checking</dd></div><div><dt>Last synchronization</dt><dd id="lastSynchronizationResult">Not run</dd></div><div><dt>Last successful initialization</dt><dd id="lastSuccessfulInitialization">—</dd></div></dl></section>
+</div>
+</section>
+</div>
+</section>
+</main>
+</div>
+
+<div class="editor-modal hidden settings-security-stepup-modal" id="securityStepUpDialog" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="securityStepUpTitle" aria-describedby="securityStepUpReason">
+  <section class="editor-modal-card settings-security-stepup-card">
+    <header class="editor-modal-header">
+      <div>
+        <p class="editor-eyebrow">Security verification</p>
+        <h2 id="securityStepUpTitle">Confirm it’s you</h2>
+        <p id="securityStepUpReason">Enter your current password and authenticator code to continue.</p>
+      </div>
+    </header>
+    <form id="securityStepUpForm" novalidate>
+      <label class="settings-field">
+        <span>Current password</span>
+        <input id="securityStepUpPassword" type="password" autocomplete="current-password" required>
+      </label>
+      <label class="settings-field">
+        <span>Authenticator code</span>
+        <input id="securityStepUpCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000" required>
+        <small>Use the current 6-digit code from your authenticator app.</small>
+      </label>
+      <small id="securityStepUpDialogStatus" class="settings-live-message" aria-live="polite"></small>
+      <div class="modal-actions">
+        <button class="editor-secondary-button" id="securityStepUpCancelButton" type="button">Cancel</button>
+        <button class="editor-primary-button" id="securityStepUpConfirmButton" type="submit">Verify &amp; Continue</button>
+      </div>
+    </form>
+  </section>
+</div>
+<script src="../js/workspace-host.js" type="module"></script>
+<script src="../js/admin-ui.js" type="module"></script>
+
+<script src="../js/settings.js" type="module"></script>
+<script src="../js/settings-communications.js" type="module"></script>
+<script src="../js/settings-security.js" type="module"></script>
+</body>
+</html>

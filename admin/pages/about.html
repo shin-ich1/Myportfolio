@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+
+<html lang="en" data-lan-workspace-document="true" data-lan-admin-architecture="shared">
+<head>
+  <link rel="icon" href="/assets/brand/lan-mark.svg" type="image/svg+xml">
+<meta charset="utf-8"/>
+    <script src="../js/theme-controller.js"></script><meta content="width=device-width,initial-scale=1" name="viewport"/><meta content="Manage the About profile of the LΛN Portfolio" name="description"/><title>Biography Studio | LΛN Portfolio CMS</title>
+<link href="../css/theme.css" rel="stylesheet"/><link href="../css/shared-ui.css" rel="stylesheet"/>
+  <link href="../css/about.css" rel="stylesheet"/>
+  <link href="../css/admin-layout.css" rel="stylesheet"/>
+</head>
+<body class="about-page">
+<div class="editor-layout about-shell">
+<main class="about-main">
+<header class="about-header"><div class="about-heading"><p class="about-kicker">About / Profile</p><h1>About</h1><p>Manage the professional story and profile details used by your portfolio.</p></div><div class="about-header-actions"><span class="editor-status-badge" id="saveStatus" role="status" aria-live="polite">Not saved</span><a class="editor-preview-button" href="../../index.html#about" rel="noopener noreferrer" target="_blank">Preview About</a></div></header>
+<section class="about-canvas lan-admin-workspace"><nav aria-label="About workspace" class="workspace-tabs about-tabs" data-lan-tabs="about"><button aria-selected="true" class="workspace-tab is-active" data-lan-tab="content" type="button">Content</button><button aria-selected="false" class="workspace-tab" data-lan-tab="personal" type="button">Personal Info</button><button aria-selected="false" class="workspace-tab" data-lan-tab="publishing" type="button">Publishing</button></nav>
+<form class="about-editor is-loading" id="aboutForm" aria-busy="true">
+<div class="about-loading-state" id="aboutLoadingState" role="status" aria-live="polite"><span class="loading-spinner" aria-hidden="true"></span><div><strong>Loading profile</strong><small>Fetching your saved About content from Firestore…</small></div></div>
+<div class="about-workspace lan-admin-grid lan-admin-grid--split" data-lan-adaptive-split="about-profile">
+<aside class="profile-column">
+<section aria-label="About section summary" class="profile-preview lan-admin-sticky-pane"><div class="profile-preview__ambient"></div><div aria-label="Profile media placeholder" class="profile-portrait-placeholder lan-media-frame" id="profileMonogram"><div class="lan-media-frame__empty"><span aria-hidden="true" class="lan-media-frame__brand">LΛN</span><strong class="lan-media-frame__label">Profile media</strong><em class="lan-media-frame__status">Managed in Home Composer</em></div></div><p class="about-kicker">Public About</p><h2 id="profilePreviewName">Profile name</h2><div class="profile-preview__meta"><span id="profilePreviewLocation">Location</span><span id="profilePreviewAvailability">Availability</span><span id="profilePreviewBiography">Biography not written</span><span id="profilePreviewVisibility">Visible on portfolio</span></div><div class="profile-preview__actions lan-admin-actions"><button class="editor-secondary-button" id="editAboutButton" type="button">Edit About</button><button class="editor-secondary-button" id="toggleAboutVisibilityButton" type="button">Hide About</button></div></section>
+<section class="about-card identity-card" data-lan-panel="personal"><header><div><h2>Profile details</h2><p>Keep only profile information that is not already owned by Home / Studio.</p></div></header><div class="about-field-grid lan-admin-form-grid"><label>Full name<input id="fullName" maxlength="100" name="fullName" placeholder="Rolando A. Lagmay Jr." required=""/></label><label>Location<input id="location" maxlength="100" name="location"/></label><label class="about-span">Availability<select id="availability" name="availability"><option value="available">Available for work</option><option value="part-time">Available for part-time work</option><option value="full-time">Available for full-time work</option><option value="freelance">Available for freelance projects</option><option value="unavailable">Currently unavailable</option></select></label></div><div class="about-source-note"><strong>Hero identity is managed in Home / Studio.</strong><span>Display name, headline, roles and the short Hero introduction are edited only there.</span><a href="home.html">Open Home / Studio</a></div></section>
+</aside>
+<div class="biography-column">
+<section class="about-card biography-card" data-lan-panel="content"><header><div><h2>Professional biography</h2><p>This is the single long-form text source for the public About section.</p></div></header><label class="writing-field">Full About description<textarea id="aboutDescription" maxlength="1200" name="aboutDescription" placeholder="Describe your experience, strengths, work values and the services you can provide." required="" rows="12"></textarea><span class="character-row"><small>Public About biography.</small><b id="aboutDescriptionCount">0 / 1200</b></span></label></section>
+<section class="about-card visibility-card" data-lan-panel="publishing"><header><div><h2>Public visibility</h2><p>Choose what visitors can see without changing content ownership.</p></div></header><div class="visibility-options"><label class="editor-toggle-option"><span><strong>Show About section</strong><small>Display the About section on the public portfolio.</small></span><input checked="" id="sectionVisible" name="sectionVisible" type="checkbox"/><span class="editor-toggle"></span></label><label class="editor-toggle-option"><span><strong>Show availability status</strong><small>Let visitors know whether you are open to opportunities.</small></span><input checked="" id="showAvailability" name="showAvailability" type="checkbox"/><span class="editor-toggle"></span></label></div></section>
+</div>
+</div>
+<div class="about-savebar"><div><strong>About draft</strong><span id="aboutSaveSummary">Biography ready · Hero identity stays in Home / Studio</span></div><div><button class="editor-secondary-button" id="undoButton" type="button" disabled>Undo last save</button><button class="editor-reset-button editor-secondary-button" id="resetButton" type="button">Discard unsaved changes</button><button class="editor-save-button editor-primary-button" id="saveButton" type="submit"><span aria-hidden="true" class="editor-button-loader" id="saveButtonLoader"></span><span id="saveButtonText">Save About Information</span></button></div></div>
+</form>
+</section>
+</main>
+</div>
+<script src="../js/workspace-host.js" type="module"></script>
+<script src="../js/admin-ui.js" type="module"></script>
+<script src="../js/about.js" type="module"></script>
+</body>
+</html>

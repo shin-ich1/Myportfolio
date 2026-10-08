@@ -1,0 +1,29 @@
+# LOCAL/STAGING ONLY — copy this file to .dev.vars and fill values locally.
+# NEVER COMMIT .dev.vars.
+
+# Required for Security & Access live testing.
+FIREBASE_PROJECT_ID=<YOUR_FIREBASE_PROJECT_ID>
+FIREBASE_WEB_API_KEY=<YOUR_FIREBASE_WEB_API_KEY>
+FIREBASE_SERVICE_ACCOUNT_EMAIL=<YOUR_FIREBASE_SERVICE_ACCOUNT_EMAIL>
+FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY=<YOUR_FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY_WITH_ESCAPED_NEWLINES>
+SECURITY_RECOVERY_PEPPER=<GENERATE_A_LONG_RANDOM_LOCAL_STAGING_PEPPER>
+
+# Optional Firebase-owned verification-email branding.
+# Use a PUBLIC HTTPS image URL if you want your portrait/logo inside the verification email.
+SECURITY_AUTH_EMAIL_IMAGE_URL=
+SECURITY_AUTH_EMAIL_REPLY_TO=
+
+# Optional branded security email adapter. Leave blank to verify Not configured behavior.
+RESEND_API_KEY=
+SECURITY_ALERT_FROM_EMAIL=
+SECURITY_ALERT_TO_EMAIL=
+SECURITY_ALERT_ADMIN_URL=
+
+# Existing non-security integrations (only configure if you want to exercise them locally).
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+GOOGLE_DRIVE_CLIENT_ID=
+GOOGLE_DRIVE_CLIENT_SECRET=
+GOOGLE_DRIVE_REDIRECT_URI=
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=

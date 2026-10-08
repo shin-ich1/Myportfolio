@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lan-cloudinary-telemetry",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-15",
+  "kv_namespaces": [
+    {
+      "binding": "STORAGE_OAUTH",
+      "id": "00000000000000000000000000000000"
+    },
+    {
+      "binding": "PORTFOLIO_MESSAGES",
+      "id": "00000000000000000000000000000000"
+    },
+    {
+      "binding": "SECURITY_STATE",
+      "id": "00000000000000000000000000000000"
+    }
+  ],
+  "vars": {
+    "FIREBASE_PROJECT_ID": "rolando-portfolio-3f1a3",
+    "FIREBASE_WEB_API_KEY": "AIzaSyA25wR_Yi271kAW7KIFzi5WQIX8iLJfW0I",
+    "CLOUDINARY_CLOUD_NAME": "fmbcpufk"
+  }
+}

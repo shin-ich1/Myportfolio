@@ -79,6 +79,9 @@ function startPersistentAdminShell() {
   let currentHealthSnapshot = null;
   let liveSessionValidation = null;
   let liveSessionRedirectStarted = false;
+  // The shell owns exactly one pending navigation. A superseded workspace must
+  // stop consuming document/Firebase resources before the newest one starts.
+  let pendingNavigation = null;
   const frameCleanups = new WeakMap();
   // The shell is the sole owner of per-navigation server approval. An embedded
   // workspace consumes only the approval assigned to its own iframe.
@@ -206,6 +209,22 @@ function startPersistentAdminShell() {
     return cleanup;
   }
 
+  function discardWorkspaceFrame(frame) {
+    frameCleanups.get(frame)?.();
+    frameSecurityApprovals.delete(frame);
+    frame.remove();
+  }
+
+  function cancelPendingNavigation() {
+    if (!pendingNavigation) return;
+    const pending = pendingNavigation;
+    pendingNavigation = null;
+    // Settle the obsolete load promise even when the removed iframe will never
+    // dispatch "load" or "error". Its security validation still runs server-side.
+    pending.finish(false);
+    discardWorkspaceFrame(pending.frame);
+  }
+
   function syncAllWorkspaceModes() {
     document.querySelectorAll(".lan-admin-workspace-frame").forEach(syncWorkspaceMode);
   }
@@ -233,27 +252,35 @@ function startPersistentAdminShell() {
   async function navigate(route, { history: historyMode = "push" } = {}) {
     route = normalizeWorkspace(route);
     const revision = ++navigationRevision;
-    // Start the static document load and the mandatory server validation in
-    // parallel. The workspace authorization gate below cannot resolve before
-    // this exact navigation is approved by the Security Gateway.
+    // Retire only the obsolete *pending* document. Keep the active document
+    // mounted until the newest candidate has passed mandatory server approval.
+    cancelPendingNavigation();
+    // Start static document loading and server validation in parallel. Every
+    // workspace frame still consumes its own Security Gateway approval.
     const securityApproval = ensureLiveSecuritySession();
     const next = makeFrame(route, revision);
     frameSecurityApprovals.set(next, securityApproval);
+    const frameLoad = new Promise((resolve) => {
+      let finished = false;
+      const finish = (loaded) => {
+        if (finished) return;
+        finished = true;
+        next.removeEventListener("load", onLoad);
+        next.removeEventListener("error", onError);
+        resolve(loaded);
+      };
+      const onLoad = () => finish(true);
+      const onError = () => finish(false);
+      next.addEventListener("load", onLoad);
+      next.addEventListener("error", onError);
+      pendingNavigation = { frame: next, finish };
+    });
     host.append(next);
     installWorkspaceFrameContract(next);
-    const frameLoad = new Promise((resolve) => {
-      next.addEventListener("load", () => resolve(true), { once: true });
-      next.addEventListener("error", () => resolve(false), { once: true });
-    });
     const [approved, loaded] = await Promise.all([securityApproval, frameLoad]);
-    if (!approved || !loaded) {
-      frameCleanups.get(next)?.();
-      next.remove();
-      return;
-    }
-    if (revision !== navigationRevision) {
-      frameCleanups.get(next)?.();
-      next.remove();
+    if (pendingNavigation?.frame === next) pendingNavigation = null;
+    if (!approved || !loaded || revision !== navigationRevision) {
+      discardWorkspaceFrame(next);
       return;
     }
 
@@ -285,8 +312,7 @@ function startPersistentAdminShell() {
     if (previous) {
       previous.classList.add("is-leaving");
       window.setTimeout(() => {
-        frameCleanups.get(previous)?.();
-        previous.remove();
+        discardWorkspaceFrame(previous);
       }, 190);
     }
   }

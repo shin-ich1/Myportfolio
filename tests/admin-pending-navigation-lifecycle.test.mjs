@@ -26,6 +26,7 @@ class FixtureFrame {
     this.isConnected = false;
     this.listeners = new Map();
     this.classList = { add() {}, remove() {} };
+    this.attributes = new Map();
     this.contentDocument = {
       readyState: "loading",
       body: { classList: { contains: () => false } },
@@ -34,6 +35,8 @@ class FixtureFrame {
     };
     this.contentWindow = { location: { href: "" } };
   }
+  setAttribute(name, value) { this.attributes.set(name, value); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
   set src(route) {
     this.route = route;
     this.contentWindow.location.href = new URL(route, "https://staging.example/admin/").href;

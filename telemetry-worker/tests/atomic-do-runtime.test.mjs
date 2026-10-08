@@ -60,3 +60,54 @@ test("workerd SQLite rate limiter strictly caps parallel attempts", async () => 
   assert.equal(results.filter(x => x.status === 429).length, 32);
   assert.ok(results.slice(4).every(x => x.body.code === "security-rate-limited"));
 });
+
+
+test("workerd rejects concurrent public puzzle solution replay before and after Turnstile", async()=>{
+  const env=await harness.getWorker().getEnv();
+  const ns=env.SECURITY_COORDINATOR;
+  const id="puzzle-workerd-"+crypto.randomUUID().replaceAll("-","");
+  const stub=ns.get(ns.idFromName("security-challenge:message-puzzle:"+id));
+  const record={
+    scope:"message-puzzle",origin:"https://lan-portfolio-staging.web.app",
+    binding:"local-workerd-browser-binding",
+    targetPercent:50,topPercent:21,pieceScalePercent:16,attempts:0,
+    image:{id:"test-image"},expiresAt:Date.now()+60000
+  };
+  assert.equal((await send(stub,"challenge-put",{scope:"message-puzzle",id,record})).status,200);
+  const results=await Promise.all(Array.from({length:40},(_,i)=>
+    send(stub,"puzzle-check",{
+      scope:"message-puzzle",id,origin:record.origin,binding:record.binding,
+      answer:50,tolerance:4,maxAttempts:3,
+      nextGeometry:{targetPercent:70,topPercent:29,pieceScalePercent:16},
+      verificationNonce:"proof-"+String(i).padStart(20,"A")
+    })
+  ));
+  const winners=results.filter(x=>x.status===200&&x.body.outcome==="pending");
+  assert.equal(winners.length,1);
+  assert.equal(results.filter(x=>x.status===409).length,39);
+  const finalizations=await Promise.all(Array.from({length:35},()=>send(stub,"puzzle-finalize",{
+    scope:"message-puzzle",id,
+    verificationNonce:winners[0].body.verificationNonce
+  })));
+  assert.equal(finalizations.filter(x=>x.status===200).length,1);
+  assert.equal(finalizations.filter(x=>x.status!==200).length,34);
+});
+
+test("workerd consumes Google Drive OAuth state once across 40 simultaneous callbacks", async()=>{
+  const env=await harness.getWorker().getEnv();
+  const ns=env.SECURITY_COORDINATOR;
+  const id="drv-"+crypto.randomUUID().replaceAll("-","");
+  const stub=ns.get(ns.idFromName("security-challenge:drive-oauth-state:"+id));
+  const record={
+    scope:"drive-oauth-state",uid:"isolated-admin",profileId:"isolated-drive",
+    origin:"https://lan-portfolio-staging.web.app",
+    redirectUri:"https://isolated.invalid/storage/google-drive/connect/callback",
+    expiresAt:Date.now()+60000
+  };
+  assert.equal((await send(stub,"challenge-put",{scope:"drive-oauth-state",id,record})).status,200);
+  const uses=await Promise.all(Array.from({length:40},()=>send(stub,"challenge-consume",{
+    scope:"drive-oauth-state",id
+  })));
+  assert.equal(uses.filter(x=>x.status===200).length,1);
+  assert.equal(uses.filter(x=>x.status===400).length,39);
+});

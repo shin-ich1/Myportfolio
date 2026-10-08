@@ -14,7 +14,8 @@ test("each navigation starts server validation and document loading concurrently
   assert.match(navigate, /const next\s*=\s*makeFrame\(route, revision\)/);
   assert.match(navigate, /Promise\.all\(\[securityApproval, frameLoad\]\)/);
   assert.ok(navigate.indexOf("const next = makeFrame(") < navigate.indexOf("await Promise.all("));
-  assert.match(navigate, /if\s*\(!approved\s*\|\|\s*!loaded\)/);
+  assert.match(navigate, /if\\s*\\(!approved\\s*\\|\\|\\s*!loaded\\s*\\|\\|\\s*revision\\s*!==\\s*navigationRevision\\)/);
+  assert.match(navigate, /discardWorkspaceFrame\\(next\\)/);
 });
 
 test("workspace authorization waits for its own navigation's validated session", () => {

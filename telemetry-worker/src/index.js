@@ -1976,6 +1976,13 @@ async function firestoreAdminCommit(env, writes) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const conflict = [409, 412].includes(response.status) ||
+      ["ABORTED", "FAILED_PRECONDITION"].includes(String(payload?.error?.status || ""));
+    if (conflict) {
+      throw serviceError("Firestore write precondition was not satisfied.", {
+        status: 409, code: "firestore-precondition-failed", source: "firebase"
+      });
+    }
     throw serviceError(payload?.error?.message || "Private message could not be stored.", { status: 502, code: "message-firestore-write", source: "firebase" });
   }
   return payload;
@@ -2192,6 +2199,58 @@ function fromFirestoreDoc(doc){ if(!doc)return null; const id=decodeURIComponent
 async function securityWriteDoc(env,collection,id,record){ return firestoreAdminCommit(env,[{update:{name:firestoreDocumentName(env,collection,id),fields:firestoreFields(record)}}]); }
 async function securityPatchDoc(env,collection,id,record,fieldPaths=Object.keys(record)){ return firestoreAdminCommit(env,[{update:{name:firestoreDocumentName(env,collection,id),fields:firestoreFields(record)},updateMask:{fieldPaths}}]); }
 async function securityGetDoc(env,collection,id){ return fromFirestoreDoc(await firestoreAdminGetDocument(env,collection,id)); }
+
+// Recovery is owned by one versioned Firestore document per Admin, not KV or
+// browser state. All security-sensitive recovery transitions use Firestore's
+// server-evaluated updateTime precondition, preventing parallel replay and stale
+// completion from overwriting a more recent recovery key.
+async function writeRecoveryConditional(env, uid, version, record, {
+  merge = false, conflictCode = "security-recovery-state-changed"
+} = {}) {
+  const updateTime = String(version || "").trim();
+  if (!updateTime || !Number.isFinite(Date.parse(updateTime))) {
+    throw serviceError("Recovery version could not be verified.", {
+      status: 503, code: "security-recovery-version-missing", source: "firebase"
+    });
+  }
+  const write = {
+    update: {
+      name: firestoreDocumentName(env, SECURITY_COLLECTIONS.recovery, uid),
+      fields: firestoreFields(record)
+    },
+    ...(merge ? { updateMask: { fieldPaths: Object.keys(record) } } : {}),
+    currentDocument: { updateTime }
+  };
+  try {
+    return await firestoreAdminCommit(env, [write]);
+  } catch (error) {
+    if (error?.code === "firestore-precondition-failed") {
+      throw serviceError("Recovery state changed; the previous key or challenge is no longer valid.", {
+        status: 409, code: conflictCode, source: "worker"
+      });
+    }
+    throw error;
+  }
+}
+
+async function claimMasterRecoveryKey(env, uid, recoveryRecord, recoverySessionId) {
+  return writeRecoveryConditional(env, uid, recoveryRecord?._updateTime, {
+    active: false,
+    usedAt: new Date().toISOString(),
+    pendingRecoverySessionId: recoverySessionId,
+    recoveryResetsComplete: false
+  }, { merge: true, conflictCode: "security-recovery-key-already-used" });
+}
+
+async function finishMasterRecoveryKey(env, uid, recoveryRecord, replacementRecord) {
+  if (recoveryRecord?.active !== false || recoveryRecord?.recoveryResetsComplete !== true) {
+    throw serviceError("Recovery must revoke prior security access before issuing a new key.", {
+      status: 403, code: "security-recovery-not-ready", source: "worker"
+    });
+  }
+  return writeRecoveryConditional(env, uid, recoveryRecord._updateTime, replacementRecord);
+}
+
 async function securityQuery(env,collection,filters=[],limit=100){
   const token=await firebaseAdminAccessToken(env),projectId=firestoreProjectId(env); const fieldFilters=filters.map(([field,op,value])=>({fieldFilter:{field:{fieldPath:field},op,value:firestoreValue(value)}}));
   const structuredQuery={from:[{collectionId:collection}],limit}; if(fieldFilters.length===1) structuredQuery.where=fieldFilters[0]; else if(fieldFilters.length>1) structuredQuery.where={compositeFilter:{op:'AND',filters:fieldFilters}};
@@ -2367,9 +2426,55 @@ async function handleSecurityRoute(request,env,url,context){
     if(path==='/security/device/login-complete'&&method==='POST'){ await enforceSecurityRateLimit(request,env,'device-proof'); const c=await consumeSecurityChallenge(env,'device-login',body.challengeId); if(c.deviceId!==String(body.deviceId||'')) throw serviceError('Device challenge does not match.',{status:403,code:'security-device-proof-invalid'}); const device=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,c.deviceId); if(!device||device.uid!==c.uid||device.active!==true||!await verifyDeviceSignature(device.publicKeyJwk,c.nonce,body.signature)){ await writeSecurityEvent(env,{uid:c.uid,type:'device-proof-failure',success:false,deviceId:c.deviceId,ip:securityIp(request)}); throw serviceError('Trusted-device proof is invalid or revoked.',{status:403,code:'security-device-proof-invalid'}); } await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,c.deviceId,{lastUsedAt:new Date().toISOString()}); await clearSecurityRateLimit(request,env,'device-proof'); return json(await createApprovedSessionResponse(request,env,{uid:c.uid,trustLevel:'trusted',deviceId:c.deviceId},context),200,origin); }
 
     if(path==='/security/recovery/start'&&method==='POST'){
-      await enforceSecurityRateLimit(request,env,'recovery'); const first=await verifyFirebasePassword(body.email,body.password,env); if(!first.uid) throw serviceError('Recovery requires the administrator password.',{status:401,code:'security-recovery-password'}); const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,first.uid),digest=await recoveryHmac(body.recoveryKey,env); if(!rec||rec.active!==true||rec.masterKeyHash!==digest){ await writeSecurityEvent(env,{uid:first.uid,type:'recovery-attempt',success:false,ip:securityIp(request)}); throw serviceError('Recovery key is invalid.',{status:401,code:'security-recovery-key-invalid'}); } const recoverySessionId=await putSecurityChallenge(env,'recovery',{uid:first.uid,email:first.email},SECURITY_LIFETIMES.recovery); await Promise.all([revokeUserSecurityState(first.uid,env),clearFirebaseMfaForRecovery(env,first.uid)]); await securityPatchDoc(env,SECURITY_COLLECTIONS.recovery,first.uid,{active:false,usedAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:first.uid,type:'recovery-used',success:true,ip:securityIp(request),summary:'Recovery key accepted; prior sessions, trusted devices, Firebase tokens, and MFA enrollment were invalidated.'}); return json({state:'recovery',recoverySessionId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.recovery*1000).toISOString()},200,origin);
+      await enforceSecurityRateLimit(request,env,'recovery');
+      const first=await verifyFirebasePassword(body.email,body.password,env);
+      if(!first.uid) throw serviceError('Recovery requires the administrator password.',{status:401,code:'security-recovery-password'});
+      const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,first.uid);
+      const digest=await recoveryHmac(body.recoveryKey,env);
+      if(!rec||rec.active!==true||rec.masterKeyHash!==digest){
+        await writeSecurityEvent(env,{uid:first.uid,type:'recovery-attempt',success:false,ip:securityIp(request)});
+        throw serviceError('Recovery key is invalid.',{status:401,code:'security-recovery-key-invalid'});
+      }
+      // Allocate an unguessable challenge before the atomic claim, but never
+      // disclose it unless the Firestore compare-and-set wins and revocation succeeds.
+      const recoverySessionId=await putSecurityChallenge(env,'recovery',{uid:first.uid,email:first.email},SECURITY_LIFETIMES.recovery);
+      await claimMasterRecoveryKey(env,first.uid,rec,recoverySessionId);
+      // Fail closed on partial revocation. A recovery challenge cannot complete
+      // until both the session/device revoke and Identity Platform reset finish.
+      await Promise.all([
+        revokeUserSecurityState(first.uid,env),
+        clearFirebaseMfaForRecovery(env,first.uid)
+      ]);
+      await securityPatchDoc(env,SECURITY_COLLECTIONS.recovery,first.uid,{
+        recoveryResetsComplete:true, recoveryResetAt:new Date().toISOString()
+      });
+      await writeSecurityEvent(env,{uid:first.uid,type:'recovery-used',success:true,ip:securityIp(request),summary:'Recovery key accepted; prior sessions, trusted devices, Firebase tokens, and MFA enrollment were invalidated.'});
+      return json({state:'recovery',recoverySessionId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.recovery*1000).toISOString()},200,origin);
     }
-    if(path==='/security/recovery/complete'&&method==='POST'){ const c=await consumeSecurityChallenge(env,'recovery',body.recoverySessionId); const replacementEmail=String(body.newEmail||'').trim(); if(replacementEmail){ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replacementEmail)) throw serviceError('Replacement email is invalid.',{status:400,code:'security-recovery-email-invalid'}); await identityPlatformAdminUpdateUser(env,c.uid,{email:replacementEmail,emailVerified:false,validSince:String(Math.floor(Date.now()/1000))}); } const key=recoveryKey(),codes=Array.from({length:8},backupCode),hash=await recoveryHmac(key,env),codeHashes=await Promise.all(codes.map(x=>recoveryHmac(x,env))); await securityWriteDoc(env,SECURITY_COLLECTIONS.recovery,c.uid,{uid:c.uid,active:true,masterKeyHash:hash,backupCodeHashes:codeHashes,createdAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:c.uid,type:'recovery-reset-complete',success:true,summary:'Fresh security bootstrap and Recovery Kit required.'}); return json({state:'bootstrap-required',email:replacementEmail||c.email||'',masterKey:key,backupCodes:codes,requireEmailVerification:Boolean(replacementEmail),requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true},200,origin); }
+    if(path==='/security/recovery/complete'&&method==='POST'){
+      const recoverySessionId=String(body.recoverySessionId||'');
+      const c=await consumeSecurityChallenge(env,'recovery',recoverySessionId);
+      const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,c.uid);
+      if(!rec||rec.pendingRecoverySessionId!==recoverySessionId || rec.active!==false ||
+          rec.recoveryResetsComplete!==true){
+        throw serviceError('Recovery challenge is no longer valid or the security reset is incomplete.',{
+          status:403,code:'security-recovery-not-ready',source:'worker'
+        });
+      }
+      const replacementEmail=String(body.newEmail||'').trim();
+      if(replacementEmail){
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replacementEmail)) throw serviceError('Replacement email is invalid.',{status:400,code:'security-recovery-email-invalid'});
+        await identityPlatformAdminUpdateUser(env,c.uid,{email:replacementEmail,emailVerified:false,validSince:String(Math.floor(Date.now()/1000))});
+      }
+      const key=recoveryKey(),codes=Array.from({length:8},backupCode);
+      const hash=await recoveryHmac(key,env),codeHashes=await Promise.all(codes.map(x=>recoveryHmac(x,env)));
+      await finishMasterRecoveryKey(env,c.uid,rec,{
+        uid:c.uid,active:true,masterKeyHash:hash,backupCodeHashes:codeHashes,
+        createdAt:new Date().toISOString()
+      });
+      await writeSecurityEvent(env,{uid:c.uid,type:'recovery-reset-complete',success:true,summary:'Fresh security bootstrap and Recovery Kit required.'});
+      return json({state:'bootstrap-required',email:replacementEmail||c.email||'',masterKey:key,backupCodes:codes,requireEmailVerification:Boolean(replacementEmail),requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true},200,origin);
+    }
 
     const allowLockdown=path==='/security/overview'||path==='/security/lockdown/exit';
     const admin=await requireSecurityApprovedAdministrator(request,env,{allowLockdown});

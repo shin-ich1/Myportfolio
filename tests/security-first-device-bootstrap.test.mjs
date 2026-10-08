@@ -192,3 +192,53 @@ test("a new recovery generation permits only the first replacement enrollment",a
     assert.equal(f.devices().length,2);
   }finally{f.restore();}
 });
+
+
+test("two distinct approved devices cannot register one duplicated public-key credential",async()=>{
+  const f=await fixture();
+  try{
+    const first=await createChallenge(f,"s1","first-unique-device",101);
+    assert.equal((await complete(f,first)).status,200);
+    const shared=key(909);
+    const candidates=await Promise.all(["duplicate-key-device-a","duplicate-key-device-b"].map(async id=>{
+      const created=await f.post("s2","/security/device/enrollment/create",{
+        proofId:"proof-s2",deviceId:id,publicKeyJwk:shared
+      });
+      assert.equal(created.status,200);
+      const approval=await f.post("s1","/security/device/enrollment/approve",{
+        proofId:"proof-s1",challengeId:created.body.challengeId
+      });
+      assert.equal(approval.status,200,JSON.stringify(approval.body));
+      return {sid:"s2",id,pub:shared,challengeId:created.body.challengeId};
+    }));
+    f.sync();
+    const outcomes=await Promise.all(candidates.map(c=>complete(f,c)));
+    assert.equal(outcomes.filter(r=>r.status===200).length,1);
+    assert.equal(outcomes.filter(r=>r.body.code==="security-device-credential-duplicate").length,1);
+    assert.equal(f.devices().length,2);
+  }finally{f.restore();}
+});
+
+test("enrollment cannot overwrite an already-registered device ID",async()=>{
+  const f=await fixture();
+  try{
+    const first=await createChallenge(f,"s1","durable-device-id",11);
+    assert.equal((await complete(f,first)).status,200);
+    const altered=key(12);
+    const created=await f.post("s2","/security/device/enrollment/create",{
+      proofId:"proof-s2",deviceId:"durable-device-id",publicKeyJwk:altered
+    });
+    assert.equal(created.status,200);
+    const approval=await f.post("s1","/security/device/enrollment/approve",{
+      proofId:"proof-s1",challengeId:created.body.challengeId
+    });
+    assert.equal(approval.status,200);
+    const rejected=await f.post("s2","/security/device/enrollment/complete",{
+      challengeId:created.body.challengeId,
+      deviceId:"durable-device-id",publicKeyJwk:altered
+    });
+    assert.equal(rejected.status,409);
+    assert.equal(f.devices().length,1);
+    assert.equal(f.devices()[0][1].publicKeyJwk.x,key(11).x);
+  }finally{f.restore();}
+});

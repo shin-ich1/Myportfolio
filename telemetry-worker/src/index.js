@@ -2376,6 +2376,15 @@ async function completeTrustedDeviceEnrollment(request,env,admin,body){
       status:403,code:'security-enrollment-epoch-changed',source:'worker'
     });
   }
+  // Enforce one cryptographic keypair per registered device. This check covers
+  // devices created before the credential-claim collection was introduced.
+  // The atomic claim below covers simultaneous new registrations.
+  if(existingDevices.some(device =>
+      sameEnrollmentPublicKey(device.publicKeyJwk,enrollment.publicKeyJwk))){
+    throw serviceError('A device with this public key is already registered.',{
+      status:409,code:'security-device-credential-duplicate',source:'worker'
+    });
+  }
   if(enrollment.approved===true){
     // Revoking the approving device also revokes its outstanding approvals.
     const approverId=String(enrollment.approvedByDeviceId||'');
@@ -2405,6 +2414,19 @@ async function completeTrustedDeviceEnrollment(request,env,admin,body){
       currentDocument:{exists:false}
     });
   }
+  // Key identity is hashed server-side; no credential/public-key material is
+  // written to the uniqueness index. The index is never released on revoke.
+  const credentialId=await sha256Text(JSON.stringify([
+    record.publicKeyJwk.kty,record.publicKeyJwk.crv,
+    record.publicKeyJwk.x,record.publicKeyJwk.y
+  ]));
+  writes.push({
+    update:{
+      name:firestoreDocumentName(env,'adminSecurityDeviceCredentials',credentialId),
+      fields:firestoreFields({uid:admin.uid,deviceId,createdAt:now})
+    },
+    currentDocument:{exists:false}
+  });
   writes.push({
     update:{
       name:firestoreDocumentName(env,SECURITY_COLLECTIONS.devices,deviceId),
@@ -2417,7 +2439,11 @@ async function completeTrustedDeviceEnrollment(request,env,admin,body){
   }catch(error){
     if(error?.code==='firestore-precondition-failed'){
       throw serviceError('Trusted-device bootstrap was already used, or this device ID exists.',{
-        status:409,code:'security-device-bootstrap-already-used',source:'worker'
+        status:409,
+        code:enrollment.approved===true
+          ?'security-device-credential-duplicate'
+          :'security-device-bootstrap-already-used',
+        source:'worker'
       });
     }
     throw error;

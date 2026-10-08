@@ -78,12 +78,14 @@ test("wrong browser binding cannot redeem valid puzzle and proof is one-time",as
   await send("challenge-put",p);
   const invalid=await send("puzzle-check",{...verify(p,"J".repeat(24)),binding:"another-client"});
   assert.equal(invalid.status,403);
+  // Each security challenge is routed to its own strongly consistent DO ID.
+  const {send:proofSend}=fixture();
   const proof={scope:"message-proof",id:"T".repeat(32),record:{
     scope:"message-proof",origin:p.record.origin,binding:p.record.binding,
     expiresAt:Date.now()+90000
   }};
-  assert.equal((await send("challenge-put",proof)).status,200);
-  const results=await Promise.all(Array.from({length:35},()=>send("challenge-consume",{
+  assert.equal((await proofSend("challenge-put",proof)).status,200);
+  const results=await Promise.all(Array.from({length:35},()=>proofSend("challenge-consume",{
     scope:proof.scope,id:proof.id
   })));
   assert.equal(results.filter(x=>x.status===200).length,1);

@@ -2592,7 +2592,21 @@ async function handleSecurityRoute(request,env,url,context){
     if(path==='/security/device/rename'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); const d=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,String(body.deviceId||'')); if(!d||d.uid!==admin.uid) throw serviceError('Trusted device was not found.',{status:404,code:'security-device-not-found'}); await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,d.deviceId,{displayName:String(body.displayName||'Trusted device').slice(0,80)}); return json({ok:true},200,origin); }
     if(path==='/security/device/revoke'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const d=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,String(body.deviceId||'')); if(!d||d.uid!==admin.uid) throw serviceError('Trusted device was not found.',{status:404,code:'security-device-not-found'}); const currentDeviceRevoked=d.deviceId===admin.session.deviceId; await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,d.deviceId,{active:false,revokedAt:new Date().toISOString()}); const sessions=await securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['deviceId','EQUAL',d.deviceId],['active','EQUAL',true]],100); await Promise.all([...sessions.map(s=>securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()})),removeAdminPushSubscriptionsForDevice(env,d.deviceId)]); await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-revoked',deviceId:d.deviceId,success:true}); return json({ok:true,currentDeviceRevoked},200,origin); }
     if(path==='/security/account/password'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const {response}=await identityToolkit('accounts:update',{idToken:admin.token,password:String(body.newPassword||''),returnSecureToken:false},env); if(!response.ok) throw serviceError('Password could not be changed.',{status:400,code:'security-password-change-failed',source:'firebase'}); await writeSecurityEvent(env,{uid:admin.uid,type:'password-changed',success:true}); return json({ok:true},200,origin); }
-    if(path==='/security/totp/reset'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); await Promise.all([revokeUserSecurityState(admin.uid,env),clearFirebaseMfaForRecovery(env,admin.uid)]); await writeSecurityEvent(env,{uid:admin.uid,type:'totp-reset',success:true,summary:'Authenticator enrollment reset; all sessions and trusted devices were revoked.'}); return json({ok:true,bootstrapRequired:true},200,origin); }
+    if(path==='/security/totp/reset'&&method==='POST'){
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      await Promise.all([
+        revokeUserSecurityState(admin.uid,env),
+        clearFirebaseMfaForRecovery(env,admin.uid)
+      ]);
+      // A verified MFA reset is a deliberate full security-reset event, not an
+      // ordinary device revoke. Rotate the authoritative bootstrap generation
+      // only AFTER prior sessions/devices and Firebase MFA are invalidated.
+      await securityPatchDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid,{
+        deviceBootstrapEpoch:securityRandomId(18)
+      });
+      await writeSecurityEvent(env,{uid:admin.uid,type:'totp-reset',success:true,summary:'Authenticator enrollment reset; all sessions and trusted devices were revoked.'});
+      return json({ok:true,bootstrapRequired:true},200,origin);
+    }
     if(path==='/security/recovery/generate'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const key=recoveryKey(),codes=Array.from({length:8},backupCode),hash=await recoveryHmac(key,env),codeHashes=await Promise.all(codes.map(x=>recoveryHmac(x,env))); await securityPatchDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid,{uid:admin.uid,active:true,masterKeyHash:hash,backupCodeHashes:codeHashes,createdAt:new Date().toISOString()}); return json({masterKey:key,backupCodes:codes},200,origin); }
     if(path==='/security/devices'&&method==='GET'){ const devices=await securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid]],100); return json({devices:devices.map(({publicKeyJwk,_updateTime,...d})=>({...d,current:d.deviceId===admin.session.deviceId}))},200,origin); }
     if(path==='/security/access-state'&&method==='GET'){ return json(await buildSecurityAccessState(admin,env),200,origin); }

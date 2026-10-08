@@ -1,3 +1,6 @@
+import { SecurityCoordinator } from "./security-coordinator.js";
+export { SecurityCoordinator };
+
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 
 function serviceError(message, { status = 500, code = "internal", source = "worker", retryAt = "" } = {}) {
@@ -2024,29 +2027,70 @@ const ADMIN_SERVICE_RATE_POLICIES = Object.freeze({
   "drive-write": { limit: 30, windowSeconds: 10 * 60 }
 });
 
-export function serviceRateKvExpirationTtl(resetAt, now = Date.now()) {
-  return Math.max(60, Math.ceil((Number(resetAt) - Number(now)) / 1000));
+// One canonical coordinator backs all sensitive Admin, Cloudinary and Drive
+// rate limits. It must be bound as a SQLite-backed Durable Object.
+function securityCoordinatorNamespace(env) {
+  const namespace = env?.SECURITY_COORDINATOR;
+  if (!namespace || typeof namespace.idFromName !== "function" || typeof namespace.get !== "function") {
+    throw serviceError("Atomic security coordinator is not configured.", {
+      status: 503, code: "security-coordinator-not-configured", source: "worker"
+    });
+  }
+  return namespace;
+}
+
+async function coordinateSecurity(env, owner, operation) {
+  const namespace = securityCoordinatorNamespace(env);
+  const stub = namespace.get(namespace.idFromName(owner));
+  if (!stub || typeof stub.fetch !== "function") {
+    throw serviceError("Atomic security coordinator is unavailable.", {
+      status: 503, code: "security-coordinator-not-configured", source: "worker"
+    });
+  }
+  let response;
+  try {
+    response = await stub.fetch("https://security-coordinator.internal/operation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(operation)
+    });
+  } catch {
+    throw serviceError("Atomic security coordinator could not be reached.", {
+      status: 503, code: "security-coordinator-unavailable", source: "worker"
+    });
+  }
+  const result = await response.json().catch(() => null);
+  if (!result || (!response.ok && !result.code)) {
+    throw serviceError("Atomic security coordinator response was invalid.", {
+      status: 503, code: "security-coordinator-unavailable", source: "worker"
+    });
+  }
+  if (!response.ok) {
+    throw serviceError(result.error || "Sensitive operation was rejected.", {
+      status: response.status, code: result.code, source: "worker", retryAt: result.retryAt || ""
+    });
+  }
+  return result;
+}
+
+async function rateCoordinatorOwner(scope, subject) {
+  const digest = await sha256Text(scope + ":" + String(subject || "unknown"));
+  return "security-rate:" + scope + ":" + digest;
 }
 
 async function enforceServiceRateLimit(request, env, scope, policy, identity = "") {
-  const cfg = policy || { limit: 30, windowSeconds: 60 };
-  const subject = String(identity || securityIp(request) || "unknown").slice(0, 180);
-  const digest = await sha256Text(`${scope}:${subject}`);
-  const key = `service-rate:${scope}:${digest}`;
-  const kv = securityKv(env);
-  const now = Date.now();
-  const current = await kv.get(key, "json");
-  const start = current && Number(current.resetAt) > now ? Number(current.startAt || now) : now;
-  const resetAt = current && Number(current.resetAt) > now ? Number(current.resetAt) : now + cfg.windowSeconds * 1000;
-  const count = current && Number(current.resetAt) > now ? Math.max(0, Number(current.count) || 0) + 1 : 1;
-  await kv.put(key, JSON.stringify({ count, startAt: start, resetAt }), { expirationTtl: serviceRateKvExpirationTtl(resetAt, now) });
-  if (count > cfg.limit) {
-    throw serviceError("Too many service requests. Try again after the rate-limit window.", { status: 429, code: "service-rate-limited", source: "worker", retryAt: new Date(resetAt).toISOString() });
-  }
+  const owner = await rateCoordinatorOwner("service:" + scope,
+    String(identity || securityIp(request) || "unknown").slice(0, 180));
+  await coordinateSecurity(env, owner, {
+    op: "rate-hit", category: "service",
+    policy: policy || { limit: 30, windowSeconds: 60 },
+    now: Date.now()
+  });
 }
 
 async function enforceAdminServiceRateLimit(request, env, uid, scope) {
-  return enforceServiceRateLimit(request, env, scope, ADMIN_SERVICE_RATE_POLICIES[scope], `admin:${String(uid || "")}`);
+  return enforceServiceRateLimit(request, env, scope, ADMIN_SERVICE_RATE_POLICIES[scope],
+    "admin:" + String(uid || ""));
 }
 
 async function enforcePublicServiceRateLimit(request, env, scope) {
@@ -2059,19 +2103,79 @@ const SECURITY_RATE_POLICIES = Object.freeze({
   'device-proof':{limit:10,windowSeconds:15*60,cooldownSeconds:15*60}
 });
 function securityRandomId(bytes=24){ const out=new Uint8Array(bytes); crypto.getRandomValues(out); return base64Url(out); }
-function securityKv(env){ const kv=env?.SECURITY_STATE; if(!kv?.get || !kv?.put || !kv?.delete) throw serviceError('SECURITY_STATE KV binding is not configured.',{status:503,code:'security-state-not-configured',source:'worker'}); return kv; }
-function securityIp(request){ return String(request.headers.get('CF-Connecting-IP')||request.headers.get('X-Forwarded-For')||'unknown').split(',')[0].trim().slice(0,96); }
-async function putSecurityChallenge(env,scope,data,ttl=SECURITY_LIFETIMES.challenge){ const id=securityRandomId(); await securityKv(env).put(`challenge:${scope}:${id}`,JSON.stringify({...data,scope,createdAt:Date.now(),expiresAt:Date.now()+ttl*1000}),{expirationTtl:ttl}); return id; }
-async function consumeSecurityChallenge(env,scope,id){ const key=`challenge:${scope}:${String(id||'')}`; const kv=securityKv(env); const raw=await kv.get(key); await kv.delete(key); if(!raw) throw serviceError('Security challenge is invalid, expired, or already used.',{status:400,code:'security-challenge-invalid',source:'worker'}); const data=JSON.parse(raw); if(data.scope!==scope || Number(data.expiresAt)<=Date.now()) throw serviceError('Security challenge has expired.',{status:400,code:'security-challenge-expired',source:'worker'}); return data; }
-async function enforceSecurityRateLimit(request,env,scope,policy=SECURITY_RATE_POLICIES[scope]||{limit:10,windowSeconds:900,cooldownSeconds:900}){
-  const kv=securityKv(env), id=securityIp(request), now=Date.now(), key=`rate:${scope}:${id}`, raw=await kv.get(key), state=raw?JSON.parse(raw):{count:0,windowStart:now,blockedUntil:0};
-  if(Number(state.blockedUntil)>now){ await writeSecurityEvent(env,{type:'rate-limited',success:false,ip:id,summary:`${scope} security rate limit remains active`}).catch(()=>null); throw serviceError('Too many security attempts. Try again after the cooldown.',{status:429,code:'security-rate-limited',source:'worker',retryAt:new Date(state.blockedUntil).toISOString()}); }
-  if(now-Number(state.windowStart)>policy.windowSeconds*1000){ state.count=0; state.windowStart=now; }
-  state.count=Number(state.count||0)+1; if(state.count>policy.limit) state.blockedUntil=now+policy.cooldownSeconds*1000;
-  await kv.put(key,JSON.stringify(state),{expirationTtl:Math.max(policy.windowSeconds,policy.cooldownSeconds)+60});
-  if(state.blockedUntil){ await writeSecurityEvent(env,{type:'rate-limited',success:false,ip:id,summary:`${scope} security rate limit triggered`}).catch(()=>null); throw serviceError('Too many security attempts. Temporary cooldown is active.',{status:429,code:'security-rate-limited',source:'worker',retryAt:new Date(state.blockedUntil).toISOString()}); }
+// The rate identity must come from Cloudflare's controlled client address
+// header, not user-supplied X-Forwarded-For. Missing means one shared bucket.
+function securityIp(request) {
+  return String(request.headers.get("CF-Connecting-IP") || "unknown").trim().slice(0, 96) || "unknown";
 }
-async function clearSecurityRateLimit(request,env,scope){ try{ await securityKv(env).delete(`rate:${scope}:${securityIp(request)}`); }catch{} }
+
+function securityChallengeOwner(scope, id) {
+  return "security-challenge:" + String(scope) + ":" + String(id);
+}
+
+async function putSecurityChallenge(env, scope, data, ttl = SECURITY_LIFETIMES.challenge) {
+  const id = securityRandomId();
+  const now = Date.now();
+  await coordinateSecurity(env, securityChallengeOwner(scope, id), {
+    op: "challenge-put", scope, id, record: {
+      ...data, scope, createdAt: now, expiresAt: now + ttl * 1000
+    }
+  });
+  return id;
+}
+
+async function consumeSecurityChallenge(env, scope, id) {
+  const outcome = await coordinateSecurity(env, securityChallengeOwner(scope, id), {
+    op: "challenge-consume", scope, id: String(id || "")
+  });
+  return outcome.record;
+}
+
+async function readSecurityEnrollmentChallenge(env, id, uid) {
+  const result = await coordinateSecurity(env, securityChallengeOwner("device-enroll", id), {
+    op: "challenge-read", scope: "device-enroll", id: String(id || ""), uid
+  });
+  return result.record;
+}
+
+async function approveSecurityEnrollmentChallenge(env, id, uid, approvedByDeviceId) {
+  return coordinateSecurity(env, securityChallengeOwner("device-enroll", id), {
+    op: "challenge-approve", scope: "device-enroll", id: String(id || ""),
+    uid, approvedByDeviceId
+  });
+}
+
+async function consumeSecurityEnrollmentChallenge(env, id, uid, deviceId, publicKeyJwk, requiresApproval) {
+  const result = await coordinateSecurity(env, securityChallengeOwner("device-enroll", id), {
+    op: "enrollment-consume", scope: "device-enroll", id: String(id || ""),
+    uid, deviceId, publicKeyJwk, requiresApproval
+  });
+  return result.record;
+}
+
+async function enforceSecurityRateLimit(request, env, scope,
+    policy = SECURITY_RATE_POLICIES[scope] || { limit: 10, windowSeconds: 900, cooldownSeconds: 900 }) {
+  const ip = securityIp(request);
+  const owner = await rateCoordinatorOwner("security:" + scope, ip);
+  try {
+    await coordinateSecurity(env, owner, {
+      op: "rate-hit", category: "security", policy, now: Date.now()
+    });
+  } catch (error) {
+    if (error?.code === "security-rate-limited") {
+      await writeSecurityEvent(env, {
+        type: "rate-limited", success: false, ip,
+        summary: scope + " security rate limit blocked the request"
+      }).catch(() => null);
+    }
+    throw error;
+  }
+}
+
+async function clearSecurityRateLimit(request, env, scope) {
+  const owner = await rateCoordinatorOwner("security:" + scope, securityIp(request));
+  await coordinateSecurity(env, owner, { op: "rate-clear" });
+}
 
 function firestoreValue(value){
   if(value===null || value===undefined) return firestoreNull();
@@ -2274,9 +2378,9 @@ async function handleSecurityRoute(request,env,url,context){
     if(path==='/security/step-up/start'&&method==='POST'){ const first=await verifyFirebasePassword(admin.email,body.password,env); if(!first.mfaPendingCredential) throw serviceError('Authenticator verification is required for sensitive actions.',{status:400,code:'security-step-up-mfa-required'}); const challengeId=await putSecurityChallenge(env,'step-up',{uid:admin.uid,sessionId:admin.session.sessionId,mfaPendingCredential:first.mfaPendingCredential,mfaInfo:first.mfaInfo}); return json({challengeId},200,origin); }
     if(path==='/security/step-up/complete'&&method==='POST'){ const c=await consumeSecurityChallenge(env,'step-up',body.challengeId); if(c.uid!==admin.uid||c.sessionId!==admin.session.sessionId) throw serviceError('Step-up challenge does not belong to this session.',{status:403,code:'security-step-up-invalid'}); const enrollmentId=String(c.mfaInfo?.find?.(x=>x?.totpInfo)?.mfaEnrollmentId||c.mfaInfo?.[0]?.mfaEnrollmentId||''); const {response}=await identityToolkit('accounts/mfaSignIn:finalize',{mfaPendingCredential:c.mfaPendingCredential,mfaEnrollmentId:enrollmentId,totpVerificationInfo:{verificationCode:String(body.code||'')}},env,'v2'); if(!response.ok) throw serviceError('Authenticator code is invalid or expired.',{status:401,code:'security-step-up-invalid'}); const proofId=securityRandomId(18),expiresAt=new Date(Date.now()+SECURITY_LIFETIMES.stepUp*1000).toISOString(); await securityWriteDoc(env,SECURITY_COLLECTIONS.stepUps,proofId,{proofId,uid:admin.uid,sessionId:admin.session.sessionId,active:true,createdAt:new Date(),expiresAt:new Date(Date.parse(expiresAt))}); return json({proofId,expiresAt},200,origin); }
     if(path==='/security/device/enrollment/create'&&method==='POST'){ await enforceSecurityRateLimit(request,env,'enrollment'); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const requestingDeviceId=String(body.deviceId||''); if(!requestingDeviceId||!body.publicKeyJwk) throw serviceError('Device public key is required.',{status:400,code:'security-device-key-required'}); const challengeId=await putSecurityChallenge(env,'device-enroll',{uid:admin.uid,requestingDeviceId,publicKeyJwk:body.publicKeyJwk,approved:false}); return json({challengeId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.challenge*1000).toISOString()},200,origin); }
-    if(path==='/security/device/enrollment/status'&&method==='POST'){ const key=`challenge:device-enroll:${String(body.challengeId||'')}`,raw=await securityKv(env).get(key); if(!raw) throw serviceError('Enrollment challenge is invalid or expired.',{status:400,code:'security-enrollment-invalid'}); const c=JSON.parse(raw); if(c.uid!==admin.uid) throw serviceError('Enrollment challenge does not belong to this administrator.',{status:403,code:'security-enrollment-invalid'}); if(Number(c.expiresAt)<=Date.now()) throw serviceError('Enrollment challenge has expired.',{status:400,code:'security-enrollment-expired'}); return json({state:c.approved?'approved':'pending',expiresAt:new Date(Number(c.expiresAt)).toISOString()},200,origin); }
-    if(path==='/security/device/enrollment/approve'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const key=`challenge:device-enroll:${String(body.challengeId||'')}`,raw=await securityKv(env).get(key); if(!raw) throw serviceError('Enrollment challenge is invalid or expired.',{status:400,code:'security-enrollment-invalid'}); const c=JSON.parse(raw); if(c.uid!==admin.uid) throw serviceError('Enrollment challenge does not belong to this administrator.',{status:403,code:'security-enrollment-invalid'}); if(Number(c.expiresAt)<=Date.now()) throw serviceError('Enrollment challenge has expired.',{status:400,code:'security-enrollment-expired'}); if(c.approved===true) throw serviceError('Enrollment challenge was already approved.',{status:409,code:'security-enrollment-already-approved'}); c.approved=true;c.approvedByDeviceId=admin.session.deviceId||'';c.approvedAt=Date.now(); const remainingTtl=Math.max(1,Math.ceil((Number(c.expiresAt)-Date.now())/1000)); await securityKv(env).put(key,JSON.stringify(c),{expirationTtl:remainingTtl}); return json({ok:true,state:'approved'},200,origin); }
-    if(path==='/security/device/enrollment/complete'&&method==='POST'){ const key=`challenge:device-enroll:${String(body.challengeId||'')}`,raw=await securityKv(env).get(key); if(!raw) throw serviceError('Enrollment challenge is invalid, expired, or already used.',{status:400,code:'security-enrollment-invalid'}); const c=JSON.parse(raw); if(c.uid!==admin.uid) throw serviceError('Enrollment challenge does not belong to this administrator.',{status:403,code:'security-enrollment-invalid'}); if(Number(c.expiresAt)<=Date.now()) throw serviceError('Enrollment challenge has expired.',{status:400,code:'security-enrollment-expired'}); const existingDevices=await securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid],['active','EQUAL',true]],10); if(existingDevices.length>0&&!c.approved) throw serviceError('An existing trusted device must approve this enrollment.',{status:403,code:'security-enrollment-approval-required'}); const deviceId=String(body.deviceId||''); if(!deviceId||deviceId!==String(c.requestingDeviceId||'')||!body.publicKeyJwk||!sameEnrollmentPublicKey(c.publicKeyJwk,body.publicKeyJwk)) throw serviceError('Enrollment challenge does not match this device key.',{status:403,code:'security-enrollment-device-mismatch'}); await securityKv(env).delete(key); await securityWriteDoc(env,SECURITY_COLLECTIONS.devices,deviceId,{deviceId,uid:admin.uid,publicKeyJwk:c.publicKeyJwk,displayName:String(body.displayName||'Trusted device').slice(0,80),browserSummary:String(request.headers.get('User-Agent')||'').slice(0,180),active:true,createdAt:new Date().toISOString(),lastUsedAt:new Date().toISOString()}); const promoted=await promoteSecuritySessionToTrusted(admin,deviceId,env); await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-enrolled',deviceId,success:true,sessionId:promoted.session.sessionId}); return json({ok:true,deviceId,customToken:promoted.customToken,session:promoted.session},200,origin); }
+    if(path==='/security/device/enrollment/status'&&method==='POST'){ const c=await readSecurityEnrollmentChallenge(env,body.challengeId,admin.uid); return json({state:c.approved?'approved':'pending',expiresAt:new Date(Number(c.expiresAt)).toISOString()},200,origin); }
+    if(path==='/security/device/enrollment/approve'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); await approveSecurityEnrollmentChallenge(env,body.challengeId,admin.uid,admin.session.deviceId||''); return json({ok:true,state:'approved'},200,origin); }
+    if(path==='/security/device/enrollment/complete'&&method==='POST'){ const existingDevices=await securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid],['active','EQUAL',true]],10); const deviceId=String(body.deviceId||''); const c=await consumeSecurityEnrollmentChallenge(env,body.challengeId,admin.uid,deviceId,body.publicKeyJwk,existingDevices.length>0); await securityWriteDoc(env,SECURITY_COLLECTIONS.devices,deviceId,{deviceId,uid:admin.uid,publicKeyJwk:c.publicKeyJwk,displayName:String(body.displayName||'Trusted device').slice(0,80),browserSummary:String(request.headers.get('User-Agent')||'').slice(0,180),active:true,createdAt:new Date().toISOString(),lastUsedAt:new Date().toISOString()}); const promoted=await promoteSecuritySessionToTrusted(admin,deviceId,env); await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-enrolled',deviceId,success:true,sessionId:promoted.session.sessionId}); return json({ok:true,deviceId,customToken:promoted.customToken,session:promoted.session},200,origin); }
     if(path==='/security/device/rename'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); const d=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,String(body.deviceId||'')); if(!d||d.uid!==admin.uid) throw serviceError('Trusted device was not found.',{status:404,code:'security-device-not-found'}); await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,d.deviceId,{displayName:String(body.displayName||'Trusted device').slice(0,80)}); return json({ok:true},200,origin); }
     if(path==='/security/device/revoke'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const d=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,String(body.deviceId||'')); if(!d||d.uid!==admin.uid) throw serviceError('Trusted device was not found.',{status:404,code:'security-device-not-found'}); const currentDeviceRevoked=d.deviceId===admin.session.deviceId; await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,d.deviceId,{active:false,revokedAt:new Date().toISOString()}); const sessions=await securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['deviceId','EQUAL',d.deviceId],['active','EQUAL',true]],100); await Promise.all([...sessions.map(s=>securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()})),removeAdminPushSubscriptionsForDevice(env,d.deviceId)]); await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-revoked',deviceId:d.deviceId,success:true}); return json({ok:true,currentDeviceRevoked},200,origin); }
     if(path==='/security/account/password'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const {response}=await identityToolkit('accounts:update',{idToken:admin.token,password:String(body.newPassword||''),returnSecureToken:false},env); if(!response.ok) throw serviceError('Password could not be changed.',{status:400,code:'security-password-change-failed',source:'firebase'}); await writeSecurityEvent(env,{uid:admin.uid,type:'password-changed',success:true}); return json({ok:true},200,origin); }

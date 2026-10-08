@@ -2233,13 +2233,49 @@ async function writeRecoveryConditional(env, uid, version, record, {
   }
 }
 
+const RECOVERY_RESET_LEASE_MS = 30 * 1000;
+const RECOVERY_INTERRUPTED_MAX_AGE_MS = 60 * 60 * 1000;
+
 async function claimMasterRecoveryKey(env, uid, recoveryRecord, recoverySessionId) {
+  const now = Date.now();
+  const resuming = recoveryRecord?.active === false &&
+    recoveryRecord?.recoveryResetsComplete !== true;
+  if (resuming) {
+    const age = now - Date.parse(String(recoveryRecord.usedAt || ""));
+    if (!Number.isFinite(age) || age < 0 || age > RECOVERY_INTERRUPTED_MAX_AGE_MS) {
+      throw serviceError("Interrupted recovery has expired; account access remains locked.", {
+        status: 403, code: "security-recovery-resume-expired", source: "worker"
+      });
+    }
+    if (Number(recoveryRecord.recoveryResetLeaseUntil || 0) > now) {
+      throw serviceError("A security recovery reset is already in progress.", {
+        status: 409, code: "security-recovery-in-progress", source: "worker"
+      });
+    }
+  }
   return writeRecoveryConditional(env, uid, recoveryRecord?._updateTime, {
     active: false,
-    usedAt: new Date().toISOString(),
+    ...(!resuming ? { usedAt: new Date(now).toISOString() } : {}),
     pendingRecoverySessionId: recoverySessionId,
-    recoveryResetsComplete: false
+    recoveryResetsComplete: false,
+    recoveryResetLeaseUntil: now + RECOVERY_RESET_LEASE_MS
   }, { merge: true, conflictCode: "security-recovery-key-already-used" });
+}
+
+async function finalizeRecoveryResetPreparation(env, uid, recoverySessionId, completed) {
+  const record = await securityGetDoc(env, SECURITY_COLLECTIONS.recovery, uid);
+  if (!record || record.active !== false ||
+      record.recoveryResetsComplete === true ||
+      record.pendingRecoverySessionId !== recoverySessionId) {
+    throw serviceError("Recovery state changed during reset.", {
+      status: 409, code: "security-recovery-state-changed", source: "worker"
+    });
+  }
+  return writeRecoveryConditional(env, uid, record._updateTime, completed
+    ? { recoveryResetsComplete: true, recoveryResetAt: new Date().toISOString(),
+        recoveryResetLeaseUntil: 0 }
+    : { recoveryResetLeaseUntil: 0 },
+    { merge: true, conflictCode: "security-recovery-state-changed" });
 }
 
 async function finishMasterRecoveryKey(env, uid, recoveryRecord, replacementRecord) {
@@ -2534,24 +2570,36 @@ async function handleSecurityRoute(request,env,url,context){
       if(!first.uid) throw serviceError('Recovery requires the administrator password.',{status:401,code:'security-recovery-password'});
       const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,first.uid);
       const digest=await recoveryHmac(body.recoveryKey,env);
-      if(!rec||rec.active!==true||rec.masterKeyHash!==digest){
-        await writeSecurityEvent(env,{uid:first.uid,type:'recovery-attempt',success:false,ip:securityIp(request)});
+      // The old key stays inactive after an interrupted reset. Resumption
+      // requires the SAME Master Key plus a fresh Firebase password check,
+      // is rate limited and may run only within a bounded server-side window.
+      // Neither other keys nor a finished recovery may reopen the reset.
+      const resumable=rec?.active===false && rec.recoveryResetsComplete!==true;
+      if(!rec || rec.masterKeyHash!==digest || (!resumable && rec.active!==true)){
+        await writeSecurityEvent(env,{uid:first.uid,type:'recovery-attempt',success:false,ip:securityIp(request)}).catch(()=>null);
         throw serviceError('Recovery key is invalid.',{status:401,code:'security-recovery-key-invalid'});
       }
-      // Allocate an unguessable challenge before the atomic claim, but never
-      // disclose it unless the Firestore compare-and-set wins and revocation succeeds.
       const recoverySessionId=await putSecurityChallenge(env,'recovery',{uid:first.uid,email:first.email},SECURITY_LIFETIMES.recovery);
       await claimMasterRecoveryKey(env,first.uid,rec,recoverySessionId);
-      // Fail closed on partial revocation. A recovery challenge cannot complete
-      // until both the session/device revoke and Identity Platform reset finish.
-      await Promise.all([
-        revokeUserSecurityState(first.uid,env),
-        clearFirebaseMfaForRecovery(env,first.uid)
-      ]);
-      await securityPatchDoc(env,SECURITY_COLLECTIONS.recovery,first.uid,{
-        recoveryResetsComplete:true, recoveryResetAt:new Date().toISOString()
-      });
-      await writeSecurityEvent(env,{uid:first.uid,type:'recovery-used',success:true,ip:securityIp(request),summary:'Recovery key accepted; prior sessions, trusted devices, Firebase tokens, and MFA enrollment were invalidated.'});
+      try{
+        // Both operations are idempotent: a failed reset can retry revoking
+        // already-revoked sessions and clearing already-cleared MFA.
+        await Promise.all([
+          revokeUserSecurityState(first.uid,env),
+          clearFirebaseMfaForRecovery(env,first.uid)
+        ]);
+        await finalizeRecoveryResetPreparation(env,first.uid,recoverySessionId,true);
+      }catch(error){
+        // Do not disclose an incomplete recovery challenge. Release the short
+        // lease if possible; otherwise it expires after a Worker crash.
+        await finalizeRecoveryResetPreparation(env,first.uid,recoverySessionId,false).catch(()=>null);
+        throw serviceError('Security reset was interrupted. Retry using the same administrator password and Master Recovery Key.',{
+          status:503,code:'security-recovery-interrupted',source:'worker'
+        });
+      }
+      // An activity-email/provider outage must never turn an already-completed
+      // reset into an unclaimable response. Capture audit failures separately.
+      await writeSecurityEvent(env,{uid:first.uid,type:'recovery-used',success:true,ip:securityIp(request),summary:'Recovery key accepted; prior sessions, trusted devices, Firebase tokens, and MFA enrollment were invalidated.'}).catch(()=>null);
       return json({state:'recovery',recoverySessionId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.recovery*1000).toISOString()},200,origin);
     }
     if(path==='/security/recovery/complete'&&method==='POST'){

@@ -50,6 +50,6 @@ jobs:
           node --check storage-bridge-url.js
           node --check telemetry-worker/src/index.js
       - name: Run shared-navigation and staging isolation tests
-        run: node --test tests/admin-shared-navigation-performance.test.mjs tests/admin-workspace-security-gate.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-pending-navigation-lifecycle.test.mjs tests/staging-build-isolation.test.mjs tests/staging-worker-authorization.test.mjs tests/staging-worker-health-gate.test.mjs
+        run: node --test tests/admin-shared-navigation-performance.test.mjs tests/admin-workspace-security-gate.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-pending-navigation-lifecycle.test.mjs tests/staging-build-isolation.test.mjs tests/staging-worker-authorization.test.mjs tests/staging-worker-health-gate.test.mjs tests/security-coordinator-atomicity.test.mjs
       - name: Verify staging manifest has no hardcoded API key
         run: node -e "if (Object.hasOwn(require('./scripts/staging-targets.json').firebase, 'apiKey')) process.exit(1)"

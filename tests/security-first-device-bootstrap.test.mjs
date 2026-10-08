@@ -125,6 +125,15 @@ async function fixture({ historical = false, recovered = false } = {}) {
   return {
     sync() { simultaneous = true; }, get readCount() { return reads; },
     devices() { return [...docs].filter(([name])=>name.includes("/adminSecurityDevices/")); },
+    setRecoveryEpoch(epoch) { put("adminSecurityRecovery",uid,{
+      uid,active:true,deviceBootstrapEpoch:epoch
+    }); },
+    revokeDevice(id) {
+      const name=base+"/adminSecurityDevices/"+id;
+      const record=docs.get(name);
+      if(!record)throw Error("device record absent");
+      docs.set(name,{...record,active:false});
+    },
     async post(sid,path,body) {
       const r = await worker.fetch(new Request(
         "https://lan-portfolio-staging.lagmayr2.workers.dev"+path,{
@@ -240,5 +249,36 @@ test("enrollment cannot overwrite an already-registered device ID",async()=>{
     assert.equal(rejected.status,409);
     assert.equal(f.devices().length,1);
     assert.equal(f.devices()[0][1].publicKeyJwk.x,key(11).x);
+  }finally{f.restore();}
+});
+
+
+test("an enrollment created before a security reset cannot be redeemed in the new epoch",async()=>{
+  const f=await fixture();
+  try{
+    const challenge=await createChallenge(f,"s1","stale-pre-reset-device",55);
+    f.setRecoveryEpoch("fresh-reset-epoch");
+    const rejected=await complete(f,challenge);
+    assert.equal(rejected.status,403);
+    assert.equal(rejected.body.code,"security-enrollment-epoch-changed");
+    assert.equal(f.devices().length,0);
+  }finally{f.restore();}
+});
+
+test("approval from a now-revoked trusted device cannot authorize enrollment",async()=>{
+  const f=await fixture();
+  try{
+    const initial=await createChallenge(f,"s1","revocable-trusted-device",77);
+    assert.equal((await complete(f,initial)).status,200);
+    const second=await createChallenge(f,"s2","attempted-second-device",88);
+    const approval=await f.post("s1","/security/device/enrollment/approve",{
+      proofId:"proof-s1",challengeId:second.challengeId
+    });
+    assert.equal(approval.status,200);
+    f.revokeDevice("revocable-trusted-device");
+    const denied=await complete(f,second);
+    assert.equal(denied.status,403);
+    assert.equal(denied.body.code,"security-enrollment-approver-revoked");
+    assert.equal(f.devices().length,1);
   }finally{f.restore();}
 });

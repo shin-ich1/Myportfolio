@@ -2181,6 +2181,13 @@ async function consumeSecurityChallenge(env, scope, id) {
   return outcome.record;
 }
 
+async function readPendingRecoveryChallenge(env, id) {
+  const result = await coordinateSecurity(env, securityChallengeOwner("recovery", id), {
+    op: "recovery-read", scope: "recovery", id: String(id || "")
+  });
+  return result.record;
+}
+
 async function readSecurityEnrollmentChallenge(env, id, uid) {
   const result = await coordinateSecurity(env, securityChallengeOwner("device-enroll", id), {
     op: "challenge-read", scope: "device-enroll", id: String(id || ""), uid
@@ -2778,7 +2785,10 @@ async function handleSecurityRoute(request,env,url,context){
     }
     if(path==='/security/recovery/complete'&&method==='POST'){
       const recoverySessionId=String(body.recoverySessionId||'');
-      const c=await consumeSecurityChallenge(env,'recovery',recoverySessionId);
+      // Keep the recovery capability pending until all upstream changes
+      // succeed. Its effect is serialized by Firestore's Recovery-record CAS,
+      // not by deleting the challenge before making irreversible writes.
+      const c=await readPendingRecoveryChallenge(env,recoverySessionId);
       const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,c.uid);
       if(!rec||rec.pendingRecoverySessionId!==recoverySessionId || rec.active!==false ||
           rec.recoveryResetsComplete!==true){
@@ -2788,8 +2798,14 @@ async function handleSecurityRoute(request,env,url,context){
       }
       const replacementEmail=String(body.newEmail||'').trim();
       if(replacementEmail){
-        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replacementEmail)) throw serviceError('Replacement email is invalid.',{status:400,code:'security-recovery-email-invalid'});
-        await identityPlatformAdminUpdateUser(env,c.uid,{email:replacementEmail,emailVerified:false,validSince:String(Math.floor(Date.now()/1000))});
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replacementEmail))
+          throw serviceError('Replacement email is invalid.',{
+            status:400,code:'security-recovery-email-invalid'
+          });
+        await identityPlatformAdminUpdateUser(env,c.uid,{
+          email:replacementEmail,emailVerified:false,
+          validSince:String(Math.floor(Date.now()/1000))
+        });
       }
       const key=recoveryKey(),codes=Array.from({length:8},backupCode);
       const hash=await recoveryHmac(key,env),codeHashes=await Promise.all(codes.map(x=>recoveryHmac(x,env)));
@@ -2797,7 +2813,11 @@ async function handleSecurityRoute(request,env,url,context){
         uid:c.uid,active:true,masterKeyHash:hash,backupCodeHashes:codeHashes,
         deviceBootstrapEpoch:securityRandomId(18),createdAt:new Date().toISOString()
       });
-      // Security Activity was persisted atomically with the replacement key.
+      // The atomic Firestore update has irreversibly invalidated the previous
+      // recovery state. Clean up the challenge, but do not risk losing the
+      // generated key display if the coordinator is temporarily unavailable:
+      // Firestore active:true and the CAS prevent any second completion.
+      await consumeSecurityChallenge(env,'recovery',recoverySessionId).catch(()=>null);
       return json({state:'bootstrap-required',email:replacementEmail||c.email||'',masterKey:key,backupCodes:codes,requireEmailVerification:Boolean(replacementEmail),requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true},200,origin);
     }
 

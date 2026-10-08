@@ -6,6 +6,7 @@ const canonical = {
   ok: true,
   service: "lan-cloudinary-telemetry",
   firebaseConfigured: true,
+  securityCoordinatorConfigured: true,
   storageOAuthConfigured: true,
   messagePushConfigured: true,
   messageSecurityConfigured: false
@@ -32,6 +33,7 @@ test("staging health gate only checks the fixed staging Worker URL, without cred
   assert.equal(options.credentials, "omit");
   assert.equal(options.headers.Authorization, undefined);
   assert.equal(result.canonicalWorkerResponding, true);
+  assert.equal(result.atomicSecurityCoordinatorBindingPresent, true);
   assert.equal(result.serverCredentialPresenceReported, false);
   assert.equal(result.runtimeSecurityVerified, false);
 });
@@ -51,6 +53,10 @@ test("rejects incorrect or unconfigured Worker without leaking response data", a
   await assert.rejects(
     inspectStagingWorkerHealth({ fetchImpl: async () => jsonResponse({ ...canonical, firebaseConfigured: false }) }),
     /Firebase project configuration/
+  );
+  await assert.rejects(
+    inspectStagingWorkerHealth({ fetchImpl: async () => jsonResponse({ ...canonical, securityCoordinatorConfigured: false }) }),
+    /atomic Security Coordinator binding/
   );
   await assert.rejects(
     inspectStagingWorkerHealth({ fetchImpl: async () => jsonResponse({ ...canonical, messagePushConfigured: false }) }),

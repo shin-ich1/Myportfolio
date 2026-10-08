@@ -189,6 +189,7 @@ service cloud.firestore {
 
     match /adminSecurityDevices/{id} { allow read, write: if false; }
     match /adminSecurityDeviceBootstrap/{id} { allow read, write: if false; }
+    match /adminSecurityDeviceCredentials/{id} { allow read, write: if false; }
     match /adminSecuritySessions/{id} { allow read, write: if false; }
     match /adminSecurityRecovery/{id} { allow read, write: if false; }
     match /adminSecurityEvents/{id} { allow read, write: if false; }

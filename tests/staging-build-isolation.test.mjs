@@ -50,6 +50,12 @@ test('staging build pins Firebase, Worker, and Hosting without editing source or
     assert.equal(Object.hasOwn(manifest.firebase, 'apiKey'), false);
     const workerConfig = JSON.parse(await readFile(path.join(root, 'telemetry-worker/wrangler.staging.jsonc'), 'utf8'));
     assert.equal(workerConfig.vars.FIREBASE_WEB_API_KEY, undefined);
+    assert.deepEqual(workerConfig.durable_objects.bindings, [
+      { name: 'SECURITY_COORDINATOR', class_name: 'SecurityCoordinator' }
+    ]);
+    assert.equal(workerConfig.exports.SecurityCoordinator.storage, 'sqlite');
+    assert.ok(workerConfig.kv_namespaces.every(item => item.binding !== 'SECURITY_STATE'),
+      'old security KV owner must not be bound');
     assert.match(siteConfig, /enforceConfiguredBridge:\s*true/);
     assert.match(siteConfig, /cloudName:\s*""/);
     assert.match(siteConfig, /uploadPreset:\s*""/);
@@ -106,7 +112,7 @@ test('staging build rejects a wrong-worker binding before preparing publishable 
       kv_namespaces: [{ binding: 'SECURITY_STATE', id: 'production-kv-id' }],
       vars: { FIREBASE_PROJECT_ID: 'lan-portfolio-staging' }
     }));
-    await assert.rejects(buildFixture(root), /Staging Worker KV binding/);
+    await assert.rejects(buildFixture(root), /Unrecognized old staging security KV binding/);
     await assert.rejects(readFile(path.join(root, '.lan-staging/firebase.json')));
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -131,12 +137,36 @@ test('staging Worker config migrates old web API key out of Wrangler vars', asyn
     await writeFile(path.join(root, 'telemetry-worker/wrangler.staging.jsonc'), JSON.stringify({
       name: targets.worker.name,
       main: 'src/index.js',
-      kv_namespaces: Object.entries(targets.worker.kvNamespaces).map(([binding, id]) => ({ binding, id })),
+      kv_namespaces: [
+        ...Object.entries(targets.worker.kvNamespaces).map(([binding, id]) => ({ binding, id })),
+        // Known retired staging-only namespace from the previous builder.
+        { binding: 'SECURITY_STATE', id: '24224266caf94e6ebe5ba8c8e9010873' }
+      ],
       vars: { FIREBASE_PROJECT_ID: targets.firebase.projectId, FIREBASE_WEB_API_KEY: syntheticWebApiKey }
     }));
     await buildFixture(root);
     const cfg = JSON.parse(await readFile(path.join(root, 'telemetry-worker/wrangler.staging.jsonc'), 'utf8'));
     assert.equal(cfg.vars.FIREBASE_WEB_API_KEY, undefined);
+    assert.ok(cfg.kv_namespaces.every(item => item.binding !== 'SECURITY_STATE'));
+    assert.equal(cfg.exports.SecurityCoordinator.storage, 'sqlite');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('staging builder rejects a substituted Durable Object owner before writing output', async () => {
+  const root = await fixture();
+  try {
+    await mkdir(path.join(root, 'telemetry-worker'), { recursive: true });
+    const targets = JSON.parse(await readFile(new URL('../scripts/staging-targets.json', import.meta.url), 'utf8'));
+    await writeFile(path.join(root, 'telemetry-worker/wrangler.staging.jsonc'), JSON.stringify({
+      name: targets.worker.name, main: 'src/index.js',
+      kv_namespaces: Object.entries(targets.worker.kvNamespaces).map(([binding, id]) => ({ binding, id })),
+      durable_objects: { bindings: [{ name: 'SECURITY_COORDINATOR', class_name: 'UntrustedOtherClass' }] },
+      vars: { FIREBASE_PROJECT_ID: targets.firebase.projectId }
+    }));
+    await assert.rejects(buildFixture(root), /Durable Object configuration mismatch/);
+    await assert.rejects(readFile(path.join(root, '.lan-staging/firebase.json')));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

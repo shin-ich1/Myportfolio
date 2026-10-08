@@ -12,7 +12,6 @@
     "telemetryUrl": "https://lan-portfolio-staging.lagmayr2.workers.dev/telemetry",
     "kvNamespaces": {
       "PORTFOLIO_MESSAGES": "2802de517de743a6b4b2d1620b097bf7",
-      "SECURITY_STATE": "24224266caf94e6ebe5ba8c8e9010873",
       "STORAGE_OAUTH": "8cdeb79f52944659a71101381f041152"
     }
   }

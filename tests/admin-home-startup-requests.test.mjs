@@ -16,14 +16,14 @@ test("Home bootstrap shares one contact snapshot between summary and mini previe
   const init = block("async function init()", "// Home / Studio composes generated modules.");
   assert.match(loader, /async function loadMiniModuleData\(contactData = null\)/);
   assert.match(loader, /contact:\s*async\s*\(\)\s*=>\s*contactData\s*\?\?\s*loadContact\(\)/);
-  assert.match(init, /Promise\.all\(\[loadHome\(\),\s*loadContact\(\),\s*listSections\(\)\.catch\(/);
+  assert.match(init, /Promise\.all\(\[\s*loadHome\(\),\s*loadContact\(\),\s*listSections\(\)\.catch\(/);
   assert.match(init, /loadMiniModuleData\(contactData\)/);
 });
 
 test("Home bootstrap resolves one section registry read and reuses it across both presentations", () => {
   const sections = block("async function renderSections(", "async function upload(");
   const init = block("async function init()", "// Home / Studio composes generated modules.");
-  const boot = source.slice(source.lastIndexOf("await Promise.all([init()"));
+  const boot = source.slice(source.indexOf('document.querySelector(".home-live-preview__portrait")?.addEventListener'));
   assert.match(sections, /async function renderSections\(saved = \[\], registry = undefined\)/);
   assert.match(sections, /registry = registry \?\? await listSections\(\)\.catch/);
   assert.match(init, /featureSections = registry/);

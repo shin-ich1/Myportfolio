@@ -67,3 +67,5 @@ jobs:
           node scripts/prepare-staging.mjs
           cd telemetry-worker
           ./node_modules/.bin/wrangler deploy --dry-run --config wrangler.staging.jsonc --outdir ../.lan-staging/worker-bundle
+          cd ..
+          node --test telemetry-worker/tests/atomic-do-runtime.test.mjs

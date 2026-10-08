@@ -20,7 +20,7 @@ const encodeFields = record => Object.fromEntries(Object.entries(record).map(([k
 const decodeField = value => value?.stringValue ?? value?.booleanValue ??
   (value?.arrayValue?.values || []).map(v => v.stringValue);
 
-async function fixture({ resetFailures = 0 } = {}) {
+async function fixture({ resetFailures = 0, completionWriteFailures = 0 } = {}) {
   const privateKey = await crypto.subtle.generateKey({
     name: "RSASSA-PKCS1-v1_5", modulusLength: 2048,
     publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256"
@@ -119,6 +119,9 @@ async function fixture({ resetFailures = 0 } = {}) {
       const hasSecurityEvent = writes.some(x =>
         x.update?.name?.includes("/adminSecurityEvents/")
       );
+      if (hasRecoveryCompletion && completionWriteFailures-- > 0) {
+        return response({ error: { status: "UNAVAILABLE", message: "test-only-Firestore-interruption" } }, 503);
+      }
       if (hasRecoveryCompletion && hasSecurityEvent) atomicCompletionAuditWrites++;
       if (hasSecurityEvent && !hasRecoveryCompletion && failedAuditWrites > 0) {
         failedAuditWrites--;
@@ -149,6 +152,7 @@ async function fixture({ resetFailures = 0 } = {}) {
   return {
     oldKey, hash,
     setResetFailures(n) { resetFailures = n; },
+    setCompletionWriteFailures(n) { completionWriteFailures = n; },
     failNextSeparateAuditWrite() { failedAuditWrites = 1; },
     get atomicCompletionAuditWrites() { return atomicCompletionAuditWrites; },
     enableSimultaneousReads() { synchronizeReads = true; },
@@ -269,4 +273,47 @@ test("security Activity outage after recovery must not cause loss of the freshly
     assert.equal(f.atomicCompletionAuditWrites,1,
       "replacement key and Security Activity audit event must use one Firestore commit");
   }finally{f.restore();}
+});
+
+test("Firestore interruption during recovery completion preserves the pending challenge for authenticated retry", async () => {
+  const f = await fixture({ completionWriteFailures: 1 });
+  try {
+    const started = await f.post("/security/recovery/start", {
+      email: "staging-admin@example.invalid", password: "test-password", recoveryKey: f.oldKey
+    });
+    assert.equal(started.status, 200);
+    const id = started.body.recoverySessionId;
+    const failed = await f.post("/security/recovery/complete", { recoverySessionId: id });
+    assert.equal(failed.status, 502);
+    assert.equal(failed.body.masterKey, undefined);
+    assert.equal(f.snapshot().active, false, "failed commit must not turn on a new key");
+    const retried = await f.post("/security/recovery/complete", { recoverySessionId: id });
+    assert.equal(retried.status, 200);
+    assert.ok(retried.body.masterKey);
+    assert.equal(f.snapshot().masterKeyHash, await f.hash(retried.body.masterKey));
+    assert.equal(f.snapshot().active, true);
+    const replay = await f.post("/security/recovery/complete", { recoverySessionId: id });
+    assert.equal(replay.status, 400);
+    assert.equal(replay.body.code, "security-challenge-invalid");
+  } finally { f.restore(); }
+});
+
+test("invalid recovery replacement email cannot consume the one-time challenge", async () => {
+  const f = await fixture();
+  try {
+    const started = await f.post("/security/recovery/start", {
+      email: "staging-admin@example.invalid", password: "test-password", recoveryKey: f.oldKey
+    });
+    assert.equal(started.status, 200);
+    const id = started.body.recoverySessionId;
+    const invalid = await f.post("/security/recovery/complete", {
+      recoverySessionId: id, newEmail: "invalid-address"
+    });
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.body.code, "security-recovery-email-invalid");
+    assert.equal(f.snapshot().active, false);
+    const retried = await f.post("/security/recovery/complete", { recoverySessionId: id });
+    assert.equal(retried.status, 200);
+    assert.ok(retried.body.masterKey);
+  } finally { f.restore(); }
 });

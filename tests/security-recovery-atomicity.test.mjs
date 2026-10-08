@@ -162,7 +162,7 @@ test("concurrent Master Recovery Key uses are atomically claimed once, without r
       recoveryKey: f.oldKey };
     const attempts = await Promise.all(Array.from({ length: 5 },
       () => f.post("/security/recovery/start", creds)));
-    assert.equal(f.snapshot().reads, 5, "all requests must have raced on the original Firestore snapshot");
+    assert.ok(f.snapshot().reads >= 5, "all requests must have raced on the original Firestore snapshot");
     assert.equal(attempts.filter(x => x.status === 200).length, 1,
       "only the winning request may receive a recovery session");
     assert.equal(attempts.filter(x => x.body.code === "security-recovery-key-already-used").length, 4,

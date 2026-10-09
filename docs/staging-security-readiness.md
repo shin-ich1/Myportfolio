@@ -23,6 +23,21 @@
 - The generated isolated staging Worker bundle passed `wrangler deploy --dry-run`. **No deployment happened.**
 - CI evidence: https://github.com/shin-ich1/Myportfolio/actions/runs/37881252528
 
+## Staging deployment operator gate (not enabled automatically)
+
+The canonical GitHub Actions workflow `.github/workflows/admin-performance-regression.yml` now contains a **default-off** `staging-deploy` job. It is eligible only for pushes to `perf/admin-workspace-investigation-20261008`, only after the existing source/runtime regression job passes, and only when repository variable `LAN_STAGING_DEPLOY_APPROVED` is set to the exact string `true`. It is bound to the GitHub environment `lan-security-staging`.
+
+Before enabling the flag, configure the following **staging-only** GitHub Actions secrets using GitHub Settings. Do not paste their values into chat, logs, screenshots, source files, or commits:
+
+- `LAN_STAGING_CLOUDFLARE_API_TOKEN`: scoped Cloudflare token allowed to manage the staging Worker only.
+- `LAN_STAGING_CLOUDFLARE_ACCOUNT_ID`: exact staging Cloudflare account identifier.
+- `LAN_STAGING_FIREBASE_WEB_API_KEY`: public Web API key for `lan-portfolio-staging`, supplied privately as an Actions secret to the isolated build.
+- `LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64`: base64-encoded JSON for a **dedicated staging** Firebase deploy identity. Preflight decodes it and checks `project_id === "lan-portfolio-staging"`. Assign least privileges needed for staging Firestore Rules and Hosting deployment; do not use production service identities.
+
+Configure these encrypted runtime secrets **on the staging Worker** in Cloudflare before allowing the deploy job: `FIREBASE_WEB_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_EMAIL`, `FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY`, and `SECURITY_RECOVERY_PEPPER`. Worker identity should have access only to `lan-portfolio-staging` and the specific Firestore collections required by the Worker. Use fresh unique staging pepper and secrets, never values from production. A staging-only Google Drive OAuth app is optional; absence must fail Drive access closed.
+
+When authorized, the job regenerates the isolated staging bundle, verifies secret presence, publishes **only** `lan-portfolio-staging` Worker, checks its canonical `/health`, then publishes Firestore Rules and Hosting to **only** Firebase project `lan-portfolio-staging`. There is no production deployment command or automatic production promotion in this workflow. After a staging deployment, perform interactive authentication and authorization tests manually; the job's success does **not** certify the Security Gateway.
+
 ## Remaining blockers before any staging deployment
 
 - **Live Firebase/Cloudflare authorization:** Approve staging-only least-privilege service identity, secure Worker secrets, Firestore Rules and authorized test administrator bootstrap. Run real TOTP, QR trusted-device, session and recovery tests and direct unauthorized Firestore/backend request rejection.

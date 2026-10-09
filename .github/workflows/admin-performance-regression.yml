@@ -96,7 +96,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.LAN_STAGING_CLOUDFLARE_ACCOUNT_ID }}
       LAN_STAGING_FIREBASE_WEB_API_KEY: ${{ secrets.LAN_STAGING_FIREBASE_WEB_API_KEY }}
       LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64: ${{ secrets.LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64 }}
-      GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/lan-staging-firebase-deployer.json
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/.lan-staging-firebase-deployer.json
     steps:
       - name: Check out testing branch only
         uses: actions/checkout@v4

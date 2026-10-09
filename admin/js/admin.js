@@ -140,6 +140,10 @@ if(recoverySubmitButton) recoverySubmitButton.addEventListener('click',async()=>
       if(result?.state!=='bootstrap-required')throw Error('Recovery confirmation is incomplete.');
       recoveryActivationPending=false;
       saved.disabled=true;activate.disabled=true;
+      // The Admin explicitly confirmed an offline copy. Clear plaintext from
+      // the DOM after server activation, never persist it in localStorage.
+      key.textContent='';
+      codes.textContent='';
       activate.textContent='Recovery Kit activated';
       state.textContent='Security reset confirmed. Your saved Recovery Kit is now valid. Sign in to re-enroll TOTP and a trusted device.';
       for(const input of [recoveryPassword,recoveryMasterKey]) if(input)input.value='';

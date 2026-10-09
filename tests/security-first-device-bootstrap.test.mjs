@@ -55,6 +55,7 @@ async function fixture({ historical = false, recovered = false } = {}) {
     FIREBASE_WEB_API_KEY: "test-only-noncredential",
     FIREBASE_SERVICE_ACCOUNT_EMAIL: "example@example.invalid",
     FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: pem,
+    SECURITY_RECOVERY_PEPPER: "TEST-ONLY-NOT-A-REAL-RECOVERY-PEPPER",
     SECURITY_COORDINATOR: {
       idFromName(name) { return name; },
       get(name) {
@@ -131,6 +132,7 @@ async function fixture({ historical = false, recovered = false } = {}) {
     devices() { return [...docs].filter(([name])=>name.includes("/adminSecurityDevices/")); },
     credentials() { return [...docs].filter(([name])=>name.includes("/adminSecurityDeviceCredentials/")); },
     bootstrapClaims() { return [...docs].filter(([name])=>name.includes("/adminSecurityDeviceBootstrap/")); },
+    recoveryRecord() {return docs.get(base+"/adminSecurityRecovery/"+uid)||null;},
     addLegacyDevice(id,publicKeyJwk,{active=true,approver=false}={}){
       put("adminSecurityDevices",id,{
         uid,deviceId:id,active,publicKeyJwk,
@@ -383,5 +385,44 @@ test("incomplete historical active device keys block registration instead of sil
     assert.equal(attempt.status,503);
     assert.equal(attempt.body.code,"security-device-migration-required");
     assert.equal(f.devices().length,2);
+  }finally{f.restore();}
+});
+
+test("signed-in normal Recovery Kit rotation does not invalidate the old key before saved-key activation",async()=>{
+  const f=await fixture();
+  try{
+    const prepared=await f.post("s1","/security/recovery/generate",{
+      proofId:"proof-s1"
+    });
+    assert.equal(prepared.status,200,JSON.stringify(prepared.body));
+    assert.equal(prepared.body.state,"kit-prepared");
+    assert.ok(prepared.body.masterKey);
+    assert.equal(prepared.body.backupCodes.length,8);
+    assert.equal(f.recoveryRecord(),null,"preparing must not modify Recovery Key authority");
+    const mismatch=await f.post("s1","/security/recovery/rotate/activate",{
+      rotationId:prepared.body.rotationId,
+      preparedKitId:"Z".repeat(32),proofId:"proof-s1"
+    });
+    assert.equal(mismatch.status,403);
+    assert.equal(f.recoveryRecord(),null);
+    const activated=await f.post("s1","/security/recovery/rotate/activate",{
+      rotationId:prepared.body.rotationId,
+      preparedKitId:prepared.body.preparedKitId,proofId:"proof-s1"
+    });
+    assert.equal(activated.status,200,JSON.stringify(activated.body));
+    assert.equal(activated.body.state,"recovery-kit-active");
+    assert.equal(activated.body.masterKey,undefined);
+    const record=f.recoveryRecord();
+    assert.equal(record?.active,true);
+    assert.equal(record?.lastRotationId,prepared.body.rotationId);
+    assert.equal(record?.lastPreparedKitId,prepared.body.preparedKitId);
+    assert.notEqual(record?.masterKeyHash,prepared.body.masterKey);
+    const replay=await f.post("s1","/security/recovery/rotate/activate",{
+      rotationId:prepared.body.rotationId,
+      preparedKitId:prepared.body.preparedKitId,proofId:"proof-s1"
+    });
+    assert.equal(replay.status,200);
+    assert.equal(replay.body.alreadyCompleted,true);
+    assert.equal(replay.body.masterKey,undefined);
   }finally{f.restore();}
 });

@@ -184,6 +184,36 @@ export class SecurityCoordinator {
         challenge: geometry, attempts, attemptsRemaining: maxAttempts - attempts
       });
     }
+    if (op === "recovery-prepare") {
+      if (scope !== "recovery" || !validChallengeId(id)) {
+        return reject("security-challenge-invalid", 400, "Invalid recovery session.");
+      }
+      const record = kv.get("record");
+      if (!record || record.scope !== "recovery" ||
+          Number(record.expiresAt) <= now) {
+        if (record && Number(record.expiresAt) <= now) kv.delete("record");
+        return reject("security-challenge-invalid", 400, "Recovery session has expired.");
+      }
+      if (Number(record.preparationCount || 0) >= 3) {
+        return reject("security-recovery-prepare-limit", 429,
+          "Recovery Kit preparation limit reached. Complete recovery with your saved kit.");
+      }
+      const prepared = command.prepared;
+      const validHash = hash => typeof hash === "string" &&
+        /^[A-Za-z0-9_-]{40,90}$/.test(hash);
+      if (!prepared || !validChallengeId(prepared.preparedKitId) ||
+          !validHash(prepared.masterKeyHash) ||
+          !Array.isArray(prepared.backupCodeHashes) ||
+          prepared.backupCodeHashes.length !== 8 ||
+          !prepared.backupCodeHashes.every(validHash)) {
+        return reject("security-recovery-kit-invalid", 400, "Prepared Recovery Kit is invalid.");
+      }
+      kv.put("record", {
+        ...record,prepared:structuredClone(prepared),
+        preparationCount:Number(record.preparationCount || 0)+1
+      });
+      return json({ ok:true,preparedKitId:prepared.preparedKitId });
+    }
     if (op === "recovery-read") {
       if (scope !== "recovery" || !validChallengeId(id)) {
         return reject("security-challenge-invalid", 400, "Invalid recovery session.");

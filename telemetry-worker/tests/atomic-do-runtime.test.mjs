@@ -172,3 +172,31 @@ test("workerd leaves recovery challenge pending on read, but never after consume
   assert.equal(claims.filter(x=>x.status===200).length,1);
   assert.equal((await send(stub,"recovery-read",{scope:"recovery",id})).status,400);
 });
+
+test("workerd holds only hashed prepared recovery material and limits rotation before final commit",async()=>{
+  const env=await harness.getWorker().getEnv();
+  const ns=env.SECURITY_COORDINATOR;
+  const id="R".repeat(24)+crypto.randomUUID().replaceAll("-").slice(0,12);
+  const stub=ns.get(ns.idFromName("security-challenge:recovery:"+id));
+  assert.equal((await send(stub,"challenge-put",{
+    scope:"recovery",id,
+    record:{scope:"recovery",uid:"isolated-test-admin",
+      email:"staging@example.invalid",expiresAt:Date.now()+60000}
+  })).status,200);
+  const prepare=i=>send(stub,"recovery-prepare",{
+    scope:"recovery",id,
+    prepared:{
+      preparedKitId:"P".repeat(26)+String(i).padStart(4,"0"),
+      masterKeyHash:"A".repeat(43),
+      backupCodeHashes:Array.from({length:8},(_,j)=>
+        String(j).padStart(2,"0")+"B".repeat(41))
+    }
+  });
+  for(let i=0;i<3;i++)assert.equal((await prepare(i)).status,200);
+  const read=await send(stub,"recovery-read",{scope:"recovery",id});
+  assert.equal(read.status,200);
+  assert.equal(read.body.record.preparationCount,3);
+  assert.equal(read.body.record.prepared.masterKeyHash,"A".repeat(43));
+  assert.equal(JSON.stringify(read.body).includes("MASTER-RECOVERY-PLAINTEXT"),false);
+  assert.equal((await prepare(4)).status,429);
+});

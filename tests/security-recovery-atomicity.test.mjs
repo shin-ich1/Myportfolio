@@ -210,10 +210,12 @@ test("concurrent Master Recovery Key uses are atomically claimed once, without r
     assert.equal(f.snapshot().masterKeyHash, await f.hash(prepared.body.masterKey));
     assert.equal(f.snapshot().active, true);
     const replayComplete = await f.post("/security/recovery/complete", {
-      recoverySessionId: authorized.body.recoverySessionId
+      recoverySessionId: authorized.body.recoverySessionId,
+      preparedKitId: prepared.body.preparedKitId
     });
-    assert.equal(replayComplete.status, 400);
-    assert.equal(replayComplete.body.code, "security-recovery-kit-required");
+    assert.equal(replayComplete.status, 200, "status confirmation is idempotent");
+    assert.equal(replayComplete.body.alreadyCompleted, true);
+    assert.equal(replayComplete.body.masterKey, undefined);
 
     const replayOldKey = await f.post("/security/recovery/start", creds, "198.51.100.44");
     assert.equal(replayOldKey.status, 401);
@@ -315,9 +317,12 @@ test("Firestore interruption during recovery completion preserves the pending ch
     assert.equal(retried.body.masterKey,undefined);
     assert.equal(f.snapshot().masterKeyHash, await f.hash(prepared.body.masterKey));
     assert.equal(f.snapshot().active, true);
-    const replay = await f.post("/security/recovery/complete", { recoverySessionId: id });
-    assert.equal(replay.status, 400);
-    assert.equal(replay.body.code, "security-challenge-invalid");
+    const replay = await f.post("/security/recovery/complete", {
+      recoverySessionId: id,preparedKitId: prepared.body.preparedKitId
+    });
+    assert.equal(replay.status, 200);
+    assert.equal(replay.body.alreadyCompleted, true);
+    assert.equal(replay.body.masterKey, undefined);
   } finally { f.restore(); }
 });
 

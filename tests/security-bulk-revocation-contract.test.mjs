@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('../telemetry-worker/src/index.js', import.meta.url), 'utf8');
-const lineForRoute = path => {
-  const line = source.split('\n').find(value => value.includes("if(path==='" + path + "'"));
-  assert.ok(line, 'Canonical Security Gateway route absent: ' + path);
-  return line;
+const routeBlock = path => {
+  const marker = "    if(path==='" + path + "'";
+  const start = source.indexOf(marker);
+  assert.ok(start >= 0, 'Canonical Security Gateway route absent: ' + path);
+  const next = source.indexOf('\n    if(path===', start + marker.length);
+  assert.ok(next > start, 'Canonical Security Gateway route boundary absent: ' + path);
+  return source.slice(start, next);
 };
 
 test('all bulk session/device revocation routes must enumerate more than UI query limits', () => {
@@ -15,7 +18,7 @@ test('all bulk session/device revocation routes must enumerate more than UI quer
     '/security/session/revoke-others',
     '/security/session/revoke-temporary'
   ]) {
-    assert.match(lineForRoute(route), /securityQueryAll\(/,
+    assert.match(routeBlock(route), /securityQueryAll\(/,
       'Potentially truncated revocation is not allowed: ' + route);
   }
 });
@@ -27,7 +30,7 @@ test('the Firestore batch revocation owner is reused by recovery and session/dev
     '/security/device/revoke',
     '/security/session/revoke-others',
     '/security/session/revoke-temporary'
-  ]) assert.match(lineForRoute(route), /revokeSecurityDocuments\(/, route);
+  ]) assert.match(routeBlock(route), /revokeSecurityDocuments\(/, route);
 });
 
 test('a revoked or missing trusted device cannot retain authorization on its old session', () => {

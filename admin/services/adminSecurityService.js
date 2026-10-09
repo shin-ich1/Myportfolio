@@ -182,6 +182,8 @@ export const saveSecurityEmailBranding=branding=>workerRequest('/security/email-
 export const getSecurityAlertStatus=()=>workerRequest('/security/alert-status',{method:'GET',authorization:true});
 export async function generateRecoveryKit(){ const proof=requireRecentStepUp('rotate recovery kit'); return workerRequest('/security/recovery/generate',{body:{proofId:proof.proofId},authorization:true}); }
 export const beginEmergencyRecovery=(email,password,recoveryKey)=>workerRequest('/security/recovery/start',{body:{email:text(email),password:String(password??''),recoveryKey:text(recoveryKey)}});
+export const prepareRecoveryKit=recoverySessionId=>workerRequest('/security/recovery/prepare',{body:{recoverySessionId}});
 export const completeRecoveryReset=(recoverySessionId,payload={})=>workerRequest('/security/recovery/complete',{body:{recoverySessionId,...payload}});
+export const getRecoveryResetStatus=(recoverySessionId,preparedKitId)=>workerRequest('/security/recovery/status',{body:{recoverySessionId,preparedKitId}});
 export const enterSecurityLockdown=()=>workerRequest('/security/lockdown/enter',{body:{proofId:requireRecentStepUp('enter lockdown').proofId},authorization:true});
 export const exitSecurityLockdown=()=>workerRequest('/security/lockdown/exit',{body:{proofId:requireRecentStepUp('exit lockdown').proofId},authorization:true});

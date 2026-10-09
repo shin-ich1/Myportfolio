@@ -31,3 +31,15 @@ test("postcommit status check never generates a second Recovery Kit or assumes a
   assert.match(service,/export const getRecoveryResetStatus=/);
   assert.doesNotMatch(service,/localStorage\.setItem\([^)]*[Kk]ey/);
 });
+
+test("normal signed-in Recovery Kit rotation also prepares before activating and retains prior key until acknowledgment",async()=>{
+  const settings=await readFile(new URL("../admin/js/settings-security.js",import.meta.url),"utf8");
+  const index=settings.indexOf("await generateRecoveryKit()");
+  const activate=settings.indexOf("await activatePreparedRecoveryKit(",index);
+  assert.ok(index>=0 && activate>index);
+  assert.match(settings,/recoveryRotationSavedConfirmation/);
+  assert.match(settings,/activationButton\.disabled=!saved\.checked/);
+  assert.match(settings,/if\(!saved\.checked\)return/);
+  assert.match(settings,/recoveryKitOutput/);
+  assert.match(service,/export async function activatePreparedRecoveryKit/);
+});

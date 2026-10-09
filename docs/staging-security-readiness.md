@@ -38,6 +38,16 @@ Configure these encrypted runtime secrets **on the staging Worker** in Cloudflar
 
 When authorized, the job regenerates the isolated staging bundle, verifies secret presence, publishes **only** `lan-portfolio-staging` Worker, checks its canonical `/health`, then publishes Firestore Rules and Hosting to **only** Firebase project `lan-portfolio-staging`. There is no production deployment command or automatic production promotion in this workflow. After a staging deployment, perform interactive authentication and authorization tests manually; the job's success does **not** certify the Security Gateway.
 
+## Follow-up source security audit — 2026-10-09
+
+**Audit scope:** the current testing branch, not deployed staging or production. No Firebase credentials, Recovery Keys, private device material or production resources were used.
+
+- **Administrator allowlist authorization:** the old Firestore `admin:true` custom-claim path could write `authorizedAdministrators` without a security-approved session, and could keep authorizing CMS access after allowlist deactivation. Firestore Rules now require an active allowlist record plus an active security-approved session for CMS access; clients can no longer modify administrator allowlist records. Privileged Admin SDK provisioning remains the owner.
+- **Emergency recovery overflow:** the old reset path enumerated at most 200 sessions and 100 devices. A failing HTTP-route regression demonstrated that older records would remain unrevoked. The canonical Worker now paginates the full set and performs bounded Firestore batch revocations. A simulation exercising 225 sessions and 125 devices passed in CI after the change.
+- **Device and bulk session revocation:** individual device revoke and sign-out-all previously used similarly truncated lists. They now use the same exhaustive query and batch-revocation owner, and a revoked trusted device cannot retain Worker authorization through silent temporary-session downgrading. Bulk-revocation contract tests were added to CI.
+- **Capacity guard:** exhaustive revocation fails closed if a single collection exceeds 10,000 enumerated security records; this is an explicit operational escalation, never partial-success reporting.
+- **Testing provenance:** new regression files `tests/firestore-administrator-allowlist-gate.test.mjs` and `tests/security-bulk-revocation-contract.test.mjs`, plus expanded `tests/security-recovery-atomicity.test.mjs`. CI remains a local/source verification gate; direct Firestore denial, session revocation and recovery must be observed against isolated staging before release.
+
 ## Remaining blockers before any staging deployment
 
 - **Live Firebase/Cloudflare authorization:** Approve staging-only least-privilege service identity, secure Worker secrets, Firestore Rules and authorized test administrator bootstrap. Run real TOTP, QR trusted-device, session and recovery tests and direct unauthorized Firestore/backend request rejection.

@@ -2355,8 +2355,12 @@ const RECOVERY_INTERRUPTED_MAX_AGE_MS = 60 * 60 * 1000;
 
 async function claimMasterRecoveryKey(env, uid, recoveryRecord, recoverySessionId) {
   const now = Date.now();
-  const resuming = recoveryRecord?.active === false &&
-    recoveryRecord?.recoveryResetsComplete !== true;
+  // A prepared-but-not-activated recovery is still pending. If its browser
+  // challenge expired or was lost, the SAME offline Master Key plus a fresh
+  // verified password may restart the incomplete ceremony within its bounded
+  // recovery window. A successful activation writes active:true and rejects
+  // the old key permanently.
+  const resuming = recoveryRecord?.active === false;
   if (resuming) {
     const age = now - Date.parse(String(recoveryRecord.usedAt || ""));
     if (!Number.isFinite(age) || age < 0 || age > RECOVERY_INTERRUPTED_MAX_AGE_MS) {
@@ -2824,7 +2828,7 @@ async function handleSecurityRoute(request,env,url,context){
       // requires the SAME Master Key plus a fresh Firebase password check,
       // is rate limited and may run only within a bounded server-side window.
       // Neither other keys nor a finished recovery may reopen the reset.
-      const resumable=rec?.active===false && rec.recoveryResetsComplete!==true;
+      const resumable=rec?.active===false;
       if(!rec || rec.masterKeyHash!==digest || (!resumable && rec.active!==true)){
         await writeSecurityEvent(env,{uid:first.uid,type:'recovery-attempt',success:false,ip:securityIp(request)}).catch(()=>null);
         throw serviceError('Recovery key is invalid.',{status:401,code:'security-recovery-key-invalid'});

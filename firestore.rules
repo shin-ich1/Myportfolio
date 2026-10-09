@@ -11,10 +11,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function hasAdminClaim() {
-      return signedIn() && request.auth.token.admin == true;
-    }
-
     function hasAdministratorRecord() {
       return signedIn()
         && exists(/databases/$(database)/documents/authorizedAdministrators/$(request.auth.uid))
@@ -33,7 +29,7 @@ service cloud.firestore {
     }
 
     function isAdministrator() {
-      return hasSecurityApprovedSession() && (hasAdminClaim() || hasAdministratorRecord());
+      return hasSecurityApprovedSession() && hasAdministratorRecord();
     }
 
     // =========================================================
@@ -69,7 +65,8 @@ service cloud.firestore {
     match /authorizedAdministrators/{uid} {
       allow get: if hasSecurityApprovedSession() && request.auth.uid == uid;
       allow list: if false;
-      allow create, update, delete: if hasAdminClaim();
+      // Administrator allowlist is provisioned exclusively by privileged Admin SDK tooling.
+      allow create, update, delete: if false;
     }
 
     // =========================================================

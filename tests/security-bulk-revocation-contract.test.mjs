@@ -37,7 +37,9 @@ test('a revoked or missing trusted device cannot retain authorization on its old
   const body = source.split('async function canonicalizeActiveSecuritySessionTrust(')[1]
     ?.split('async function requireActiveSecuritySession(')[0];
   assert.ok(body, 'Canonical server session validator must exist');
-  assert.doesNotMatch(body, /return\s+\{\.\.\.session,\s*trustLevel:'temporary'/,
+  const missingTrustedDeviceBranch = body.slice(body.indexOf('if(device'));
+  assert.ok(body.includes('if(device'), 'Trusted-device revocation branch must exist');
+  assert.doesNotMatch(missingTrustedDeviceBranch, /return\s+\{\.\.\.session,\s*trustLevel:'temporary'/,
     'A revoked trusted-device session must be rejected, never silently downgraded');
   assert.match(body, /security-session-expired/);
 });

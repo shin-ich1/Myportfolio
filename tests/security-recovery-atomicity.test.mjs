@@ -193,20 +193,27 @@ test("concurrent Master Recovery Key uses are atomically claimed once, without r
     assert.ok(authorized.body.recoverySessionId);
     await f.flush();
 
-    const finished = await f.post("/security/recovery/complete", {
+    const prepared = await f.post("/security/recovery/prepare", {
       recoverySessionId: authorized.body.recoverySessionId
+    });
+    assert.equal(prepared.status, 200);
+    assert.ok(prepared.body.masterKey);
+    assert.equal(prepared.body.backupCodes.length, 8);
+    const finished = await f.post("/security/recovery/complete", {
+      recoverySessionId: authorized.body.recoverySessionId,
+      preparedKitId: prepared.body.preparedKitId
     });
     assert.equal(finished.status, 200);
     assert.equal(finished.body.state, "bootstrap-required");
-    assert.ok(finished.body.masterKey);
-    assert.notEqual(finished.body.masterKey, f.oldKey);
-    assert.equal(f.snapshot().masterKeyHash, await f.hash(finished.body.masterKey));
+    assert.equal(finished.body.masterKey, undefined, "committed response must never issue an undisplayed key");
+    assert.notEqual(prepared.body.masterKey, f.oldKey);
+    assert.equal(f.snapshot().masterKeyHash, await f.hash(prepared.body.masterKey));
     assert.equal(f.snapshot().active, true);
     const replayComplete = await f.post("/security/recovery/complete", {
       recoverySessionId: authorized.body.recoverySessionId
     });
     assert.equal(replayComplete.status, 400);
-    assert.equal(replayComplete.body.code, "security-challenge-invalid");
+    assert.equal(replayComplete.body.code, "security-recovery-kit-required");
 
     const replayOldKey = await f.post("/security/recovery/start", creds, "198.51.100.44");
     assert.equal(replayOldKey.status, 401);
@@ -242,12 +249,17 @@ test("interrupted Firebase reset can resume only with password and the original 
     assert.equal(f.snapshot().recoveryResetsComplete, true);
     assert.equal(f.snapshot().resets, 1);
 
-    const finished = await f.post("/security/recovery/complete", {
+    const prepared = await f.post("/security/recovery/prepare", {
       recoverySessionId: resumed.body.recoverySessionId
+    });
+    assert.equal(prepared.status, 200);
+    const finished = await f.post("/security/recovery/complete", {
+      recoverySessionId: resumed.body.recoverySessionId,
+      preparedKitId: prepared.body.preparedKitId
     });
     assert.equal(finished.status, 200);
     assert.equal(f.snapshot().active, true);
-    assert.notEqual(finished.body.masterKey, f.oldKey);
+    assert.notEqual(prepared.body.masterKey, f.oldKey);
 
     const replay = await f.post("/security/recovery/start", creds, "198.51.100.36");
     assert.equal(replay.status, 401);
@@ -263,13 +275,18 @@ test("security Activity outage after recovery must not cause loss of the freshly
       email:"staging-admin@example.invalid",password:"test-password",recoveryKey:f.oldKey
     });
     assert.equal(start.status,200);
-    f.failNextSeparateAuditWrite();
-    const finish=await f.post("/security/recovery/complete",{
+    const prepared=await f.post("/security/recovery/prepare",{
       recoverySessionId:start.body.recoverySessionId
     });
-    assert.equal(finish.status,200,"never commit a replacement key then lose its one-time display");
-    assert.ok(finish.body.masterKey);
-    assert.equal(f.snapshot().masterKeyHash,await f.hash(finish.body.masterKey));
+    assert.equal(prepared.status,200);
+    f.failNextSeparateAuditWrite();
+    const finish=await f.post("/security/recovery/complete",{
+      recoverySessionId:start.body.recoverySessionId,
+      preparedKitId:prepared.body.preparedKitId
+    });
+    assert.equal(finish.status,200,"never commit a replacement key without user having it");
+    assert.equal(finish.body.masterKey,undefined);
+    assert.equal(f.snapshot().masterKeyHash,await f.hash(prepared.body.masterKey));
     assert.equal(f.atomicCompletionAuditWrites,1,
       "replacement key and Security Activity audit event must use one Firestore commit");
   }finally{f.restore();}
@@ -283,14 +300,20 @@ test("Firestore interruption during recovery completion preserves the pending ch
     });
     assert.equal(started.status, 200);
     const id = started.body.recoverySessionId;
-    const failed = await f.post("/security/recovery/complete", { recoverySessionId: id });
+    const prepared=await f.post("/security/recovery/prepare",{recoverySessionId:id});
+    assert.equal(prepared.status,200);
+    const failed = await f.post("/security/recovery/complete", {
+      recoverySessionId: id,preparedKitId:prepared.body.preparedKitId
+    });
     assert.equal(failed.status, 502);
     assert.equal(failed.body.masterKey, undefined);
     assert.equal(f.snapshot().active, false, "failed commit must not turn on a new key");
-    const retried = await f.post("/security/recovery/complete", { recoverySessionId: id });
+    const retried = await f.post("/security/recovery/complete", {
+      recoverySessionId: id,preparedKitId:prepared.body.preparedKitId
+    });
     assert.equal(retried.status, 200);
-    assert.ok(retried.body.masterKey);
-    assert.equal(f.snapshot().masterKeyHash, await f.hash(retried.body.masterKey));
+    assert.equal(retried.body.masterKey,undefined);
+    assert.equal(f.snapshot().masterKeyHash, await f.hash(prepared.body.masterKey));
     assert.equal(f.snapshot().active, true);
     const replay = await f.post("/security/recovery/complete", { recoverySessionId: id });
     assert.equal(replay.status, 400);
@@ -306,14 +329,77 @@ test("invalid recovery replacement email cannot consume the one-time challenge",
     });
     assert.equal(started.status, 200);
     const id = started.body.recoverySessionId;
+    const prepared=await f.post("/security/recovery/prepare",{recoverySessionId:id});
+    assert.equal(prepared.status,200);
     const invalid = await f.post("/security/recovery/complete", {
-      recoverySessionId: id, newEmail: "invalid-address"
+      recoverySessionId: id,preparedKitId:prepared.body.preparedKitId,
+      newEmail: "invalid-address"
     });
     assert.equal(invalid.status, 400);
     assert.equal(invalid.body.code, "security-recovery-email-invalid");
     assert.equal(f.snapshot().active, false);
-    const retried = await f.post("/security/recovery/complete", { recoverySessionId: id });
+    const retried = await f.post("/security/recovery/complete", {
+      recoverySessionId: id,preparedKitId:prepared.body.preparedKitId
+    });
     assert.equal(retried.status, 200);
-    assert.ok(retried.body.masterKey);
+    assert.equal(retried.body.masterKey,undefined);
   } finally { f.restore(); }
+});
+
+test("unprepared or mismatched Recovery Kit cannot activate an unknown key", async () => {
+  const f=await fixture();
+  try{
+    const started=await f.post("/security/recovery/start",{
+      email:"staging-admin@example.invalid",password:"test-password",recoveryKey:f.oldKey
+    });
+    assert.equal(started.status,200);
+    const unprepared=await f.post("/security/recovery/complete",{
+      recoverySessionId:started.body.recoverySessionId
+    });
+    assert.equal(unprepared.status,400);
+    assert.equal(unprepared.body.code,"security-recovery-kit-required");
+    assert.equal(f.snapshot().active,false);
+    const prepared=await f.post("/security/recovery/prepare",{
+      recoverySessionId:started.body.recoverySessionId
+    });
+    assert.equal(prepared.status,200);
+    const mismatched=await f.post("/security/recovery/complete",{
+      recoverySessionId:started.body.recoverySessionId,preparedKitId:"Z".repeat(32)
+    });
+    assert.equal(mismatched.status,403);
+    assert.equal(f.snapshot().active,false);
+    const completed=await f.post("/security/recovery/complete",{
+      recoverySessionId:started.body.recoverySessionId,
+      preparedKitId:prepared.body.preparedKitId
+    });
+    assert.equal(completed.status,200);
+    assert.equal(completed.body.masterKey,undefined);
+  }finally{f.restore();}
+});
+
+test("recovery commit response loss can be verified without reissuing or exposing the new key", async()=>{
+  const f=await fixture();
+  try{
+    const started=await f.post("/security/recovery/start",{
+      email:"staging-admin@example.invalid",password:"test-password",recoveryKey:f.oldKey
+    });
+    assert.equal(started.status,200);
+    const prepared=await f.post("/security/recovery/prepare",{
+      recoverySessionId:started.body.recoverySessionId
+    });
+    assert.equal(prepared.status,200);
+    const completed=await f.post("/security/recovery/complete",{
+      recoverySessionId:started.body.recoverySessionId,
+      preparedKitId:prepared.body.preparedKitId
+    });
+    assert.equal(completed.status,200);
+    const status=await f.post("/security/recovery/status",{
+      recoverySessionId:started.body.recoverySessionId,
+      preparedKitId:prepared.body.preparedKitId
+    });
+    assert.equal(status.status,200);
+    assert.equal(status.body.state,"bootstrap-required");
+    assert.equal(status.body.masterKey,undefined);
+    assert.equal(f.snapshot().masterKeyHash,await f.hash(prepared.body.masterKey));
+  }finally{f.restore();}
 });

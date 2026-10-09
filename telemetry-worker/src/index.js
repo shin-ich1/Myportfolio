@@ -2248,6 +2248,13 @@ async function readPendingRecoveryChallenge(env, id) {
   return result.record;
 }
 
+async function savePreparedRecoveryKit(env, id, prepared) {
+  await coordinateSecurity(env,securityChallengeOwner("recovery",id),{
+    op:"recovery-prepare",scope:"recovery",id,prepared
+  });
+}
+
+
 async function readSecurityEnrollmentChallenge(env, id, uid) {
   const result = await coordinateSecurity(env, securityChallengeOwner("device-enroll", id), {
     op: "challenge-read", scope: "device-enroll", id: String(id || ""), uid
@@ -2748,7 +2755,9 @@ const SECURITY_REQUEST_SCHEMAS = Object.freeze({
   "/security/email-verification/send": { email: REQUEST_SCHEMA_ANY, password: REQUEST_SCHEMA_ANY },
   "/security/device/login-complete": { challengeId: REQUEST_SCHEMA_ANY, deviceId: REQUEST_SCHEMA_ANY, signature: REQUEST_SCHEMA_ANY },
   "/security/recovery/start": { email: REQUEST_SCHEMA_ANY, password: REQUEST_SCHEMA_ANY, recoveryKey: REQUEST_SCHEMA_ANY },
-  "/security/recovery/complete": { recoverySessionId: REQUEST_SCHEMA_ANY, newEmail: REQUEST_SCHEMA_ANY },
+  "/security/recovery/prepare": { recoverySessionId: REQUEST_SCHEMA_ANY },
+  "/security/recovery/complete": { recoverySessionId: REQUEST_SCHEMA_ANY, preparedKitId: REQUEST_SCHEMA_ANY, newEmail: REQUEST_SCHEMA_ANY },
+  "/security/recovery/status": { recoverySessionId: REQUEST_SCHEMA_ANY, preparedKitId: REQUEST_SCHEMA_ANY },
   "/security/session/end": {},
   "/security/step-up/start": { password: REQUEST_SCHEMA_ANY },
   "/security/step-up/complete": { challengeId: REQUEST_SCHEMA_ANY, code: REQUEST_SCHEMA_ANY },
@@ -2843,14 +2852,59 @@ async function handleSecurityRoute(request,env,url,context){
       await writeSecurityEvent(env,{uid:first.uid,type:'recovery-used',success:true,ip:securityIp(request),summary:'Recovery key accepted; prior sessions, trusted devices, Firebase tokens, and MFA enrollment were invalidated.'}).catch(()=>null);
       return json({state:'recovery',recoverySessionId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.recovery*1000).toISOString()},200,origin);
     }
-    if(path==='/security/recovery/complete'&&method==='POST'){
-      const recoverySessionId=String(body.recoverySessionId||'');
-      // Keep the recovery capability pending until all upstream changes
-      // succeed. Its effect is serialized by Firestore's Recovery-record CAS,
-      // not by deleting the challenge before making irreversible writes.
-      const c=await readPendingRecoveryChallenge(env,recoverySessionId);
+    if(path==='/security/recovery/prepare'&&method==='POST'){
+      await enforceSecurityRateLimit(request,env,'recovery');
+      const id=String(body.recoverySessionId||'');
+      const c=await readPendingRecoveryChallenge(env,id);
       const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,c.uid);
-      if(!rec||rec.pendingRecoverySessionId!==recoverySessionId || rec.active!==false ||
+      if(!rec || rec.active!==false || rec.pendingRecoverySessionId!==id ||
+          rec.recoveryResetsComplete!==true) {
+        throw serviceError('The security reset must finish before preparing a new Recovery Kit.',{
+          status:403,code:'security-recovery-not-ready',source:'worker'
+        });
+      }
+      const key=recoveryKey(),codes=Array.from({length:8},backupCode);
+      const preparedKitId=securityRandomId(24);
+      const prepared={
+        preparedKitId,masterKeyHash:await recoveryHmac(key,env),
+        backupCodeHashes:await Promise.all(codes.map(code=>recoveryHmac(code,env)))
+      };
+      // Only hashes and an opaque ID enter Durable Object state. This is the
+      // sole plaintext display of this generated kit: no persistent secret.
+      await savePreparedRecoveryKit(env,id,prepared);
+      return json({
+        state:'kit-prepared',preparedKitId,
+        masterKey:key,backupCodes:codes,
+        expiresAt:c.expiresAt
+      },200,origin);
+    }
+    if(path==='/security/recovery/complete'&&method==='POST'){
+      const id=String(body.recoverySessionId||'');
+      const preparedKitId=String(body.preparedKitId||'');
+      if(!/^[A-Za-z0-9_-]{20,90}$/.test(preparedKitId)){
+        throw serviceError('Prepare and save the new Recovery Kit before activation.',{
+          status:400,code:'security-recovery-kit-required',source:'worker'
+        });
+      }
+      const c=await readPendingRecoveryChallenge(env,id);
+      if(!c.prepared || c.prepared.preparedKitId!==preparedKitId) {
+        throw serviceError('Prepared Recovery Kit does not match this recovery session.',{
+          status:403,code:'security-recovery-kit-mismatch',source:'worker'
+        });
+      }
+      const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,c.uid);
+      if(rec?.active===true && rec.completedRecoverySessionId===id &&
+         rec.completedPreparedKitId===preparedKitId){
+        // An uncertain network response after the successful Firestore commit
+        // can be checked without issuing the secret again.
+        return json({
+          state:'bootstrap-required',alreadyCompleted:true,
+          email:rec.recoveryEmail||c.email||'',
+          requireEmailVerification:Boolean(rec.recoveryEmailChanged),
+          requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true
+        },200,origin);
+      }
+      if(!rec || rec.pendingRecoverySessionId!==id || rec.active!==false ||
           rec.recoveryResetsComplete!==true){
         throw serviceError('Recovery challenge is no longer valid or the security reset is incomplete.',{
           status:403,code:'security-recovery-not-ready',source:'worker'
@@ -2860,25 +2914,64 @@ async function handleSecurityRoute(request,env,url,context){
       if(replacementEmail){
         if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replacementEmail))
           throw serviceError('Replacement email is invalid.',{
-            status:400,code:'security-recovery-email-invalid'
+            status:400,code:'security-recovery-email-invalid',source:'worker'
           });
         await identityPlatformAdminUpdateUser(env,c.uid,{
           email:replacementEmail,emailVerified:false,
           validSince:String(Math.floor(Date.now()/1000))
         });
       }
-      const key=recoveryKey(),codes=Array.from({length:8},backupCode);
-      const hash=await recoveryHmac(key,env),codeHashes=await Promise.all(codes.map(x=>recoveryHmac(x,env)));
+      // Firestore CAS makes the prepared kit active exactly once. Its hashes
+      // are the same ones displayed to the Admin BEFORE this operation began.
       await finishMasterRecoveryKey(env,c.uid,rec,{
-        uid:c.uid,active:true,masterKeyHash:hash,backupCodeHashes:codeHashes,
-        deviceBootstrapEpoch:securityRandomId(18),createdAt:new Date().toISOString()
+        uid:c.uid,active:true,
+        masterKeyHash:c.prepared.masterKeyHash,
+        backupCodeHashes:c.prepared.backupCodeHashes,
+        completedRecoverySessionId:id,completedPreparedKitId:preparedKitId,
+        recoveryEmail:replacementEmail||c.email||'',
+        recoveryEmailChanged:Boolean(replacementEmail),
+        deviceBootstrapEpoch:securityRandomId(18),
+        createdAt:new Date().toISOString()
       });
-      // The atomic Firestore update has irreversibly invalidated the previous
-      // recovery state. Clean up the challenge, but do not risk losing the
-      // generated key display if the coordinator is temporarily unavailable:
-      // Firestore active:true and the CAS prevent any second completion.
-      await consumeSecurityChallenge(env,'recovery',recoverySessionId).catch(()=>null);
-      return json({state:'bootstrap-required',email:replacementEmail||c.email||'',masterKey:key,backupCodes:codes,requireEmailVerification:Boolean(replacementEmail),requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true},200,origin);
+      // Retain the short-lived nonsecret challenge for status confirmation;
+      // Firestore's authoritative active=true record prevents a second reset.
+      return json({
+        state:'bootstrap-required',email:replacementEmail||c.email||'',
+        requireEmailVerification:Boolean(replacementEmail),
+        requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true
+      },200,origin);
+    }
+    if(path==='/security/recovery/status'&&method==='POST'){
+      await enforceSecurityRateLimit(request,env,'recovery');
+      const id=String(body.recoverySessionId||'');
+      const preparedKitId=String(body.preparedKitId||'');
+      if(!/^[A-Za-z0-9_-]{20,90}$/.test(preparedKitId)){
+        throw serviceError('Prepared Recovery Kit ID is required.',{
+          status:400,code:'security-recovery-kit-required',source:'worker'
+        });
+      }
+      const c=await readPendingRecoveryChallenge(env,id);
+      if(!c.prepared || c.prepared.preparedKitId!==preparedKitId){
+        throw serviceError('Recovery Kit confirmation does not match.',{
+          status:403,code:'security-recovery-kit-mismatch',source:'worker'
+        });
+      }
+      const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,c.uid);
+      if(rec?.active===true && rec.completedRecoverySessionId===id &&
+         rec.completedPreparedKitId===preparedKitId) {
+        return json({
+          state:'bootstrap-required',email:rec.recoveryEmail||c.email||'',
+          requireEmailVerification:Boolean(rec.recoveryEmailChanged),
+          requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true
+        },200,origin);
+      }
+      if(rec?.active===false && rec.pendingRecoverySessionId===id &&
+         rec.recoveryResetsComplete===true) {
+        return json({state:'pending-activation'},200,origin);
+      }
+      throw serviceError('Recovery state is no longer valid.',{
+        status:403,code:'security-recovery-not-ready',source:'worker'
+      });
     }
 
     const allowLockdown=path==='/security/overview'||path==='/security/lockdown/exit';

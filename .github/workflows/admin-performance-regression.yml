@@ -64,7 +64,7 @@ jobs:
           node --check telemetry-worker/src/index.js
           node --check telemetry-worker/src/security-coordinator.js
       - name: Run shared-navigation and staging isolation tests
-        run: node --test tests/admin-shared-navigation-performance.test.mjs tests/admin-workspace-security-gate.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-pending-navigation-lifecycle.test.mjs tests/staging-build-isolation.test.mjs tests/staging-worker-authorization.test.mjs tests/staging-worker-health-gate.test.mjs tests/security-coordinator-atomicity.test.mjs tests/security-recovery-atomicity.test.mjs tests/security-first-device-bootstrap.test.mjs tests/public-message-atomicity.test.mjs tests/google-drive-oauth-state-replay.test.mjs tests/google-drive-pending-atomicity.test.mjs tests/google-drive-upload-routes.test.mjs tests/security-recovery-ui-handoff.test.mjs
+        run: node --test tests/admin-shared-navigation-performance.test.mjs tests/admin-workspace-security-gate.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-pending-navigation-lifecycle.test.mjs tests/staging-build-isolation.test.mjs tests/staging-worker-authorization.test.mjs tests/staging-worker-health-gate.test.mjs tests/security-coordinator-atomicity.test.mjs tests/security-recovery-atomicity.test.mjs tests/security-first-device-bootstrap.test.mjs tests/public-message-atomicity.test.mjs tests/google-drive-oauth-state-replay.test.mjs tests/google-drive-pending-atomicity.test.mjs tests/google-drive-upload-routes.test.mjs tests/security-recovery-ui-handoff.test.mjs tests/staging-deploy-gate.test.mjs
       - name: Verify staging manifest has no hardcoded API key
         run: node -e "if (Object.hasOwn(require('./scripts/staging-targets.json').firebase, 'apiKey')) process.exit(1)"
 
@@ -77,3 +77,91 @@ jobs:
           ./node_modules/.bin/wrangler deploy --dry-run --config wrangler.staging.jsonc --outdir ../.lan-staging/worker-bundle
           cd ..
           node --test telemetry-worker/tests/atomic-do-runtime.test.mjs
+
+  # Default: OFF. Production is never a deployment target in this workflow.
+  # Repository variable LAN_STAGING_DEPLOY_APPROVED must be set to 'true'
+  # after isolated staging credentials/IAM and Worker secrets are configured.
+  # The job runs only after the existing canonical regression job succeeds.
+  staging-deploy:
+    name: Isolated staging deploy — explicitly gated
+    needs: shared-admin-regression
+    if: ${{ vars.LAN_STAGING_DEPLOY_APPROVED == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/perf/admin-workspace-investigation-20261008' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: lan-security-staging
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.LAN_STAGING_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.LAN_STAGING_CLOUDFLARE_ACCOUNT_ID }}
+      LAN_STAGING_FIREBASE_WEB_API_KEY: ${{ secrets.LAN_STAGING_FIREBASE_WEB_API_KEY }}
+      LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64: ${{ secrets.LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64 }}
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/lan-staging-firebase-deployer.json
+    steps:
+      - name: Check out testing branch only
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Confirm isolated staging credentials and project
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          for (const name of ['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','LAN_STAGING_FIREBASE_WEB_API_KEY','LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64']) {
+            if (!process.env[name]) throw Error('Staging credential is not configured: '+name);
+          }
+          const raw=Buffer.from(process.env.LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64,'base64').toString('utf8');
+          const identity=JSON.parse(raw);
+          if (identity.project_id!=='lan-portfolio-staging' || identity.type!=='service_account')
+            throw Error('Refusing Firebase credentials not scoped to staging project.');
+          if (!/^AIza[A-Za-z0-9_-]{30,}$/.test(process.env.LAN_STAGING_FIREBASE_WEB_API_KEY))
+            throw Error('Staging Firebase Web API key has invalid format.');
+          NODE
+          printf '%s' "$LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64" | base64 --decode > "$GOOGLE_APPLICATION_CREDENTIALS"
+          chmod 600 "$GOOGLE_APPLICATION_CREDENTIALS"
+      - name: Prepare isolated staging Worker and Hosting only
+        run: |
+          set -euo pipefail
+          npm ci --prefix telemetry-worker --no-audit --no-fund
+          node scripts/prepare-staging.mjs
+      - name: Require preinstalled encrypted staging Worker secrets
+        working-directory: telemetry-worker
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/wrangler secret list --config wrangler.staging.jsonc > "$RUNNER_TEMP/lan-staging-secret-names.json"
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const list=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/lan-staging-secret-names.json','utf8'));
+          const present=new Set(list.map(item=>item.name));
+          for(const name of [
+            'FIREBASE_WEB_API_KEY',
+            'FIREBASE_SERVICE_ACCOUNT_EMAIL',
+            'FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY',
+            'SECURITY_RECOVERY_PEPPER'
+          ]) if(!present.has(name)) throw Error('Required encrypted staging Worker secret is missing: '+name);
+          NODE
+      - name: Deploy canonical Worker to staging ONLY
+        working-directory: telemetry-worker
+        run: ./node_modules/.bin/wrangler deploy --config wrangler.staging.jsonc
+      - name: Verify staging Worker public health and bound server identity
+        run: |
+          node --input-type=module <<'NODE'
+          import {inspectStagingWorkerHealth} from './scripts/check-staging-worker-health.mjs';
+          const result=await inspectStagingWorkerHealth();
+          if (!result.canonicalWorkerResponding ||
+              !result.atomicSecurityCoordinatorBindingPresent ||
+              !result.serverCredentialPresenceReported)
+            throw Error('Staging Worker lacks required configuration or server credentials.');
+          console.log('Isolated staging gateway health checks passed; live authentication still unverified.');
+          NODE
+      - name: Deploy Firestore Rules to staging project ONLY
+        run: |
+          npx --yes firebase-tools@14.20.0 deploy --only firestore:rules --project lan-portfolio-staging --non-interactive
+      - name: Deploy isolated Firebase Hosting to staging ONLY
+        working-directory: .lan-staging
+        run: |
+          npx --yes firebase-tools@14.20.0 deploy --only hosting --project lan-portfolio-staging --non-interactive
+      - name: Staging deployment still requires interactive runtime authorization checks
+        run: echo "Staging-only deploy completed. DO NOT PROMOTE TO PRODUCTION without real TOTP, recovery, trusted devices, revocation and unauthorized-request tests."

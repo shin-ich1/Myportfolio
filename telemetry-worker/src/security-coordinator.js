@@ -185,11 +185,11 @@ export class SecurityCoordinator {
       });
     }
     if (op === "recovery-prepare") {
-      if (scope !== "recovery" || !validChallengeId(id)) {
+      if (!["recovery", "recovery-rotate"].includes(scope) || !validChallengeId(id)) {
         return reject("security-challenge-invalid", 400, "Invalid recovery session.");
       }
       const record = kv.get("record");
-      if (!record || record.scope !== "recovery" ||
+      if (!record || record.scope !== scope ||
           Number(record.expiresAt) <= now) {
         if (record && Number(record.expiresAt) <= now) kv.delete("record");
         return reject("security-challenge-invalid", 400, "Recovery session has expired.");
@@ -215,11 +215,11 @@ export class SecurityCoordinator {
       return json({ ok:true,preparedKitId:prepared.preparedKitId });
     }
     if (op === "recovery-read") {
-      if (scope !== "recovery" || !validChallengeId(id)) {
+      if (!["recovery", "recovery-rotate"].includes(scope) || !validChallengeId(id)) {
         return reject("security-challenge-invalid", 400, "Invalid recovery session.");
       }
       const record = kv.get("record");
-      if (!record || record.scope !== "recovery" ||
+      if (!record || record.scope !== scope ||
           Number(record.expiresAt) <= now) {
         if (record && Number(record.expiresAt) <= now) kv.delete("record");
         return reject("security-challenge-invalid", 400, "Recovery session has expired.");

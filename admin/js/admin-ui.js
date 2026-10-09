@@ -2123,6 +2123,9 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
   const ICONIFY_BRAND_PREFIXES = "logos,simple-icons,devicon,skill-icons,cib,vscode-icons";
   const ICONIFY_SKILL_PREFIXES = "ph,tabler,material-symbols,mdi";
   const AUTO_ICON_CACHE_KEY = "lan:auto-brand-icons:v6";
+  // Missing icons are retried after a short interval instead of being searched
+  // again by every newly loaded Admin workspace document.
+  const AUTO_ICON_MISS_RETRY_MS = 15 * 60 * 1000;
   const autoIconMemory = new Map();
   let autoIconDiskCache = null;
 
@@ -2260,13 +2263,24 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
     if (!cacheKey) return "";
 
     if (autoIconMemory.has(cacheKey)) {
-      const cachedMemory = await autoIconMemory.get(cacheKey);
-      if (cachedMemory) return cachedMemory;
-      autoIconMemory.delete(cacheKey);
+      const remembered = autoIconMemory.get(cacheKey);
+      if (remembered && typeof remembered === "object" && "retryAfter" in remembered) {
+        if (Number(remembered.retryAfter) > Date.now()) return "";
+        autoIconMemory.delete(cacheKey);
+      } else {
+        const cachedMemory = await remembered;
+        if (cachedMemory) return cachedMemory;
+        autoIconMemory.delete(cacheKey);
+      }
     }
 
     const disk = readAutoIconCache();
-    const diskValue = String(disk[cacheKey] || "").trim();
+    const diskEntry = disk[cacheKey];
+    if (diskEntry && typeof diskEntry === "object" && Number(diskEntry.retryAfter) > Date.now()) {
+      autoIconMemory.set(cacheKey, diskEntry);
+      return "";
+    }
+    const diskValue = typeof diskEntry === "string" ? diskEntry.trim() : "";
     if (diskValue) {
       autoIconMemory.set(cacheKey, diskValue);
       return diskValue;
@@ -2312,8 +2326,13 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
 
     autoIconMemory.set(cacheKey, request);
     const resolved = await request;
-    if (resolved) autoIconMemory.set(cacheKey, resolved);
-    else autoIconMemory.delete(cacheKey);
+    if (resolved) {
+      autoIconMemory.set(cacheKey, resolved);
+    } else {
+      const miss = { retryAfter: Date.now() + AUTO_ICON_MISS_RETRY_MS };
+      autoIconMemory.set(cacheKey, miss);
+      writeAutoIconCache(cacheKey, miss);
+    }
     return resolved;
   }
 

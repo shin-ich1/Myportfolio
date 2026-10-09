@@ -52,6 +52,7 @@ jobs:
           node-version: "22"
       - name: Check JavaScript syntax
         run: |
+          node --check admin/js/settings-security.js
           node --check admin/js/admin.js
           node --check admin/services/adminSecurityService.js
           node --check admin/js/admin-shell.js

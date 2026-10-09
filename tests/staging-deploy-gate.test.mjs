@@ -38,7 +38,7 @@ test("staging Firebase deploy uses GitHub OIDC identity federation instead of a 
 
 test("keyless staging deploy refuses unscoped federation identity and preserves the explicit gate", () => {
   const job=workflow.slice(workflow.indexOf("  staging-deploy:"));
-  assert.match(job,/\$\{\{\s*vars\.LAN_STAGING_DEPLOY_APPROVED\s*\}\}\s*==\s*'true'/);
+  assert.match(job,/vars\.LAN_STAGING_DEPLOY_APPROVED == 'true'/);
   assert.match(job,/github\.event_name == 'push'/);
   assert.match(job,/environment: lan-security-staging/);
   assert.match(job,/LAN_STAGING_WIF_PROVIDER/);

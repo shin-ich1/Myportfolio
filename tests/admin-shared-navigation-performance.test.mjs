@@ -148,7 +148,7 @@ test("automatic brand icon discovery still resolves and reuses real matching ico
 
 test("Dashboard card navigation delegates directly to the canonical shell without a redundant HEAD probe", async () => {
   const source = read("admin/js/dashboard.js");
-  const a = source.indexOf("  let navigationInProgress = false;");
+  const a = source.indexOf("  const editorRoutes = {");
   const b = source.indexOf("  managementCards.forEach(", a);
   assert.ok(a >= 0 && b > a, "Dashboard card navigation owner must remain discoverable");
   const body = source.slice(a, b);
@@ -157,7 +157,6 @@ test("Dashboard card navigation delegates directly to the canonical shell withou
   const destinations = [];
   const shell = { LANAdminNavigate: href => destinations.push(href) };
   const state = runInNewContext(
-    'const editorRoutes = { projects: "pages/projects.html" };' +
     'const sectionNames = { projects: "Projects" };' +
     body + '\\n({ openSection })',
     {

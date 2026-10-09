@@ -2516,15 +2516,15 @@ function effectiveSecuritySessionTrustLevel(session,activeDeviceIds){ const devi
 function serializeSecuritySessions(sessions,currentSessionId,devices){ const activeDeviceIds=activeTrustedDeviceIds(devices); return (sessions||[]).map(session=>({...session,trustLevel:effectiveSecuritySessionTrustLevel(session,activeDeviceIds),current:session.sessionId===currentSessionId})); }
 async function buildSecurityAccessState(admin,env){ const [devices,sessions]=await Promise.all([securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid]],100),securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid]],200)]); const currentDevice=devices.find(device=>device.deviceId===admin.session.deviceId); return {devices:devices.map(({publicKeyJwk,_updateTime,...device})=>({...device,current:device.deviceId===admin.session.deviceId})),sessions:serializeSecuritySessions(sessions,admin.session.sessionId,devices),capabilities:{securityManagement:canManageTrustedSecurity(admin,currentDevice)}}; }
 async function canonicalizeActiveSecuritySessionTrust(uid,session,env){
-  if(session?.trustLevel!=='trusted') return {...session,trustLevel:'temporary',deviceId:''};
+  if(session?.trustLevel!=='trusted')return {...session,trustLevel:'temporary',deviceId:''};
   const deviceId=String(session?.deviceId||'');
   const device=deviceId?await securityGetDoc(env,SECURITY_COLLECTIONS.devices,deviceId):null;
-  if(device&&device.uid===uid&&device.active===true) return session;
-  const now=Date.now(),storedExpiry=Date.parse(String(session?.expiresAt||'')),createdValue=String(session?.createdAt||'').trim(),createdAt=createdValue?Date.parse(createdValue):NaN;
-  const temporaryCeiling=(Number.isFinite(createdAt)&&createdAt>0?createdAt:now)+SECURITY_LIFETIMES.temporary*1000;
-  const effectiveExpiry=Math.min(Number.isFinite(storedExpiry)?storedExpiry:temporaryCeiling,temporaryCeiling);
-  if(effectiveExpiry<=now) throw serviceError('Administrator security session has expired or was revoked.',{status:401,code:'security-session-expired',source:'worker'});
-  return {...session,trustLevel:'temporary',deviceId:'',expiresAt:new Date(effectiveExpiry).toISOString()};
+  if(device && device.uid===uid && device.active===true)return session;
+  // Revocation must invalidate the existing session, not silently convert
+  // its signed-in Firebase token into a still-authorized temporary session.
+  throw serviceError('Administrator security session has expired or was revoked.',{
+    status:401,code:'security-session-expired',source:'worker'
+  });
 }
 async function requireActiveSecuritySession(uid,sessionId,env){ const s=await securityGetDoc(env,SECURITY_COLLECTIONS.sessions,sessionId); if(!s||s.uid!==uid||s.active!==true||Date.parse(s.expiresAt)<=Date.now()) throw serviceError('Administrator security session has expired or was revoked.',{status:401,code:'security-session-expired',source:'worker'}); return canonicalizeActiveSecuritySessionTrust(uid,s,env); }
 async function requireSecurityApprovedAdministrator(request,env,{trustLevels=null,allowLockdown=false}={}){
@@ -2761,28 +2761,35 @@ async function verifyDeviceSignature(publicKeyJwk,nonce,signature){ try{ const k
 async function recoveryHmac(value,env){ const pepper=String(env.SECURITY_RECOVERY_PEPPER||''); if(!pepper) throw serviceError('SECURITY_RECOVERY_PEPPER is not configured.',{status:503,code:'security-recovery-config',source:'worker'}); const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pepper),{name:'HMAC',hash:'SHA-256'},false,['sign']); return base64Url(new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(String(value||'').trim())))); }
 function recoveryKey(){ const bytes=new Uint8Array(32); crypto.getRandomValues(bytes); const token=base64Url(bytes).toUpperCase(); return token.match(/.{1,6}/g).join('-'); }
 function backupCode(){ const b=new Uint8Array(8); crypto.getRandomValues(b); return base64Url(b).toUpperCase().slice(0,12).match(/.{1,4}/g).join('-'); }
+// One backend-only batch writer for all destructive device/session revocation.
+async function revokeSecurityDocuments(env,records){
+  const ids=records.map(({collection,id})=>({
+    collection,id:String(id||'').trim()
+  }));
+  if(ids.some(({id})=>!id))throw serviceError('Security revocation identity is incomplete.',{
+    status:503,code:'security-revocation-record-invalid',source:'worker'
+  });
+  const fields=firestoreFields({active:false,revokedAt:new Date().toISOString()});
+  const writes=ids.map(({collection,id})=>({
+    update:{name:firestoreDocumentName(env,collection,id),fields},
+    updateMask:{fieldPaths:['active','revokedAt']},
+    currentDocument:{exists:true}
+  }));
+  // A Firestore commit supports at most 500 writes. Partial batch failures
+  // leave the operation retryable; a caller must not report success.
+  for(let start=0;start<writes.length;start+=450)
+    await firestoreAdminCommit(env,writes.slice(start,start+450));
+}
 async function revokeUserSecurityState(uid,env){
-  // Fetch both COMPLETE sets before writing anything. A bounded UI list is
-  // not an exhaustive list and must never allow recovery to report success.
+  // Never confuse truncated management lists with complete security records.
   const [sessions,devices]=await Promise.all([
     securityQueryAll(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',uid]]),
     securityQueryAll(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',uid]])
   ]);
-  const revokedAt=new Date().toISOString();
-  const patch=firestoreFields({active:false,revokedAt});
-  const writes=[
+  await revokeSecurityDocuments(env,[
     ...sessions.map(s=>({collection:SECURITY_COLLECTIONS.sessions,id:s.sessionId})),
     ...devices.map(d=>({collection:SECURITY_COLLECTIONS.devices,id:d.deviceId}))
-  ].map(({collection,id})=>({
-    update:{name:firestoreDocumentName(env,collection,id),fields:patch},
-    updateMask:{fieldPaths:['active','revokedAt']},
-    currentDocument:{exists:true}
-  }));
-  // Firestore caps commits at 500 writes. Smaller atomic batches avoid
-  // hundreds of parallel Worker subrequests and remain idempotent on retry.
-  for(let start=0;start<writes.length;start+=450){
-    await firestoreAdminCommit(env,writes.slice(start,start+450));
-  }
+  ]);
 }
 
 
@@ -3025,7 +3032,26 @@ async function handleSecurityRoute(request,env,url,context){
     if(path==='/security/device/enrollment/approve'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); await approveSecurityEnrollmentChallenge(env,body.challengeId,admin.uid,admin.session.deviceId||''); return json({ok:true,state:'approved'},200,origin); }
     if(path==='/security/device/enrollment/complete'&&method==='POST'){ return json(await completeTrustedDeviceEnrollment(request,env,admin,body),200,origin); }
     if(path==='/security/device/rename'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); const d=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,String(body.deviceId||'')); if(!d||d.uid!==admin.uid) throw serviceError('Trusted device was not found.',{status:404,code:'security-device-not-found'}); await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,d.deviceId,{displayName:String(body.displayName||'Trusted device').slice(0,80)}); return json({ok:true},200,origin); }
-    if(path==='/security/device/revoke'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const d=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,String(body.deviceId||'')); if(!d||d.uid!==admin.uid) throw serviceError('Trusted device was not found.',{status:404,code:'security-device-not-found'}); const currentDeviceRevoked=d.deviceId===admin.session.deviceId; await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,d.deviceId,{active:false,revokedAt:new Date().toISOString()}); const sessions=await securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['deviceId','EQUAL',d.deviceId],['active','EQUAL',true]],100); await Promise.all([...sessions.map(s=>securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()})),removeAdminPushSubscriptionsForDevice(env,d.deviceId)]); await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-revoked',deviceId:d.deviceId,success:true}); return json({ok:true,currentDeviceRevoked},200,origin); }
+    if(path==='/security/device/revoke'&&method==='POST'){
+      await requireTrustedSecurityManagement(admin,env);
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      const d=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,String(body.deviceId||''));
+      if(!d||d.uid!==admin.uid)throw serviceError('Trusted device was not found.',{status:404,code:'security-device-not-found'});
+      const currentDeviceRevoked=d.deviceId===admin.session.deviceId;
+      const sessions=await securityQueryAll(env,SECURITY_COLLECTIONS.sessions,[
+        ['uid','EQUAL',admin.uid],['deviceId','EQUAL',d.deviceId],['active','EQUAL',true]
+      ]);
+      // Revoke the device and every related session in the same batch when possible.
+      await revokeSecurityDocuments(env,[
+        {collection:SECURITY_COLLECTIONS.devices,id:d.deviceId},
+        ...sessions.map(x=>({collection:SECURITY_COLLECTIONS.sessions,id:x.sessionId}))
+      ]);
+      await removeAdminPushSubscriptionsForDevice(env,d.deviceId).catch(error=>{
+        console.error('Admin revoked-device subscription cleanup failed:',error);
+      });
+      await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-revoked',deviceId:d.deviceId,success:true});
+      return json({ok:true,currentDeviceRevoked},200,origin);
+    }
     if(path==='/security/account/password'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const {response}=await identityToolkit('accounts:update',{idToken:admin.token,password:String(body.newPassword||''),returnSecureToken:false},env); if(!response.ok) throw serviceError('Password could not be changed.',{status:400,code:'security-password-change-failed',source:'firebase'}); await writeSecurityEvent(env,{uid:admin.uid,type:'password-changed',success:true}); return json({ok:true},200,origin); }
     if(path==='/security/totp/reset'&&method==='POST'){
       await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
@@ -3129,8 +3155,29 @@ async function handleSecurityRoute(request,env,url,context){
     if(path==='/security/access-state'&&method==='GET'){ return json(await buildSecurityAccessState(admin,env),200,origin); }
     if(path==='/security/sessions'&&method==='GET'){ const access=await buildSecurityAccessState(admin,env); return json({sessions:access.sessions},200,origin); }
     if(path==='/security/session/revoke'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); const s=await securityGetDoc(env,SECURITY_COLLECTIONS.sessions,String(body.sessionId||'')); if(!s||s.uid!==admin.uid) throw serviceError('Security session was not found.',{status:404,code:'security-session-not-found'}); if(s.sessionId===admin.session.sessionId) throw serviceError('Use logout to end the current session.',{status:400,code:'security-current-session'}); await securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:admin.uid,type:'session-revoked',sessionId:s.sessionId,success:true}); return json({ok:true},200,origin); }
-    if(path==='/security/session/revoke-others'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const sessions=await securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['active','EQUAL',true]],200); await Promise.all(sessions.filter(s=>s.sessionId!==admin.session.sessionId).map(s=>securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()}))); return json({ok:true},200,origin); }
-    if(path==='/security/session/revoke-temporary'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const [sessions,devices]=await Promise.all([securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['active','EQUAL',true]],200),securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid]],100)]); const activeDeviceIds=activeTrustedDeviceIds(devices); const temporarySessions=sessions.filter(s=>s.sessionId!==admin.session.sessionId&&effectiveSecuritySessionTrustLevel(s,activeDeviceIds)!=='trusted'); await Promise.all(temporarySessions.map(s=>securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()}))); return json({ok:true,revoked:temporarySessions.length},200,origin); }
+    if(path==='/security/session/revoke-others'&&method==='POST'){
+      await requireTrustedSecurityManagement(admin,env);
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      const sessions=await securityQueryAll(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['active','EQUAL',true]]);
+      await revokeSecurityDocuments(env,sessions.filter(x=>x.sessionId!==admin.session.sessionId).map(x=>({
+        collection:SECURITY_COLLECTIONS.sessions,id:x.sessionId
+      })));
+      return json({ok:true},200,origin);
+    }
+    if(path==='/security/session/revoke-temporary'&&method==='POST'){
+      await requireTrustedSecurityManagement(admin,env);
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      const [sessions,devices]=await Promise.all([
+        securityQueryAll(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['active','EQUAL',true]]),
+        securityQueryAll(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid]])
+      ]);
+      const activeDeviceIds=activeTrustedDeviceIds(devices);
+      const temporarySessions=sessions.filter(x=>x.sessionId!==admin.session.sessionId&&effectiveSecuritySessionTrustLevel(x,activeDeviceIds)!=='trusted');
+      await revokeSecurityDocuments(env,temporarySessions.map(x=>({
+        collection:SECURITY_COLLECTIONS.sessions,id:x.sessionId
+      })));
+      return json({ok:true,revoked:temporarySessions.length},200,origin);
+    }
     if(path==='/security/activity'&&method==='GET'){ const events=await securityQuery(env,SECURITY_COLLECTIONS.events,[['uid','EQUAL',admin.uid]],200); events.sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)); return json({events:events.slice(0,100)},200,origin); }
     if(path==='/security/email-branding'&&method==='GET'){ const cfg=await securityGetDoc(env,'adminSecurityPreferences',admin.uid); return json({branding:cfg?.branding||{},provider:securityEmailProviderStatus(env)},200,origin); }
     if(path==='/security/email-branding'&&method==='POST'){ const branding={senderName:String(body.branding?.senderName||'LΛN Portfolio CMS').slice(0,80),logoUrl:String(body.branding?.logoUrl||'').slice(0,500),heading:String(body.branding?.heading||'Security alert').slice(0,100),footer:String(body.branding?.footer||'').slice(0,240)}; await securityWriteDoc(env,'adminSecurityPreferences',admin.uid,{uid:admin.uid,branding,updatedAt:new Date().toISOString()}); return json({ok:true,branding},200,origin); }

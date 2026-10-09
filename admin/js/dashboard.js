@@ -501,69 +501,30 @@
     settings: "pages/settings.html"
   };
 
-  let navigationInProgress = false;
-
-  async function routeExists(route) {
-    try {
-      const response = await fetch(route, {
-        method: "HEAD",
-        cache: "no-store"
-      });
-
-      return response.ok;
-    } catch (error) {
-      console.warn(
-        `Unable to check CMS route: ${route}`,
-        error
-      );
-
+  // Dashboard cards target checked-in Admin workspaces. Let the persistent
+  // shell perform its mandatory server-side security approval and document load;
+  // a no-store HEAD probe only adds latency and cannot prove a Firebase Hosting
+  // rewrite points to a real workspace document.
+  async function openSection(sectionKey) {
+    const editorRoute = editorRoutes[sectionKey];
+    const sectionName = sectionNames[sectionKey] || "Portfolio section";
+    if (!editorRoute) {
+      showNotification(`${sectionName} is not registered yet.`);
+      closeSidebar();
       return false;
     }
-  }
-  
-  async function openSection(sectionKey) {
-    if (navigationInProgress) {
-      return;
-    }
 
-    const editorRoute =
-      editorRoutes[sectionKey];
-
-    const sectionName =
-      sectionNames[sectionKey] ||
-      "Portfolio section";
-
-    if (!editorRoute) {
-      showNotification(
-        `${sectionName} is not registered yet.`
-      );
-
+    const navigate = window.parent?.LANAdminNavigate;
+    if (typeof navigate !== "function") {
+      showNotification("Administrator workspace navigation is unavailable.");
       closeSidebar();
-      return;
+      return false;
     }
-
-    navigationInProgress = true;
-
-    const pageIsAvailable =
-      await routeExists(editorRoute);
-
-    navigationInProgress = false;
-  
-    if (pageIsAvailable) {
-      window.location.href =
-        editorRoute;
-  
-      return true;
-    }
-  
-    showNotification(
-      `${sectionName} module is still under development.`
-    );
-  
+    navigate(new URL(editorRoute, location.href).href);
     closeSidebar();
-    return false;
+    return true;
   }
-  
+
   managementCards.forEach((card) => {
     card.addEventListener(
       "click",

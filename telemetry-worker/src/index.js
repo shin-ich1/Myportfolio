@@ -2448,11 +2448,24 @@ async function finishMasterRecoveryKey(env, uid, recoveryRecord, replacementReco
   return {eventId};
 }
 
-async function securityQuery(env,collection,filters=[],limit=100){
+async function securityQuery(env,collection,filters=[],limit=100,offset=0){
   const token=await firebaseAdminAccessToken(env),projectId=firestoreProjectId(env); const fieldFilters=filters.map(([field,op,value])=>({fieldFilter:{field:{fieldPath:field},op,value:firestoreValue(value)}}));
-  const structuredQuery={from:[{collectionId:collection}],limit}; if(fieldFilters.length===1) structuredQuery.where=fieldFilters[0]; else if(fieldFilters.length>1) structuredQuery.where={compositeFilter:{op:'AND',filters:fieldFilters}};
+  const structuredQuery={from:[{collectionId:collection}],limit,...(offset?{offset}:{})}; if(fieldFilters.length===1) structuredQuery.where=fieldFilters[0]; else if(fieldFilters.length>1) structuredQuery.where={compositeFilter:{op:'AND',filters:fieldFilters}};
   const response=await fetch(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:runQuery`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({structuredQuery})});
   const payload=await response.json().catch(()=>[]); if(!response.ok) throw serviceError('Security records could not be queried.',{status:502,code:'security-firestore-query',source:'firebase'}); return payload.map(x=>fromFirestoreDoc(x.document)).filter(Boolean);
+}
+// Destructive operations must enumerate the complete server-side set, never
+// silently accept a UI-sized query limit as proof that all access was revoked.
+async function securityQueryAll(env,collection,filters=[]){
+  const pageSize=200,maxRecords=10000,records=[];
+  for(let offset=0;offset<=maxRecords;offset+=pageSize){
+    const page=await securityQuery(env,collection,filters,pageSize,offset);
+    records.push(...page);
+    if(page.length<pageSize)return records;
+  }
+  throw serviceError('Too many security records to safely finish revocation.',{
+    status:503,code:'security-revocation-set-too-large',source:'firebase'
+  });
 }
 async function writeSecurityEvent(env,event,{context=null,alertOrigin=''}={}){
   const eventId=securityRandomId(18),now=new Date().toISOString();
@@ -2748,7 +2761,29 @@ async function verifyDeviceSignature(publicKeyJwk,nonce,signature){ try{ const k
 async function recoveryHmac(value,env){ const pepper=String(env.SECURITY_RECOVERY_PEPPER||''); if(!pepper) throw serviceError('SECURITY_RECOVERY_PEPPER is not configured.',{status:503,code:'security-recovery-config',source:'worker'}); const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pepper),{name:'HMAC',hash:'SHA-256'},false,['sign']); return base64Url(new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(String(value||'').trim())))); }
 function recoveryKey(){ const bytes=new Uint8Array(32); crypto.getRandomValues(bytes); const token=base64Url(bytes).toUpperCase(); return token.match(/.{1,6}/g).join('-'); }
 function backupCode(){ const b=new Uint8Array(8); crypto.getRandomValues(b); return base64Url(b).toUpperCase().slice(0,12).match(/.{1,4}/g).join('-'); }
-async function revokeUserSecurityState(uid,env){ const [sessions,devices]=await Promise.all([securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',uid]],200),securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',uid]],100)]); await Promise.all([...sessions.map(s=>securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()})),...devices.map(d=>securityPatchDoc(env,SECURITY_COLLECTIONS.devices,d.deviceId,{active:false,revokedAt:new Date().toISOString()}))]); }
+async function revokeUserSecurityState(uid,env){
+  // Fetch both COMPLETE sets before writing anything. A bounded UI list is
+  // not an exhaustive list and must never allow recovery to report success.
+  const [sessions,devices]=await Promise.all([
+    securityQueryAll(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',uid]]),
+    securityQueryAll(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',uid]])
+  ]);
+  const revokedAt=new Date().toISOString();
+  const patch=firestoreFields({active:false,revokedAt});
+  const writes=[
+    ...sessions.map(s=>({collection:SECURITY_COLLECTIONS.sessions,id:s.sessionId})),
+    ...devices.map(d=>({collection:SECURITY_COLLECTIONS.devices,id:d.deviceId}))
+  ].map(({collection,id})=>({
+    update:{name:firestoreDocumentName(env,collection,id),fields:patch},
+    updateMask:{fieldPaths:['active','revokedAt']},
+    currentDocument:{exists:true}
+  }));
+  // Firestore caps commits at 500 writes. Smaller atomic batches avoid
+  // hundreds of parallel Worker subrequests and remain idempotent on retry.
+  for(let start=0;start<writes.length;start+=450){
+    await firestoreAdminCommit(env,writes.slice(start,start+450));
+  }
+}
 
 
 const SECURITY_REQUEST_SCHEMAS = Object.freeze({

@@ -408,3 +408,37 @@ test("recovery commit response loss can be verified without reissuing or exposin
     assert.equal(f.snapshot().masterKeyHash,await f.hash(prepared.body.masterKey));
   }finally{f.restore();}
 });
+
+test("lost recovery completion challenge can be renewed with the same password and old key before successful activation",async()=>{
+  const f=await fixture();
+  try{
+    const credentials={email:"staging-admin@example.invalid",
+      password:"test-password",recoveryKey:f.oldKey};
+    const first=await f.post("/security/recovery/start",credentials);
+    assert.equal(first.status,200);
+    assert.equal(f.snapshot().active,false);
+    assert.equal(f.snapshot().recoveryResetsComplete,true);
+    // Emulates a browser crash or expired challenge before a new kit is
+    // activated: the old key remains inactive but is required for resumption.
+    const resumed=await f.post("/security/recovery/start",credentials,"198.51.100.89");
+    assert.equal(resumed.status,200);
+    assert.notEqual(resumed.body.recoverySessionId,first.body.recoverySessionId);
+    assert.equal(f.snapshot().active,false);
+    const stale=await f.post("/security/recovery/prepare",{
+      recoverySessionId:first.body.recoverySessionId
+    },"198.51.100.91");
+    assert.equal(stale.status,403);
+    const prepared=await f.post("/security/recovery/prepare",{
+      recoverySessionId:resumed.body.recoverySessionId
+    },"198.51.100.92");
+    assert.equal(prepared.status,200);
+    const committed=await f.post("/security/recovery/complete",{
+      recoverySessionId:resumed.body.recoverySessionId,
+      preparedKitId:prepared.body.preparedKitId
+    });
+    assert.equal(committed.status,200);
+    const oldReplay=await f.post("/security/recovery/start",credentials,"198.51.100.93");
+    assert.equal(oldReplay.status,401);
+    assert.equal(oldReplay.body.code,"security-recovery-key-invalid");
+  }finally{f.restore();}
+});

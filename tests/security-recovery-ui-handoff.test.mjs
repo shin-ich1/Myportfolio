@@ -24,6 +24,8 @@ test("postcommit status check never generates a second Recovery Kit or assumes a
   assert.ok(idx>=0 && check>idx);
   assert.match(login,/if\(checked\?\.state!=='bootstrap-required'\)throw error/);
   assert.match(login,/if\(!recoveryActivationPending\)return;/);
+  assert.match(login,/key\.textContent=''/);
+  assert.match(login,/codes\.textContent=''/);
   assert.match(login,/window\.addEventListener\('beforeunload'/);
   assert.match(service,/export const prepareRecoveryKit=/);
   assert.match(service,/export const getRecoveryResetStatus=/);

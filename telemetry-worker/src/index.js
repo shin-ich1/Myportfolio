@@ -2853,7 +2853,7 @@ async function handleSecurityRoute(request,env,url,context){
       return json({state:'recovery',recoverySessionId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.recovery*1000).toISOString()},200,origin);
     }
     if(path==='/security/recovery/prepare'&&method==='POST'){
-      await enforceSecurityRateLimit(request,env,'recovery');
+      await enforceSecurityRateLimit(request,env,'recovery-prepare',{limit:5,windowSeconds:900,cooldownSeconds:300});
       const id=String(body.recoverySessionId||'');
       const c=await readPendingRecoveryChallenge(env,id);
       const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,c.uid);
@@ -2942,7 +2942,7 @@ async function handleSecurityRoute(request,env,url,context){
       },200,origin);
     }
     if(path==='/security/recovery/status'&&method==='POST'){
-      await enforceSecurityRateLimit(request,env,'recovery');
+      await enforceSecurityRateLimit(request,env,'recovery-status',{limit:30,windowSeconds:900,cooldownSeconds:120});
       const id=String(body.recoverySessionId||'');
       const preparedKitId=String(body.preparedKitId||'');
       if(!/^[A-Za-z0-9_-]{20,90}$/.test(preparedKitId)){

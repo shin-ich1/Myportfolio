@@ -145,3 +145,29 @@ test("automatic brand icon discovery still resolves and reuses real matching ico
   assert.equal(await createBrandIconHarness({ localStorage, fetch, clock }).discoverAutomaticBrandIcon("Figma", "software tool"), expected);
   assert.equal(requests, 1, "successful icon lookup must remain cached across document loads");
 });
+
+test("Dashboard card navigation delegates directly to the canonical shell without a redundant HEAD probe", async () => {
+  const source = read("admin/js/dashboard.js");
+  const a = source.indexOf("  let navigationInProgress = false;");
+  const b = source.indexOf("  managementCards.forEach(", a);
+  assert.ok(a >= 0 && b > a, "Dashboard card navigation owner must remain discoverable");
+  const body = source.slice(a, b);
+  assert.doesNotMatch(body, /fetch\(|routeExists\(|method:\s*"HEAD"/,
+    "All Dashboard cards target known static workspace files; no probe is required");
+  const destinations = [];
+  const shell = { LANAdminNavigate: href => destinations.push(href) };
+  const state = runInNewContext(
+    'const editorRoutes = { projects: "pages/projects.html" };' +
+    'const sectionNames = { projects: "Projects" };' +
+    body + '\\n({ openSection })',
+    {
+      window: { parent: shell, location: { href: "https://lan-portfolio-staging.web.app/admin/dashboard.html" } },
+      location: { href: "https://lan-portfolio-staging.web.app/admin/dashboard.html" },
+      URL, showNotification: () => { throw Error("Known route must not fail"); },
+      closeSidebar: () => {}
+    }
+  );
+  assert.equal(await state.openSection("projects"), true);
+  assert.equal(destinations.length, 1, "Dashboard cards must route through exactly one shell navigation");
+  assert.equal(destinations[0], "https://lan-portfolio-staging.web.app/admin/pages/projects.html");
+});

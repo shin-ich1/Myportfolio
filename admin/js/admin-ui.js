@@ -492,7 +492,6 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
     else servicesLink.removeAttribute("aria-current");
 
     enhanceNavigationIcons();
-    warmAdminNavigation();
   }
 
   function initCustomModulesNavigation() {
@@ -597,16 +596,6 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
     document.head.append(link);
   }
 
-  function warmAdminNavigation() {
-    const warm = () => {
-      $$(".editor-navigation a,.sidebar-navigation a")
-        .filter((link) => link.target !== "_blank" && !link.hasAttribute("download"))
-        .forEach((link) => prefetchAdminPage(link.href));
-    };
-    if ("requestIdleCallback" in window) window.requestIdleCallback(warm, { timeout: 1200 });
-    else window.setTimeout(warm, 320);
-  }
-
   function navigateAdminPage(href) {
     const target = new URL(href, location.href);
     if (target.href === location.href) return;
@@ -626,7 +615,6 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
       const link = event.target.closest?.(".editor-navigation a,.sidebar-navigation a,.lan-system-nav a");
       if (link) prefetchAdminPage(link.href);
     });
-    warmAdminNavigation();
   }
 
   function createCommandPalette() {

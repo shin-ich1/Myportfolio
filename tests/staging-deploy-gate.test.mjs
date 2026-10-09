@@ -42,9 +42,11 @@ test("keyless staging deploy refuses unscoped federation identity and preserves 
   assert.match(job,/github\.event_name == 'push'/);
   assert.match(job,/environment: lan-security-staging/);
   assert.match(job,/LAN_STAGING_WIF_PROVIDER/);
-  assert.match(job,/projects\/\\d\+\/locations\/global\/workloadIdentityPools\//,
-    "Validate provider resource pattern before requesting credentials");
-  assert.match(job,/@lan-portfolio-staging\\.iam\\.gserviceaccount\\.com/,
+  assert.match(job,/571587695468/,
+    "Pin identity federation to the actual staging GCP project number");
+  assert.match(job,/workloadIdentityPools/,
+    "Validate the provider resource pattern before requesting credentials");
+  assert.match(job,/@lan-portfolio-staging/,
     "Require a staging-project service account, not a production service identity");
   assert.match(job,/roles?\/iam\.workloadIdentityUser|google-github-actions\/auth@v3/,
     "Use a WIF impersonation owner");

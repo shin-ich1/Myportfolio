@@ -92,12 +92,13 @@ jobs:
     environment: lan-security-staging
     permissions:
       contents: read
+      id-token: write # OIDC only for the explicitly gated staging deploy job
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.LAN_STAGING_CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.LAN_STAGING_CLOUDFLARE_ACCOUNT_ID }}
       LAN_STAGING_FIREBASE_WEB_API_KEY: ${{ secrets.LAN_STAGING_FIREBASE_WEB_API_KEY }}
-      LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64: ${{ secrets.LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64 }}
-      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/.lan-staging-firebase-deployer.json
+      LAN_STAGING_WIF_PROVIDER: ${{ vars.LAN_STAGING_WIF_PROVIDER }}
+      LAN_STAGING_DEPLOY_SERVICE_ACCOUNT: ${{ vars.LAN_STAGING_DEPLOY_SERVICE_ACCOUNT }}
     steps:
       - name: Check out testing branch only
         uses: actions/checkout@v4
@@ -105,23 +106,42 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Confirm isolated staging credentials and project
+      - name: Reject unexpected staging OIDC identity and configuration
         shell: bash
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
-          for (const name of ['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','LAN_STAGING_FIREBASE_WEB_API_KEY','LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64']) {
-            if (!process.env[name]) throw Error('Staging credential is not configured: '+name);
+          for (const name of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'LAN_STAGING_FIREBASE_WEB_API_KEY', 'LAN_STAGING_WIF_PROVIDER', 'LAN_STAGING_DEPLOY_SERVICE_ACCOUNT']) {
+            if (!process.env[name]) throw Error('Required staging configuration is missing: ' + name);
           }
-          const raw=Buffer.from(process.env.LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64,'base64').toString('utf8');
-          const identity=JSON.parse(raw);
-          if (identity.project_id!=='lan-portfolio-staging' || identity.type!=='service_account')
-            throw Error('Refusing Firebase credentials not scoped to staging project.');
+          if (process.env.GITHUB_REPOSITORY !== 'shin-ich1/Myportfolio' ||
+              process.env.GITHUB_REF !== 'refs/heads/perf/admin-workspace-investigation-20261008' ||
+              process.env.GITHUB_EVENT_NAME !== 'push')
+            throw Error('Refusing Google identity federation from an unexpected GitHub source.');
+          // Project NUMBER, not name: refuse federation through a different GCP project.
+          if (!/^projects\/571587695468\/locations\/global\/workloadIdentityPools\/[a-z][a-z0-9-]{3,31}\/providers\/[a-z][a-z0-9-]{3,31}$/.test(process.env.LAN_STAGING_WIF_PROVIDER))
+            throw Error('Invalid or non-staging Workload Identity Provider.');
+          if (!/^[a-z][a-z0-9-]*@lan-portfolio-staging\.iam\.gserviceaccount\.com$/.test(process.env.LAN_STAGING_DEPLOY_SERVICE_ACCOUNT))
+            throw Error('Firebase deploy service account must belong to staging project.');
           if (!/^AIza[A-Za-z0-9_-]{30,}$/.test(process.env.LAN_STAGING_FIREBASE_WEB_API_KEY))
             throw Error('Staging Firebase Web API key has invalid format.');
           NODE
-          printf '%s' "$LAN_STAGING_FIREBASE_SERVICE_ACCOUNT_B64" | base64 --decode > "$GOOGLE_APPLICATION_CREDENTIALS"
-          chmod 600 "$GOOGLE_APPLICATION_CREDENTIALS"
+      - name: Authenticate Google Cloud using short-lived GitHub OIDC
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: lan-portfolio-staging
+          workload_identity_provider: ${{ vars.LAN_STAGING_WIF_PROVIDER }}
+          service_account: ${{ vars.LAN_STAGING_DEPLOY_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+      - name: Verify the temporary staging Google identity
+        uses: google-github-actions/setup-gcloud@v3
+      - name: Verify active staging project and access token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gcloud config get-value project)" = 'lan-portfolio-staging'
+          gcloud auth print-access-token >/dev/null
       - name: Prepare isolated staging Worker and Hosting only
         run: |
           set -euo pipefail

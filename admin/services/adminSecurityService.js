@@ -181,6 +181,13 @@ export const getSecurityEmailBranding=()=>workerRequest('/security/email-brandin
 export const saveSecurityEmailBranding=branding=>workerRequest('/security/email-branding',{body:{branding},authorization:true});
 export const getSecurityAlertStatus=()=>workerRequest('/security/alert-status',{method:'GET',authorization:true});
 export async function generateRecoveryKit(){ const proof=requireRecentStepUp('rotate recovery kit'); return workerRequest('/security/recovery/generate',{body:{proofId:proof.proofId},authorization:true}); }
+export async function activatePreparedRecoveryKit(rotationId,preparedKitId){
+  const proof=requireRecentStepUp('activate the prepared recovery kit');
+  return workerRequest('/security/recovery/rotate/activate',{
+    body:{rotationId:text(rotationId),preparedKitId:text(preparedKitId),proofId:proof.proofId},
+    authorization:true
+  });
+}
 export const beginEmergencyRecovery=(email,password,recoveryKey)=>workerRequest('/security/recovery/start',{body:{email:text(email),password:String(password??''),recoveryKey:text(recoveryKey)}});
 export const prepareRecoveryKit=recoverySessionId=>workerRequest('/security/recovery/prepare',{body:{recoverySessionId}});
 export const completeRecoveryReset=(recoverySessionId,payload={})=>workerRequest('/security/recovery/complete',{body:{recoverySessionId,...payload}});

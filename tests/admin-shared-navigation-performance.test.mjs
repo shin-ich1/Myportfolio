@@ -158,7 +158,7 @@ test("Dashboard card navigation delegates directly to the canonical shell withou
   const shell = { LANAdminNavigate: href => destinations.push(href) };
   const state = runInNewContext(
     'const sectionNames = { projects: "Projects" };' +
-    body + '\\n({ openSection })',
+    body + '\n({ openSection })',
     {
       window: { parent: shell, location: { href: "https://lan-portfolio-staging.web.app/admin/dashboard.html" } },
       location: { href: "https://lan-portfolio-staging.web.app/admin/dashboard.html" },

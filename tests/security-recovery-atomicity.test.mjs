@@ -20,7 +20,7 @@ const encodeFields = record => Object.fromEntries(Object.entries(record).map(([k
 const decodeField = value => value?.stringValue ?? value?.booleanValue ??
   (value?.arrayValue?.values || []).map(v => v.stringValue);
 
-async function fixture({ resetFailures = 0, completionWriteFailures = 0 } = {}) {
+async function fixture({ resetFailures = 0, completionWriteFailures = 0, existingSessions = 0, existingDevices = 0 } = {}) {
   const privateKey = await crypto.subtle.generateKey({
     name: "RSASSA-PKCS1-v1_5", modulusLength: 2048,
     publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256"
@@ -41,6 +41,9 @@ async function fixture({ resetFailures = 0, completionWriteFailures = 0 } = {}) 
     backupCodeHashes: [], createdAt: new Date().toISOString()
   };
   let version = 1, claims = 0, resets = 0, recoveryReads = 0;
+  const sessionIds = Array.from({length: existingSessions}, (_, i) => 'existing-session-' + i);
+  const deviceIds = Array.from({length: existingDevices}, (_, i) => 'existing-device-' + i);
+  const revokedSessions = new Set(), revokedDevices = new Set();
   let failedAuditWrites = 0, atomicCompletionAuditWrites = 0;
   let synchronizeReads = false, resolveReads;
   const readGate = new Promise(resolve => { resolveReads = resolve; });
@@ -109,7 +112,20 @@ async function fixture({ resetFailures = 0, completionWriteFailures = 0 } = {}) 
       }
       return response(doc);
     }
-    if (path.endsWith("/documents:runQuery")) return response([]);
+    if (path.endsWith("/documents:runQuery")) {
+      const query = JSON.parse(init.body).structuredQuery;
+      const collection = query.from?.[0]?.collectionId;
+      const ids = collection === 'adminSecuritySessions' ? sessionIds
+        : collection === 'adminSecurityDevices' ? deviceIds : [];
+      const start = Number(query.offset || 0);
+      return response(ids.slice(start, start + Number(query.limit || 100)).map(id => ({
+        document: {
+          name: 'projects/' + FIREBASE_ID + '/databases/(default)/documents/' + collection + '/' + id,
+          fields: encodeFields({uid: TEST_UID, active: true,
+            ...(collection === 'adminSecuritySessions' ? {sessionId:id} : {deviceId:id})})
+        }
+      })));
+    }
     if (path.endsWith("/documents:commit")) {
       const writes = JSON.parse(init.body).writes || [];
       const hasRecoveryCompletion = writes.some(x =>
@@ -128,7 +144,12 @@ async function fixture({ resetFailures = 0, completionWriteFailures = 0 } = {}) 
         return response({ error:{ message:"test-only-activity-outage" } },503);
       }
       for (const write of writes) {
-        if (!write.update?.name?.includes("/adminSecurityRecovery/" + TEST_UID)) continue;
+        const name = String(write.update?.name || '');
+        if (write.update?.fields?.active?.booleanValue === false) {
+          if (name.includes('/adminSecuritySessions/')) revokedSessions.add(name.split('/').pop());
+          if (name.includes('/adminSecurityDevices/')) revokedDevices.add(name.split('/').pop());
+        }
+        if (!name.includes("/adminSecurityRecovery/" + TEST_UID)) continue;
         const expected = write.currentDocument?.updateTime;
         const current = new Date(INITIAL_VERSION + version * 1000).toISOString();
         if (expected && expected !== current) {
@@ -156,7 +177,7 @@ async function fixture({ resetFailures = 0, completionWriteFailures = 0 } = {}) 
     failNextSeparateAuditWrite() { failedAuditWrites = 1; },
     get atomicCompletionAuditWrites() { return atomicCompletionAuditWrites; },
     enableSimultaneousReads() { synchronizeReads = true; },
-    snapshot() { return { ...recovery, claims, resets, reads: recoveryReads }; },
+    snapshot() { return { ...recovery, claims, resets, reads: recoveryReads, revokedSessions: revokedSessions.size, revokedDevices: revokedDevices.size }; },
     async post(path, body, ip = "198.51.100.10") {
       const res = await worker.fetch(new Request(BASE + path, {
         method: "POST",
@@ -441,4 +462,18 @@ test("lost recovery completion challenge can be renewed with the same password a
     assert.equal(oldReplay.status,401);
     assert.equal(oldReplay.body.code,"security-recovery-key-invalid");
   }finally{f.restore();}
+});
+
+test("emergency recovery revokes every session and device beyond a single query page", async () => {
+  const f = await fixture({ existingSessions: 225, existingDevices: 125 });
+  try {
+    const outcome = await f.post("/security/recovery/start", {
+      email: "staging-admin@example.invalid", password: "test-password", recoveryKey: f.oldKey
+    });
+    assert.equal(outcome.status, 200, JSON.stringify(outcome.body));
+    assert.equal(f.snapshot().revokedSessions, 225,
+      "A successful recovery must revoke ALL old sessions, including pages after #200");
+    assert.equal(f.snapshot().revokedDevices, 125,
+      "A successful recovery must revoke ALL old trusted devices, including pages after #100");
+  } finally { f.restore(); }
 });

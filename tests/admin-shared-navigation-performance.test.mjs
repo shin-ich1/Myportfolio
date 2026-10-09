@@ -170,3 +170,55 @@ test("Dashboard card navigation delegates directly to the canonical shell withou
   assert.equal(destinations.length, 1, "Dashboard cards must route through exactly one shell navigation");
   assert.equal(destinations[0], "https://lan-portfolio-staging.web.app/admin/pages/projects.html");
 });
+
+test("Admin shell prefetches only on navigation intent, not every workspace at startup", () => {
+  const source = read("admin/js/admin-ui.js");
+  const from = source.indexOf("  const prefetchedAdminPages = new Set();");
+  const navigationEnd = source.indexOf("  function navigateAdminPage(", from);
+  const initStart = source.indexOf("  function initAdminNavigation()", navigationEnd);
+  const initEnd = source.indexOf("  function createCommandPalette()", initStart);
+  assert.ok(from >= 0 && navigationEnd > from && initStart > navigationEnd && initEnd > initStart);
+  const listeners = new Map();
+  const scheduledIdle = [];
+  const prefetched = [];
+  const document = {
+    createElement: () => ({}),
+    head: { append: link => prefetched.push(link) },
+    addEventListener: (type, callback) => listeners.set(type, callback)
+  };
+  const pages = [
+    { href: "https://lan-portfolio-staging.web.app/admin/pages/home.html", target: "", hasAttribute: () => false },
+    { href: "https://lan-portfolio-staging.web.app/admin/pages/projects.html", target: "", hasAttribute: () => false }
+  ];
+  const harness = runInNewContext(
+    source.slice(from, navigationEnd) + "\n" +
+    source.slice(initStart, initEnd) +
+    "\n({ initAdminNavigation })",
+    {
+      document,
+      window: { requestIdleCallback: cb => scheduledIdle.push(cb) },
+      location: { href: "https://lan-portfolio-staging.web.app/admin/shell.html", origin: "https://lan-portfolio-staging.web.app" },
+      URL,
+      $$: () => pages
+    }
+  );
+  harness.initAdminNavigation();
+  scheduledIdle.forEach(run => run());
+  assert.equal(prefetched.length, 0,
+    "Opening the shell must not prefetch every Admin document and compete with initial Firebase requests");
+  const home = { href: pages[0].href };
+  listeners.get("pointerenter")({ target: { closest: () => home } });
+  assert.equal(prefetched.length, 1, "Hovering a workspace link may prefetch that document");
+  listeners.get("focusin")({ target: { closest: () => home } });
+  assert.equal(prefetched.length, 1, "Repeated hover/focus must not duplicate a prefetched URL");
+  listeners.get("pointerenter")({ target: { closest: () => ({ href: "https://untrusted.example/admin/pages/home.html" }) } });
+  assert.equal(prefetched.length, 1, "Only same-origin Admin documents may be prefetched");
+});
+
+test("Promoted Admin navigation updates must not trigger full-sidebar prefetch", () => {
+  const source = read("admin/js/admin-ui.js");
+  const from = source.indexOf("  async function syncCustomModulesNavigation()");
+  const to = source.indexOf("  function initCustomModulesNavigation()", from);
+  assert.ok(from >= 0 && to > from);
+  assert.doesNotMatch(source.slice(from, to), /warmAdminNavigation\(/);
+});

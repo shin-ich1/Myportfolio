@@ -5,7 +5,9 @@ import {
   completeTotpEnrollment,
   sendAdministratorEmailVerification,
   beginEmergencyRecovery,
-  completeRecoveryReset
+  prepareRecoveryKit,
+  completeRecoveryReset,
+  getRecoveryResetStatus
 } from "../services/adminSecurityService.js";
 import { authorizationMessage } from "../services/adminAuthorizationService.js";
 import { createQrMatrix } from "./qr-code.js";
@@ -19,6 +21,7 @@ const recoveryStage=$('recoveryStage'),showRecoveryButton=$('showRecoveryButton'
 const loginVerificationOverlay=$('loginVerificationOverlay'),loginVerificationTitle=$('loginVerificationTitle'),loginVerificationDetail=$('loginVerificationDetail'),loginVerificationCodeCenter=$('loginVerificationCodeCenter');
 const loginVerificationCodeDigits=Array.from(document.querySelectorAll('[data-code-index]'));
 let pendingTotpChallenge='', pendingEnrollmentChallenge='', pendingBootstrapPassword='', verificationCodeTimer=0;
+let recoveryActivationPending=false;
 
 function showMessage(message,type='error'){ if(!loginMessage)return; loginMessage.textContent=message; loginMessage.className=`login-message ${type}`; }
 function clearMessage(){ showMessage('',''); }
@@ -89,23 +92,105 @@ if(enrollmentButton) enrollmentButton.addEventListener('click',async()=>{const c
 if(sendVerificationButton) sendVerificationButton.addEventListener('click',async()=>{sendVerificationButton.disabled=true;try{await sendAdministratorEmailVerification(pendingBootstrapPassword);showMessage('Firebase verification email requested. After verifying it, submit your email and password again.','success');}catch(error){showMessage(getFriendlyError(error));}finally{sendVerificationButton.disabled=false;}});
 if(showRecoveryButton) showRecoveryButton.addEventListener('click',()=>{hideStages();clearMessage();setRecoveryError('');recoveryStage.hidden=false;if(recoveryEmail&&!recoveryEmail.value)recoveryEmail.value=emailInput?.value||'';recoveryEmail?.focus();});
 if(recoverySubmitButton) recoverySubmitButton.addEventListener('click',async()=>{
- const email=String(recoveryEmail?.value||'').trim(),password=String(recoveryPassword?.value||''),recoveryKey=String(recoveryMasterKey?.value||'').trim(),newEmail=String(recoveryNewEmail?.value||'').trim();
- setRecoveryError(''); clearMessage();
- if(!email||!password||!recoveryKey)return setRecoveryError('Enter the Admin email, current password, and Master Recovery Key.');
- recoverySubmitButton.disabled=true; recoveryResult.hidden=true;
- try{
-   const recovery=await beginEmergencyRecovery(email,password,recoveryKey);
-   const reset=await completeRecoveryReset(recovery.recoverySessionId,{newEmail});
-   recoveryResult.hidden=false; recoveryResult.innerHTML='';
-   const title=document.createElement('strong');title.textContent='Save the new Recovery Kit now. It will not be shown again.';
-   const key=document.createElement('code');key.textContent=reset.masterKey||'';
-   const codes=document.createElement('pre');codes.textContent=(reset.backupCodes||[]).join('\n');
-   const note=document.createElement('p');note.textContent='All prior security access was revoked. Sign in again to verify the email if needed, enroll a fresh authenticator, and register the first trusted device.';
-   recoveryResult.append(title,key,codes,note);
-   if(reset.email)emailInput.value=reset.email; passwordInput.value='';
-   showMessage('Recovery reset completed. Save the new Recovery Kit, then perform fresh security setup.','success');
- }catch(error){const code=String(error?.code||'');if(code==='security-recovery-key-invalid'){setRecoveryError('Recovery key is invalid.',recoveryMasterKey);clearMessage();}else if(code==='security-password-invalid'||code==='security-recovery-password'){setRecoveryError('The Admin email or password is incorrect.',recoveryPassword);clearMessage();}else{setRecoveryError(getFriendlyError(error));clearMessage();}}
- finally{recoverySubmitButton.disabled=false;}
+  const email=String(recoveryEmail?.value||'').trim();
+  const password=String(recoveryPassword?.value||'');
+  const recoveryKey=String(recoveryMasterKey?.value||'').trim();
+  const newEmail=String(recoveryNewEmail?.value||'').trim();
+  setRecoveryError('');clearMessage();
+  if(recoveryActivationPending)return;
+  if(!email||!password||!recoveryKey){
+    return setRecoveryError('Enter the Admin email, current password, and Master Recovery Key.');
+  }
+  recoverySubmitButton.disabled=true;
+  recoveryResult.hidden=true;
+  try{
+    const recovery=await beginEmergencyRecovery(email,password,recoveryKey);
+    const prepared=await prepareRecoveryKit(recovery.recoverySessionId);
+    if(prepared.state!=='kit-prepared' || !prepared.preparedKitId || !prepared.masterKey ||
+       !Array.isArray(prepared.backupCodes) || prepared.backupCodes.length!==8){
+      throw Error('Security Gateway did not prepare a complete Recovery Kit.');
+    }
+    recoveryActivationPending=true;
+    recoveryResult.replaceChildren();
+    recoveryResult.hidden=false;
+
+    const title=document.createElement('strong');
+    title.textContent='Save the NEW Recovery Kit before activating it.';
+    const key=document.createElement('code');
+    key.textContent=prepared.masterKey;
+    const codes=document.createElement('pre');
+    codes.textContent=prepared.backupCodes.join('\n');
+    const explanation=document.createElement('p');
+    explanation.textContent='This kit is not active yet. Save the entire key and all backup codes offline. Do not close this page until activation is confirmed.';
+    const savedLabel=document.createElement('label');
+    const saved=document.createElement('input');
+    saved.type='checkbox';saved.id='recoveryKitSavedConfirmation';
+    const savedText=document.createElement('span');
+    savedText.textContent=' I saved the new Master Recovery Key and all eight backup codes offline.';
+    savedLabel.append(saved,savedText);
+    const activate=document.createElement('button');
+    activate.type='button';activate.className='login-button';
+    activate.textContent='Activate saved Recovery Kit';
+    activate.disabled=true;
+    saved.addEventListener('change',()=>{activate.disabled=!saved.checked;});
+    const state=document.createElement('p');
+    state.setAttribute('role','status');state.setAttribute('aria-live','polite');
+
+    async function confirmRecovery(result){
+      if(result?.state!=='bootstrap-required')throw Error('Recovery confirmation is incomplete.');
+      recoveryActivationPending=false;
+      saved.disabled=true;activate.disabled=true;
+      activate.textContent='Recovery Kit activated';
+      state.textContent='Security reset confirmed. Your saved Recovery Kit is now valid. Sign in to re-enroll TOTP and a trusted device.';
+      for(const input of [recoveryPassword,recoveryMasterKey]) if(input)input.value='';
+      if(result.email)emailInput.value=result.email;
+      if(passwordInput)passwordInput.value='';
+      showMessage('Recovery confirmed. Keep the saved new Recovery Kit offline.','success');
+    }
+    activate.addEventListener('click',async()=>{
+      if(!saved.checked || !recoveryActivationPending)return;
+      activate.disabled=true;
+      state.textContent='Activating Recovery Kit and verifying server confirmation…';
+      try{
+        let result;
+        try{
+          result=await completeRecoveryReset(recovery.recoverySessionId,{
+            preparedKitId:prepared.preparedKitId,newEmail
+          });
+        }catch(error){
+          // If the commit succeeded but the HTTP response was lost, confirm
+          // the exact prepared kit on the server; never generate another key.
+          const checked=await getRecoveryResetStatus(recovery.recoverySessionId,
+            prepared.preparedKitId).catch(()=>null);
+          if(checked?.state!=='bootstrap-required')throw error;
+          result=checked;
+        }
+        await confirmRecovery(result);
+      }catch(error){
+        state.textContent='Activation is not confirmed. Your saved key is still shown. Check the connection, then retry activation without regenerating this kit.';
+        setRecoveryError(getFriendlyError(error));
+        activate.disabled=!saved.checked;
+      }
+    });
+    recoveryResult.append(title,key,codes,explanation,savedLabel,activate,state);
+    showMessage('Save the displayed Recovery Kit, then explicitly activate it.','success');
+  }catch(error){
+    const code=String(error?.code||'');
+    if(code==='security-recovery-key-invalid'){
+      setRecoveryError('Recovery key is invalid.',recoveryMasterKey);clearMessage();
+    }else if(code==='security-password-invalid'||code==='security-recovery-password'){
+      setRecoveryError('The Admin email or password is incorrect.',recoveryPassword);clearMessage();
+    }else{
+      setRecoveryError(getFriendlyError(error));clearMessage();
+    }
+  }finally{
+    if(!recoveryActivationPending)recoverySubmitButton.disabled=false;
+  }
+});
+window.addEventListener('beforeunload',event=>{
+  if(!recoveryActivationPending)return;
+  event.preventDefault();
+  event.returnValue='';
 });
 for(const input of [recoveryEmail,recoveryPassword,recoveryMasterKey,recoveryNewEmail]) input?.addEventListener('input',()=>setRecoveryError(''));
 

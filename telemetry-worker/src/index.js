@@ -2241,16 +2241,16 @@ async function consumeSecurityChallenge(env, scope, id) {
   return outcome.record;
 }
 
-async function readPendingRecoveryChallenge(env, id) {
-  const result = await coordinateSecurity(env, securityChallengeOwner("recovery", id), {
-    op: "recovery-read", scope: "recovery", id: String(id || "")
+async function readPendingRecoveryChallenge(env, id, scope="recovery") {
+  const result = await coordinateSecurity(env, securityChallengeOwner(scope, id), {
+    op: "recovery-read", scope, id: String(id || "")
   });
   return result.record;
 }
 
-async function savePreparedRecoveryKit(env, id, prepared) {
-  await coordinateSecurity(env,securityChallengeOwner("recovery",id),{
-    op:"recovery-prepare",scope:"recovery",id,prepared
+async function savePreparedRecoveryKit(env, id, prepared, scope="recovery") {
+  await coordinateSecurity(env,securityChallengeOwner(scope,id),{
+    op:"recovery-prepare",scope,id,prepared
   });
 }
 
@@ -2760,6 +2760,7 @@ const SECURITY_REQUEST_SCHEMAS = Object.freeze({
   "/security/device/login-complete": { challengeId: REQUEST_SCHEMA_ANY, deviceId: REQUEST_SCHEMA_ANY, signature: REQUEST_SCHEMA_ANY },
   "/security/recovery/start": { email: REQUEST_SCHEMA_ANY, password: REQUEST_SCHEMA_ANY, recoveryKey: REQUEST_SCHEMA_ANY },
   "/security/recovery/prepare": { recoverySessionId: REQUEST_SCHEMA_ANY },
+  "/security/recovery/rotate/activate": { rotationId: REQUEST_SCHEMA_ANY, preparedKitId: REQUEST_SCHEMA_ANY, proofId: REQUEST_SCHEMA_ANY },
   "/security/recovery/complete": { recoverySessionId: REQUEST_SCHEMA_ANY, preparedKitId: REQUEST_SCHEMA_ANY, newEmail: REQUEST_SCHEMA_ANY },
   "/security/recovery/status": { recoverySessionId: REQUEST_SCHEMA_ANY, preparedKitId: REQUEST_SCHEMA_ANY },
   "/security/session/end": {},
@@ -3006,7 +3007,89 @@ async function handleSecurityRoute(request,env,url,context){
       await writeSecurityEvent(env,{uid:admin.uid,type:'totp-reset',success:true,summary:'Authenticator enrollment reset; all sessions and trusted devices were revoked.'});
       return json({ok:true,bootstrapRequired:true},200,origin);
     }
-    if(path==='/security/recovery/generate'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const key=recoveryKey(),codes=Array.from({length:8},backupCode),hash=await recoveryHmac(key,env),codeHashes=await Promise.all(codes.map(x=>recoveryHmac(x,env))); await securityPatchDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid,{uid:admin.uid,active:true,masterKeyHash:hash,backupCodeHashes:codeHashes,createdAt:new Date().toISOString()}); return json({masterKey:key,backupCodes:codes},200,origin); }
+    if(path==='/security/recovery/generate'&&method==='POST'){
+      await enforceSecurityRateLimit(request,env,'recovery-rotate',{limit:5,windowSeconds:900,cooldownSeconds:300});
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      const existing=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid);
+      if(existing?.active===false){
+        throw serviceError('Emergency recovery is in progress; a normal kit rotation cannot replace it.',{
+          status:409,code:'security-recovery-in-progress',source:'worker'
+        });
+      }
+      const rotationId=await putSecurityChallenge(env,'recovery-rotate',{
+        uid:admin.uid,sessionId:admin.session.sessionId
+      },SECURITY_LIFETIMES.recovery);
+      const key=recoveryKey(),codes=Array.from({length:8},backupCode);
+      const preparedKitId=securityRandomId(24);
+      await savePreparedRecoveryKit(env,rotationId,{
+        preparedKitId,masterKeyHash:await recoveryHmac(key,env),
+        backupCodeHashes:await Promise.all(codes.map(x=>recoveryHmac(x,env)))
+      },'recovery-rotate');
+      // No recovery record changes until the Admin sees and saves the kit.
+      return json({
+        state:'kit-prepared',rotationId,preparedKitId,
+        masterKey:key,backupCodes:codes
+      },200,origin);
+    }
+    if(path==='/security/recovery/rotate/activate'&&method==='POST'){
+      await enforceSecurityRateLimit(request,env,'recovery-activate',{limit:15,windowSeconds:900,cooldownSeconds:300});
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      const rotationId=String(body.rotationId||'');
+      const kitId=String(body.preparedKitId||'');
+      const challenge=await readPendingRecoveryChallenge(env,rotationId,'recovery-rotate');
+      if(challenge.uid!==admin.uid || challenge.sessionId!==admin.session.sessionId ||
+         !challenge.prepared || challenge.prepared.preparedKitId!==kitId) {
+        throw serviceError('Prepared Recovery Kit is not valid for the current Admin session.',{
+          status:403,code:'security-recovery-kit-mismatch',source:'worker'
+        });
+      }
+      const existing=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid);
+      if(existing?.active===true && existing?.lastRotationId===rotationId &&
+         existing?.lastPreparedKitId===kitId){
+        return json({ok:true,state:'recovery-kit-active',alreadyCompleted:true},200,origin);
+      }
+      if(existing?.active===false){
+        throw serviceError('Emergency Recovery cannot be overridden by a normal kit rotation.',{
+          status:409,code:'security-recovery-in-progress',source:'worker'
+        });
+      }
+      const fields={
+        uid:admin.uid,active:true,
+        masterKeyHash:challenge.prepared.masterKeyHash,
+        backupCodeHashes:challenge.prepared.backupCodeHashes,
+        lastRotationId:rotationId,lastPreparedKitId:kitId,
+        createdAt:new Date().toISOString()
+      };
+      const writes=[{
+        update:{
+          name:firestoreDocumentName(env,SECURITY_COLLECTIONS.recovery,admin.uid),
+          fields:firestoreFields(fields)
+        },
+        updateMask:{fieldPaths:Object.keys(fields)},
+        currentDocument:existing?{updateTime:existing._updateTime}:{exists:false}
+      },{
+        update:{
+          name:firestoreDocumentName(env,SECURITY_COLLECTIONS.events,securityRandomId(18)),
+          fields:firestoreFields({
+            uid:admin.uid,type:'recovery-kit-rotated',success:true,
+            summary:'Recovery Kit activated after offline-save confirmation.',
+            sessionId:admin.session.sessionId,
+            createdAt:new Date().toISOString()
+          })
+        },currentDocument:{exists:false}
+      }];
+      try{
+        await firestoreAdminCommit(env,writes);
+      }catch(error){
+        if(error?.code==='firestore-precondition-failed'){
+          throw serviceError('Recovery Kit changed during activation; verify current state before retrying.',{
+            status:409,code:'security-recovery-state-changed',source:'worker'
+          });
+        }
+        throw error;
+      }
+      return json({ok:true,state:'recovery-kit-active'},200,origin);
+    }
     if(path==='/security/devices'&&method==='GET'){ const devices=await securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid]],100); return json({devices:devices.map(({publicKeyJwk,_updateTime,...d})=>({...d,current:d.deviceId===admin.session.deviceId}))},200,origin); }
     if(path==='/security/access-state'&&method==='GET'){ return json(await buildSecurityAccessState(admin,env),200,origin); }
     if(path==='/security/sessions'&&method==='GET'){ const access=await buildSecurityAccessState(admin,env); return json({sessions:access.sessions},200,origin); }

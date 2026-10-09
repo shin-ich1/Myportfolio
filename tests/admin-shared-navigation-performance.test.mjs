@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -85,4 +86,62 @@ test("the shell keeps server validation in its canonical session owner", () => {
   assert.match(shell, /await validateCurrentSecuritySession\(\)/);
   assert.match(shell, /lanSessionId|security-session|security\/session-required/);
   assert.match(shell, /location\.replace\(new URL\("index\.html\?error=session-ended"/);
+});
+
+function createBrandIconHarness({ localStorage, fetch, clock }) {
+  const source = read("admin/js/admin-ui.js");
+  const from = source.indexOf('  const ICONIFY_API = "https://api.iconify.design";');
+  const to = source.indexOf("  async function fetchIconifySvgDataUri(", from);
+  assert.ok(from > 0 && to > from, "Canonical Admin automatic icon lookup owner must remain discoverable");
+  return runInNewContext(source.slice(from, to) +
+    "\n({ discoverAutomaticBrandIcon })", {
+    localStorage, fetch, URLSearchParams, Date: { now: () => clock.now },
+    window: {}, console: { info() {} }
+  });
+}
+
+test("automatic brand icon misses are cached across workspace document reloads with bounded retry", async () => {
+  const saved = new Map();
+  const localStorage = {
+    getItem: key => saved.get(key) ?? null,
+    setItem: (key, value) => { saved.set(key, value); }
+  };
+  const clock = { now: 1700000000000 };
+  let requests = 0;
+  const fetch = async () => {
+    requests++;
+    return { ok: true, json: async () => ({ icons: [] }) };
+  };
+  const first = createBrandIconHarness({ localStorage, fetch, clock });
+  assert.equal(await first.discoverAutomaticBrandIcon("Unlisted example editor", "software tool"), "");
+  assert.ok(requests > 0, "the first uncached lookup must still try remote icon discovery");
+  const initialRequests = requests;
+
+  const second = createBrandIconHarness({ localStorage, fetch, clock });
+  assert.equal(await second.discoverAutomaticBrandIcon("Unlisted example editor", "software tool"), "");
+  assert.equal(requests, initialRequests, "a new workspace iframe must reuse the recorded miss instead of repeating all searches");
+
+  clock.now += 24 * 60 * 60 * 1000;
+  const later = createBrandIconHarness({ localStorage, fetch, clock });
+  assert.equal(await later.discoverAutomaticBrandIcon("Unlisted example editor", "software tool"), "");
+  assert.ok(requests > initialRequests, "the missing-brand cache must expire so lookup may recover");
+});
+
+test("automatic brand icon discovery still resolves and reuses real matching icons", async () => {
+  const saved = new Map();
+  const localStorage = {
+    getItem: key => saved.get(key) ?? null,
+    setItem: (key, value) => saved.set(key, value)
+  };
+  const clock = { now: 1700000000000 };
+  let requests = 0;
+  const fetch = async () => {
+    requests++;
+    return { ok: true, json: async () => ({ icons: ["logos:figma"] }) };
+  };
+  const expected = "https://api.iconify.design/logos/figma.svg";
+  assert.equal(await createBrandIconHarness({ localStorage, fetch, clock }).discoverAutomaticBrandIcon("Figma", "software tool"), expected);
+  assert.equal(requests, 1);
+  assert.equal(await createBrandIconHarness({ localStorage, fetch, clock }).discoverAutomaticBrandIcon("Figma", "software tool"), expected);
+  assert.equal(requests, 1, "successful icon lookup must remain cached across document loads");
 });

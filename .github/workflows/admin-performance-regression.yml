@@ -206,8 +206,8 @@ jobs:
       - name: Verify staging Worker public health and bound server identity
         run: |
           node --input-type=module <<'NODE'
-          import {inspectStagingWorkerHealth} from './scripts/check-staging-worker-health.mjs';
-          const result=await inspectStagingWorkerHealth();
+          import {waitForStagingWorkerHealth} from './scripts/check-staging-worker-health.mjs';
+          const result=await waitForStagingWorkerHealth();
           if (!result.canonicalWorkerResponding ||
               !result.atomicSecurityCoordinatorBindingPresent ||
               !result.serverCredentialPresenceReported)

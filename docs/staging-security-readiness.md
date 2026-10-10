@@ -5,9 +5,20 @@
 ## Current staging environment
 
 - Last observed deployment of `lan-portfolio-staging.lagmayr2.workers.dev/health` still returned **Hello World!** It is the placeholder, not the canonical gateway.
-- Isolated staging Firebase (`lan-portfolio-staging`) and Identity Platform TOTP configuration were inspected previously. No staging Firebase service-account/IAM setup or end-to-end login was validated.
+- Staging Firebase (`lan-portfolio-staging`) has Email/Password and Identity Platform TOTP enabled. Staging service-account IAM roles, encrypted Worker secrets, and the test Admin allowlist are configured. End-to-end authentication remains unverified.
 - The generated staging Worker configuration uses one `SECURITY_COORDINATOR` SQLite Durable Object and two unrelated KV bindings: `PORTFOLIO_MESSAGES` for nonsecurity message/push/image caches, and `STORAGE_OAUTH` for Drive profile/token/upload metadata. The old `SECURITY_STATE` KV security binding and runtime code have been removed.
 - The Firebase Web API key is not in tracked staging config. No service account private key, recovery secret, OAuth client secret or access token is committed.
+
+### Staging operator verification — 2026-10-10
+
+- Latest GitHub CI: 116/116 regression tests and 7/7 local Cloudflare runtime tests passed. Worker dry run passed. Live authentication remains unverified.
+- Firebase staging: Email/Password and Identity Platform TOTP MFA enabled. A dedicated staging test user and active authorizedAdministrators allowlist record were created.
+- Google Cloud: staging Worker runtime and Firebase deployer IAM roles assigned and verified in the console.
+- Cloudflare staging: four required encrypted Worker secrets are present. Secret values and runtime authentication have not been verified.
+- GitHub staging: deployment secrets and Workload Identity configuration are present. LAN_STAGING_DEPLOY_APPROVED is true for the approved staging-only deployment.
+- Firestore currently denies all direct client reads and writes until canonical security rules are deployed.
+- Pending: real GitHub OIDC authentication, Durable Object deployment, Worker health verification, Firebase Hosting/Rules deployment, and live TOTP, trusted-device, session, recovery, and unauthorized-access tests.
+- Production Rolando Portfolio is excluded from staging deployment. No production promotion is approved.
 
 ## Canonical ownership after both work pairs
 

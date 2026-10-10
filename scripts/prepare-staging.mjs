@@ -134,8 +134,9 @@ async function reviewExistingWorker(file, expected) {
   // only after all explicitly configured values have been verified.
   for (const key of ['durable_objects', 'exports', 'preview_urls', 'observability']) {
     if (current[key] !== undefined) {
+      const owner = key === 'durable_objects' || key === 'exports' ? 'Durable Object' : key;
       assertSafe(JSON.stringify(current[key]) === JSON.stringify(expected[key]),
-        'Staging Worker ' + key + ' configuration mismatch.');
+        'Staging Worker ' + owner + ' configuration mismatch.');
     }
   }
   const allowedVars = new Set(Object.keys(expected.vars));

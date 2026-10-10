@@ -13,6 +13,16 @@ import { resolve } from "node:path";
 
 export const STAGING_HEALTH_URL = "https://lan-portfolio-staging.lagmayr2.workers.dev/health";
 
+// Edge propagation after a successful deployment is not instantaneous.
+// Retry only known, temporary readiness responses; authorization and binding
+// failures remain immediate errors, and every successful probe is fully checked.
+const READINESS_ATTEMPTS = 10;
+const READINESS_DELAY_MS = 2000;
+
+function healthFailure(message, readinessPending = false) {
+  return Object.assign(new Error(message), { readinessPending });
+}
+
 export async function inspectStagingWorkerHealth({ fetchImpl = fetch } = {}) {
   const response = await fetchImpl(STAGING_HEALTH_URL, {
     method: "GET",
@@ -23,14 +33,16 @@ export async function inspectStagingWorkerHealth({ fetchImpl = fetch } = {}) {
     signal: AbortSignal.timeout(8000)
   });
   if (!response?.ok) {
-    throw new Error("Staging Worker /health returned HTTP " + (Number(response?.status) || 0) + ".");
+    const status = Number(response?.status) || 0;
+    throw healthFailure("Staging Worker /health returned HTTP " + status + ".",
+      [404, 429, 502, 503, 504].includes(status));
   }
   if (!/^application\/json\b/i.test(response.headers?.get("Content-Type") || "")) {
-    throw new Error("Staging /health did not return canonical staging Worker JSON (placeholder Worker may still be deployed).");
+    throw healthFailure("Staging /health did not return canonical staging Worker JSON (placeholder Worker may still be deployed).", true);
   }
   const payload = await response.json().catch(() => null);
   if (!payload || payload.ok !== true || payload.service !== "lan-cloudinary-telemetry") {
-    throw new Error("Staging /health did not match the canonical Worker identity.");
+    throw healthFailure("Staging /health did not match the canonical Worker identity.", true);
   }
   if (payload.firebaseConfigured !== true) {
     throw new Error("Staging Worker is missing Firebase project configuration.");
@@ -50,6 +62,26 @@ export async function inspectStagingWorkerHealth({ fetchImpl = fetch } = {}) {
     serverCredentialPresenceReported: payload.messageSecurityConfigured === true,
     runtimeSecurityVerified: false
   });
+}
+
+/**
+ * Deployment-only readiness polling, still using the one canonical /health
+ * validator above. No alternate URL, identity, or degraded-success path.
+ * sleepImpl is injectable solely so regression tests run without wall-clock waits.
+ */
+export async function waitForStagingWorkerHealth({
+  fetchImpl = fetch,
+  sleepImpl = ms => new Promise(resolve => setTimeout(resolve, ms))
+} = {}) {
+  for (let attempt = 1; attempt <= READINESS_ATTEMPTS; attempt++) {
+    try {
+      return await inspectStagingWorkerHealth({ fetchImpl });
+    } catch (error) {
+      if (error?.readinessPending !== true || attempt === READINESS_ATTEMPTS) throw error;
+      await sleepImpl(READINESS_DELAY_MS);
+    }
+  }
+  throw new Error("Staging readiness attempts exhausted.");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

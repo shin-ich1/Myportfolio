@@ -5,7 +5,9 @@
   "scripts": {
     "authorize-admin": "node scripts/authorize-admin.mjs",
     "enable-totp-mfa": "node scripts/enable-totp-mfa.mjs",
-    "configure-auth-email-branding": "node scripts/configure-auth-email-branding.mjs"
+    "configure-auth-email-branding": "node scripts/configure-auth-email-branding.mjs",
+    "prepare:staging": "node scripts/prepare-staging.mjs",
+    "test:staging": "node --test tests/staging-build-isolation.test.mjs"
   },
   "devDependencies": {
     "firebase-admin": "^13.4.0"

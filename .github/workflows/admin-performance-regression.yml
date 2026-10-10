@@ -1,0 +1,249 @@
+name: Admin shared-navigation regression
+
+on:
+  pull_request:
+    paths:
+      - "admin/js/**"
+      - "admin/pages/**"
+      - "admin/dashboard.html"
+      - "tests/**"
+      - "telemetry-worker/src/**"
+      - "telemetry-worker/tests/**"
+      - "firestore.rules"
+      - "docs/staging-security-readiness.md"
+      - "telemetry-worker/wrangler.jsonc"
+      - "scripts/check-staging-worker-health.mjs"
+      - "scripts/prepare-staging.mjs"
+      - "scripts/diagnose-staging-cloudflare-metadata.mjs"
+      - "scripts/staging-targets.json"
+      - "scripts/secure-firestore-backup.mjs"
+      - "storage-bridge-url.js"
+      - "package.json"
+      - ".github/workflows/admin-performance-regression.yml"
+  push:
+    branches:
+      - "perf/admin-workspace-investigation-20261008"
+    paths:
+      - "admin/js/**"
+      - "admin/pages/**"
+      - "admin/dashboard.html"
+      - "tests/**"
+      - "telemetry-worker/src/**"
+      - "telemetry-worker/tests/**"
+      - "firestore.rules"
+      - "docs/staging-security-readiness.md"
+      - "telemetry-worker/wrangler.jsonc"
+      - "scripts/check-staging-worker-health.mjs"
+      - "scripts/prepare-staging.mjs"
+      - "scripts/diagnose-staging-cloudflare-metadata.mjs"
+      - "scripts/staging-targets.json"
+      - "scripts/secure-firestore-backup.mjs"
+      - ".github/workflows/admin-performance-regression.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  shared-admin-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check JavaScript syntax
+        run: |
+          node --check admin/js/settings-security.js
+          node --check admin/js/admin.js
+          node --check admin/services/adminSecurityService.js
+          node --check admin/js/admin-shell.js
+          node --check admin/js/workspace-host.js
+          node --check admin/js/admin-ui.js
+          node --check admin/js/home.js
+          node --check scripts/prepare-staging.mjs
+          node --check scripts/diagnose-staging-cloudflare-metadata.mjs
+          node --check scripts/check-staging-worker-health.mjs
+          node --check scripts/secure-firestore-backup.mjs
+          node --check storage-bridge-url.js
+          node --check telemetry-worker/src/index.js
+          node --check telemetry-worker/src/security-coordinator.js
+      - name: Run shared-navigation and staging isolation tests
+        run: node --test tests/firestore-administrator-allowlist-gate.test.mjs tests/security-bulk-revocation-contract.test.mjs tests/admin-shared-navigation-performance.test.mjs tests/admin-workspace-security-gate.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-settings-startup-requests.test.mjs tests/admin-pending-navigation-lifecycle.test.mjs tests/staging-build-isolation.test.mjs tests/staging-worker-authorization.test.mjs tests/staging-worker-health-gate.test.mjs tests/security-coordinator-atomicity.test.mjs tests/security-totp-reenrollment.test.mjs tests/security-recovery-atomicity.test.mjs tests/security-first-device-bootstrap.test.mjs tests/public-message-atomicity.test.mjs tests/google-drive-oauth-state-replay.test.mjs tests/google-drive-pending-atomicity.test.mjs tests/google-drive-upload-routes.test.mjs tests/security-recovery-ui-handoff.test.mjs tests/security-step-up-runtime.test.mjs tests/security-audit-closeout.test.mjs tests/production-candidate-contract.test.mjs tests/production-cutover-preflight.test.mjs tests/secure-firestore-backup.test.mjs tests/staging-deploy-gate.test.mjs tests/staging-cloudflare-diagnostic-gate.test.mjs
+      - name: Set up Java for isolated Firestore Rules emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install isolated Firestore Rules test clients
+        run: npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing firebase
+      - name: Exercise real Firestore Rules with revoked and forged test identities (emulator ONLY)
+        run: npx --yes firebase-tools@14.20.0 emulators:exec --only firestore --project lan-security-rules-emulator-only "node --test tests/firestore-security-emulator.test.mjs tests/firestore-backup-restore-emulator.test.mjs"
+      - name: Live staging anonymous security denial (read-only)
+        if: github.event_name == 'pull_request'
+        run: node --test tests/staging-live-unauthorized.test.mjs
+      - name: Verify staging manifest has no hardcoded API key
+        run: node -e "if (Object.hasOwn(require('./scripts/staging-targets.json').firebase, 'apiKey')) process.exit(1)"
+
+      - name: Bundle isolated staging Worker without deployment
+        run: |
+          npm ci --prefix telemetry-worker --no-audit --no-fund
+          export LAN_STAGING_FIREBASE_WEB_API_KEY="$(node -e "process.stdout.write('AIza'+'A'.repeat(35))")"
+          node scripts/prepare-staging.mjs
+          cd telemetry-worker
+          ./node_modules/.bin/wrangler deploy --dry-run --config wrangler.staging.jsonc --outdir ../.lan-staging/worker-bundle
+          cd ..
+          node --test telemetry-worker/tests/atomic-do-runtime.test.mjs
+      - name: Dry-run exact PRODUCTION Cloudflare Worker bundle without deploying
+        run: |
+          set -euo pipefail
+          cd telemetry-worker
+          ./node_modules/.bin/wrangler deploy --dry-run --config wrangler.jsonc --outdir ../.lan-production-candidate/worker-bundle
+          cd ..
+          test -d .lan-production-candidate/worker-bundle
+          echo "Production Worker source/config compiled locally. NO CLOUDFLARE DEPLOYMENT OCCURRED."
+
+
+  # Read-only Cloudflare metadata checks. This is NOT a deployment or a Wrangler retry.
+  # Must have a separate approval and the staging deployment gate must remain OFF.
+  staging-metadata-diagnostic:
+    needs: shared-admin-regression
+    if: >-
+      ${{
+        vars.LAN_STAGING_DIAGNOSTIC_APPROVED == 'true' &&
+        vars.LAN_STAGING_DEPLOY_APPROVED == 'false' &&
+        github.repository == 'shin-ich1/Myportfolio' &&
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/perf/admin-workspace-investigation-20261008'
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: lan-security-staging
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.LAN_STAGING_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.LAN_STAGING_CLOUDFLARE_ACCOUNT_ID }}
+      LAN_STAGING_DEPLOY_APPROVED: ${{ vars.LAN_STAGING_DEPLOY_APPROVED }}
+      LAN_STAGING_DIAGNOSTIC_APPROVED: ${{ vars.LAN_STAGING_DIAGNOSTIC_APPROVED }}
+    steps:
+      - name: Check out testing branch only
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify diagnostic security contracts
+        run: node --test tests/staging-cloudflare-diagnostic-gate.test.mjs
+      - name: Read staging Cloudflare metadata only
+        run: node scripts/diagnose-staging-cloudflare-metadata.mjs
+
+  # Default: OFF. Production is never a deployment target in this workflow.
+  # Repository variable LAN_STAGING_DEPLOY_APPROVED must be set to 'true'
+  # after isolated staging credentials/IAM and Worker secrets are configured.
+  # The job runs only after the existing canonical regression job succeeds.
+  staging-deploy:
+    name: Isolated staging deploy — explicitly gated
+    needs: shared-admin-regression
+    if: ${{ vars.LAN_STAGING_DEPLOY_APPROVED == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/perf/admin-workspace-investigation-20261008' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: lan-security-staging
+    permissions:
+      contents: read
+      id-token: write # OIDC only for the explicitly gated staging deploy job
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.LAN_STAGING_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.LAN_STAGING_CLOUDFLARE_ACCOUNT_ID }}
+      LAN_STAGING_FIREBASE_WEB_API_KEY: ${{ secrets.LAN_STAGING_FIREBASE_WEB_API_KEY }}
+      LAN_STAGING_WIF_PROVIDER: ${{ vars.LAN_STAGING_WIF_PROVIDER }}
+      LAN_STAGING_DEPLOY_SERVICE_ACCOUNT: ${{ vars.LAN_STAGING_DEPLOY_SERVICE_ACCOUNT }}
+    steps:
+      - name: Check out testing branch only
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Reject unexpected staging OIDC identity and configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          for (const name of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'LAN_STAGING_FIREBASE_WEB_API_KEY', 'LAN_STAGING_WIF_PROVIDER', 'LAN_STAGING_DEPLOY_SERVICE_ACCOUNT']) {
+            if (!process.env[name]) throw Error('Required staging configuration is missing: ' + name);
+          }
+          if (process.env.GITHUB_REPOSITORY !== 'shin-ich1/Myportfolio' ||
+              process.env.GITHUB_REF !== 'refs/heads/perf/admin-workspace-investigation-20261008' ||
+              process.env.GITHUB_EVENT_NAME !== 'push')
+            throw Error('Refusing Google identity federation from an unexpected GitHub source.');
+          // Project NUMBER, not name: refuse federation through a different GCP project.
+          if (!/^projects\/571587695468\/locations\/global\/workloadIdentityPools\/[a-z][a-z0-9-]{3,31}\/providers\/[a-z][a-z0-9-]{3,31}$/.test(process.env.LAN_STAGING_WIF_PROVIDER))
+            throw Error('Invalid or non-staging Workload Identity Provider.');
+          if (!/^[a-z][a-z0-9-]*@lan-portfolio-staging\.iam\.gserviceaccount\.com$/.test(process.env.LAN_STAGING_DEPLOY_SERVICE_ACCOUNT))
+            throw Error('Firebase deploy service account must belong to staging project.');
+          if (!/^AIza[A-Za-z0-9_-]{30,}$/.test(process.env.LAN_STAGING_FIREBASE_WEB_API_KEY))
+            throw Error('Staging Firebase Web API key has invalid format.');
+          NODE
+      - name: Authenticate Google Cloud using short-lived GitHub OIDC
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: lan-portfolio-staging
+          workload_identity_provider: ${{ vars.LAN_STAGING_WIF_PROVIDER }}
+          service_account: ${{ vars.LAN_STAGING_DEPLOY_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+      - name: Verify the temporary staging Google identity
+        uses: google-github-actions/setup-gcloud@v3
+      - name: Verify active staging project and access token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gcloud config get-value project)" = 'lan-portfolio-staging'
+          gcloud auth print-access-token >/dev/null
+      - name: Prepare isolated staging Worker and Hosting only
+        run: |
+          set -euo pipefail
+          npm ci --prefix telemetry-worker --no-audit --no-fund
+          node scripts/prepare-staging.mjs
+      - name: Require preinstalled encrypted staging Worker secrets
+        working-directory: telemetry-worker
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/wrangler secret list --config wrangler.staging.jsonc > "$RUNNER_TEMP/lan-staging-secret-names.json"
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const list=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/lan-staging-secret-names.json','utf8'));
+          const present=new Set(list.map(item=>item.name));
+          for(const name of [
+            'FIREBASE_WEB_API_KEY',
+            'FIREBASE_SERVICE_ACCOUNT_EMAIL',
+            'FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY',
+            'SECURITY_RECOVERY_PEPPER'
+          ]) if(!present.has(name)) throw Error('Required encrypted staging Worker secret is missing: '+name);
+          NODE
+      - name: Deploy canonical Worker to staging ONLY
+        working-directory: telemetry-worker
+        run: ./node_modules/.bin/wrangler deploy --config wrangler.staging.jsonc
+      - name: Verify staging Worker public health and bound server identity
+        run: |
+          node --input-type=module <<'NODE'
+          import {waitForStagingWorkerHealth} from './scripts/check-staging-worker-health.mjs';
+          const result=await waitForStagingWorkerHealth();
+          if (!result.canonicalWorkerResponding ||
+              !result.atomicSecurityCoordinatorBindingPresent ||
+              !result.serverCredentialPresenceReported)
+            throw Error('Staging Worker lacks required configuration or server credentials.');
+          console.log('Isolated staging gateway health checks passed; live authentication still unverified.');
+          NODE
+      - name: Deploy Firestore Rules to staging project ONLY
+        run: |
+          npx --yes firebase-tools@14.20.0 deploy --only firestore:rules --project lan-portfolio-staging --non-interactive
+      - name: Deploy isolated Firebase Hosting to staging ONLY
+        working-directory: .lan-staging
+        run: |
+          npx --yes firebase-tools@14.20.0 deploy --only hosting --project lan-portfolio-staging --non-interactive
+      - name: Staging deployment still requires interactive runtime authorization checks
+        run: echo "Staging-only deploy completed. DO NOT PROMOTE TO PRODUCTION without real TOTP, recovery, trusted devices, revocation and unauthorized-request tests."

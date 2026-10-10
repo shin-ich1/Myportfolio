@@ -54,8 +54,8 @@ async function deviceRecord(mode='readonly', mutator=null){
 async function putDevice(record){ return deviceRecord('readwrite',store=>new Promise((resolve,reject)=>{ const q=store.put(record,DEVICE_RECORD); q.onsuccess=()=>resolve(record); q.onerror=()=>reject(q.error); })); }
 export async function clearLocalTrustedDevice(){ return deviceRecord('readwrite',store=>new Promise((resolve,reject)=>{ const q=store.delete(DEVICE_RECORD); q.onsuccess=()=>resolve(); q.onerror=()=>reject(q.error); })); }
 
-export async function createDeviceKeyPair(){
-  const existing=await deviceRecord().catch(()=>null); if(existing?.privateKey && existing?.deviceId) return {deviceId:existing.deviceId,publicKeyJwk:existing.publicKeyJwk};
+export async function createDeviceKeyPair({renew=false}={}){
+  const existing=await deviceRecord().catch(()=>null); if(!renew&&existing?.privateKey&&existing?.deviceId) return {deviceId:existing.deviceId,publicKeyJwk:existing.publicKeyJwk};
   const keys=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},false,['sign','verify']);
   const publicKeyJwk=await crypto.subtle.exportKey('jwk',keys.publicKey);
   const deviceId=base64url(crypto.getRandomValues(new Uint8Array(24)));
@@ -131,8 +131,20 @@ export async function logoutAdministrator(){
 export async function requestTrustedDeviceLogin(email,password){ const local=await deviceRecord(); return workerRequest('/security/device/login-challenge',{body:{email:text(email),password:String(password??''),deviceId:local?.deviceId||''}}); }
 export async function completeTrustedDeviceLogin(challenge){ const local=await deviceRecord(); const signature=await signDeviceChallenge({...challenge,deviceId:local.deviceId}); return completeCustomTokenSession(await workerRequest('/security/device/login-complete',{body:{challengeId:challenge.challengeId,deviceId:local.deviceId,signature}})); }
 export async function createDeviceEnrollmentChallenge(){
-  const local=await createDeviceKeyPair();
   const proof=requireRecentStepUp('register trusted device');
+  const current=getSecuritySession();
+  const existing=await deviceRecord().catch(()=>null);
+  // A successful emergency recovery or device revocation retires the OLD
+  // server-side credential permanently. Explicit re-enrollment MUST create
+  // a new device ID and non-extractable private key, not retry the IndexedDB
+  // key the server correctly rejects as already registered.
+  if(current?.trustLevel==='trusted' && current.deviceId &&
+     existing?.deviceId===current.deviceId){
+    throw Object.assign(new Error('This device is already trusted.'),{
+      code:'security-device-already-trusted'
+    });
+  }
+  const local=await createDeviceKeyPair({renew:true});
   const enrollment=await workerRequest('/security/device/enrollment/create',{body:{deviceId:local.deviceId,publicKeyJwk:local.publicKeyJwk,proofId:proof.proofId},authorization:true});
   const workspace=`pages/settings.html?room=security&approveDeviceEnrollment=${encodeURIComponent(enrollment.challengeId)}`;
   const enrollmentUrl=new URL(`/admin/shell.html?workspace=${encodeURIComponent(workspace)}`,window.location.origin).href;
@@ -178,10 +190,19 @@ export const revokeAllOtherSessions=()=>workerRequest('/security/session/revoke-
 export const revokeAllTemporarySessions=()=>workerRequest('/security/session/revoke-temporary',{body:{proofId:requireRecentStepUp('sign out temporary sessions').proofId},authorization:true});
 export const listSecurityActivity=()=>workerRequest('/security/activity',{method:'GET',authorization:true});
 export const getSecurityEmailBranding=()=>workerRequest('/security/email-branding',{method:'GET',authorization:true});
-export const saveSecurityEmailBranding=branding=>workerRequest('/security/email-branding',{body:{branding},authorization:true});
+export const saveSecurityEmailBranding=branding=>workerRequest('/security/email-branding',{body:{branding,proofId:requireRecentStepUp('save security email branding').proofId},authorization:true});
 export const getSecurityAlertStatus=()=>workerRequest('/security/alert-status',{method:'GET',authorization:true});
 export async function generateRecoveryKit(){ const proof=requireRecentStepUp('rotate recovery kit'); return workerRequest('/security/recovery/generate',{body:{proofId:proof.proofId},authorization:true}); }
+export async function activatePreparedRecoveryKit(rotationId,preparedKitId){
+  const proof=requireRecentStepUp('activate the prepared recovery kit');
+  return workerRequest('/security/recovery/rotate/activate',{
+    body:{rotationId:text(rotationId),preparedKitId:text(preparedKitId),proofId:proof.proofId},
+    authorization:true
+  });
+}
 export const beginEmergencyRecovery=(email,password,recoveryKey)=>workerRequest('/security/recovery/start',{body:{email:text(email),password:String(password??''),recoveryKey:text(recoveryKey)}});
+export const prepareRecoveryKit=recoverySessionId=>workerRequest('/security/recovery/prepare',{body:{recoverySessionId}});
 export const completeRecoveryReset=(recoverySessionId,payload={})=>workerRequest('/security/recovery/complete',{body:{recoverySessionId,...payload}});
+export const getRecoveryResetStatus=(recoverySessionId,preparedKitId)=>workerRequest('/security/recovery/status',{body:{recoverySessionId,preparedKitId}});
 export const enterSecurityLockdown=()=>workerRequest('/security/lockdown/enter',{body:{proofId:requireRecentStepUp('enter lockdown').proofId},authorization:true});
 export const exitSecurityLockdown=()=>workerRequest('/security/lockdown/exit',{body:{proofId:requireRecentStepUp('exit lockdown').proofId},authorization:true});

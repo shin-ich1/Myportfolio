@@ -479,6 +479,7 @@ let telemetryManualScaleMax = null;
 let telemetryResolvedScaleMax = 100;
 let telemetryRenderedModules = [];
 let telemetryMediaRequestFrame = 0;
+let telemetryAssetCountTimer = 0;
 let telemetryHistory = [];
 let telemetryRemoteStorageHistory = [];
 let telemetryHistoryKey = "";
@@ -2736,6 +2737,8 @@ function stopTelemetryRealtime() {
   stopTelemetryAnimation();
   if (telemetryMediaRequestFrame) window.clearTimeout(telemetryMediaRequestFrame);
   telemetryMediaRequestFrame = 0;
+  if (telemetryAssetCountTimer) window.clearTimeout(telemetryAssetCountTimer);
+  telemetryAssetCountTimer = 0;
   if (cloudinaryUsageRefreshTimer) window.clearInterval(cloudinaryUsageRefreshTimer);
   cloudinaryUsageRefreshTimer = 0;
 }
@@ -2752,6 +2755,21 @@ function startTelemetryRealtime() {
     if (complete && !telemetryBaselineReady) {
       telemetryModuleBaseline = snapshotTelemetryModules(modules);
       telemetryBaselineReady = true;
+    }
+    // The same authoritative realtime snapshots own automatic asset counts.
+    // Avoid fetching every collection a second time on Settings startup.
+    if (complete) {
+      if (telemetryAssetCountTimer) window.clearTimeout(telemetryAssetCountTimer);
+      telemetryAssetCountTimer = window.setTimeout(() => {
+        telemetryAssetCountTimer = 0;
+        void countAssets([
+          ...CORE_TELEMETRY_MODULES.map(({ collection }) => ({
+            name: collection,
+            records: telemetryRealtimeModules.get(collection)?.records || []
+          })),
+          { name: "portfolioSectionEntries", records: telemetryFeatureEntries }
+        ]);
+      }, 100);
     }
     renderPortfolioDistribution(modules);
     if (!complete) setText("settingsHealthProfileLabel", "Loading remaining sources");
@@ -2812,7 +2830,9 @@ function startTelemetryRealtime() {
 function walkValues(value, visitor) { if (Array.isArray(value)) value.forEach((item) => walkValues(item, visitor)); else if (value && typeof value === "object") Object.values(value).forEach((item) => walkValues(item, visitor)); else visitor(value); }
 async function countAssets(modules = null) {
   const source = modules
-    ? [...modules, await readModule("portfolioSectionEntries")]
+    ? (modules.some((module) => module.name === "portfolioSectionEntries")
+      ? modules
+      : [...modules, await readModule("portfolioSectionEntries")])
     : await Promise.all([...CORE_TELEMETRY_MODULES.map((item) => item.collection), "portfolioSectionEntries"].map(readModule));
   const imageRefs = new Set();
   const pdfRefs = new Set();
@@ -3557,8 +3577,7 @@ async function start() {
     ["initialization state", loadInitialization],
     ["system health", () => refreshHealth({ preferCurrent: true })],
     ["module lifecycle", renderModuleLifecycleSummary],
-    ["storage hub", renderStorageHub],
-    ["asset inventory", countAssets]
+    ["storage hub", renderStorageHub]
   ];
   const results = await Promise.allSettled(startupTasks.map(([, task]) => task()));
   const failures = results.flatMap((result, index) => {

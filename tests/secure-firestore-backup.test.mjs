@@ -4,7 +4,8 @@ import { mkdtemp, readFile, rm, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  PROJECT, enumerateFirestore, createEncryptedBackup, verifyEncryptedBackup
+  PROJECT, enumerateFirestore, createEncryptedBackup, verifyEncryptedBackup,
+  createHiddenInputParser, safeBackupFailureCode
 } from '../scripts/secure-firestore-backup.mjs';
 
 const passphrase = 'local synthetic TEST only: long phrase 1234';
@@ -117,4 +118,52 @@ test('production-only and storage location gates prevent accidental script misus
   await assert.rejects(createEncryptedBackup({
     output: 'backup.lanfbak', request: mock.requests, passphrase
   }), /absolute/);
+});
+
+test('Cloud Shell bracketed paste strips control sequences split across TTY chunks', () => {
+  const prompt = createHiddenInputParser();
+  const chunks = [
+    Buffer.from('\u001b[20'), Buffer.from('0~'),
+    Buffer.from('A-long-unique-passphrase-With-42-Characters'),
+    Buffer.from('\u001b[201'), Buffer.from('~\r')
+  ];
+  const result = chunks.map(chunk => prompt.accept(chunk));
+  assert.ok(result.at(-1).complete);
+  assert.equal(result.at(-1).value, 'A-long-unique-passphrase-With-42-Characters');
+  assert.equal(result.slice(0,-1).every(row => !row.complete), true);
+});
+
+test('raw Ctrl+V without clipboard paste is ignored, not misread as password', () => {
+  const prompt = createHiddenInputParser();
+  assert.deepEqual(prompt.accept(Buffer.from([0x16])), { complete: false });
+  const result = prompt.accept(Buffer.from('\r'));
+  assert.deepEqual(result, { complete: true, value: '' });
+});
+
+test('hidden parser preserves split multibyte UTF-8 and handles delete', () => {
+  const prompt = createHiddenInputParser();
+  const secret = Buffer.from('🪪CorrectBackupPhrase-With-Emoji-123');
+  const result = [
+    prompt.accept(secret.subarray(0, 1)),
+    prompt.accept(secret.subarray(1, 3)),
+    prompt.accept(secret.subarray(3)),
+    prompt.accept(Buffer.from('X\u007f\r'))
+  ];
+  assert.ok(result.at(-1).complete);
+  assert.equal(result.at(-1).value, '🪪CorrectBackupPhrase-With-Emoji-123');
+});
+
+test('backup failures expose fixed nonsecret codes, never arbitrary exception details', () => {
+  assert.equal(safeBackupFailureCode(new Error('Backup passphrases do not match.')),
+    'PASSPHRASE_MISMATCH');
+  assert.equal(safeBackupFailureCode(new Error('Use a backup passphrase of at least 24 characters.')),
+    'PASSPHRASE_TOO_SHORT');
+  assert.equal(safeBackupFailureCode(new Error('Unreviewed root collections detected; stop and audit the allowlist.')),
+    'FIRESTORE_COLLECTION_REVIEW_REQUIRED');
+  assert.equal(safeBackupFailureCode(new Error('Read-only Firestore request denied or failed (HTTP 403).')),
+    'FIRESTORE_READ_DENIED');
+  assert.equal(safeBackupFailureCode(Object.assign(new Error('file not found'),{code:'ENOENT'})),
+    'BACKUP_FILE_NOT_FOUND');
+  assert.equal(safeBackupFailureCode(new Error('Sensitive user-specific private content lorem ipsum')),
+    'BACKUP_CHECK_FAILED');
 });

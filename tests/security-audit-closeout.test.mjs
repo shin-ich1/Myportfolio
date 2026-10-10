@@ -10,7 +10,7 @@ const securitySettings=readFileSync(new URL('../admin/js/settings-security.js',i
 const docs=readFileSync(new URL('../docs/staging-security-readiness.md',import.meta.url),'utf8');
 
 function route(path){
-  const token="if(path==='"+path+"'";
+  const token="if(path==='"+path+"'&&method==='POST')";
   const start=worker.indexOf(token);
   assert.ok(start>=0,'missing canonical route '+path);
   const end=worker.indexOf("\n    if(path===",start+token.length);

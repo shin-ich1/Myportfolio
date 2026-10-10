@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inspectStagingWorkerHealth, STAGING_HEALTH_URL } from "../scripts/check-staging-worker-health.mjs";
+import { inspectStagingWorkerHealth, waitForStagingWorkerHealth, STAGING_HEALTH_URL } from "../scripts/check-staging-worker-health.mjs";
 
 const canonical = {
   ok: true,
@@ -73,4 +73,81 @@ test("health success must not be mistaken for validated TOTP, trusted devices, o
   assert.equal(result.serverCredentialPresenceReported, true);
   assert.equal(result.runtimeSecurityVerified, false);
   assert.equal(Object.hasOwn(result, "secret"), false);
+});
+
+test("bounded staging readiness retries stale non-JSON edge responses before accepting canonical JSON", async () => {
+  const destinations = [];
+  let sleeps = 0;
+  const fetchImpl = async (url) => {
+    destinations.push(url);
+    if (destinations.length <= 2) return new Response("Hello World!", { status: 200, headers: { "Content-Type": "text/plain" } });
+    return jsonResponse({ ...canonical, messageSecurityConfigured: true });
+  };
+  const result = await waitForStagingWorkerHealth({ fetchImpl, sleepImpl: async () => { sleeps++; } });
+  assert.deepEqual(destinations, [STAGING_HEALTH_URL, STAGING_HEALTH_URL, STAGING_HEALTH_URL]);
+  assert.equal(sleeps, 2);
+  assert.equal(result.canonicalWorkerResponding, true);
+  assert.equal(result.serverCredentialPresenceReported, true);
+  assert.equal(result.runtimeSecurityVerified, false);
+});
+
+test("bounded staging readiness fails closed when all responses are stale", async () => {
+  let calls = 0, sleeps = 0;
+  await assert.rejects(
+    waitForStagingWorkerHealth({
+      fetchImpl: async () => {
+        calls++;
+        return new Response("Hello World!", { status: 200, headers: { "Content-Type": "text/plain" } });
+      },
+      sleepImpl: async () => { sleeps++; }
+    }),
+    /canonical staging Worker JSON/
+  );
+  assert.equal(calls, 10);
+  assert.equal(sleeps, 9);
+});
+
+test("staging readiness never retries missing security bindings or credentials into success", async () => {
+  let calls = 0, sleeps = 0;
+  await assert.rejects(
+    waitForStagingWorkerHealth({
+      fetchImpl: async () => {
+        calls++;
+        return jsonResponse({ ...canonical, securityCoordinatorConfigured: false });
+      },
+      sleepImpl: async () => { sleeps++; }
+    }),
+    /atomic Security Coordinator binding/
+  );
+  assert.equal(calls, 1);
+  assert.equal(sleeps, 0);
+});
+
+test("staging readiness rejects unauthorized response immediately", async () => {
+  let calls = 0, sleeps = 0;
+  await assert.rejects(
+    waitForStagingWorkerHealth({
+      fetchImpl: async () => {
+        calls++;
+        return jsonResponse({ error: "unauthorized" }, 403);
+      },
+      sleepImpl: async () => { sleeps++; }
+    }),
+    /HTTP 403/
+  );
+  assert.equal(calls, 1);
+  assert.equal(sleeps, 0);
+});
+
+test("staging readiness retries mismatched Worker identity only until canonical service responds", async () => {
+  let calls = 0;
+  const result = await waitForStagingWorkerHealth({
+    fetchImpl: async () => {
+      calls++;
+      return jsonResponse(calls === 1 ? { ...canonical, service: "old-placeholder" } : canonical);
+    },
+    sleepImpl: async () => {}
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.canonicalWorkerResponding, true);
 });

@@ -80,7 +80,7 @@ jobs:
       - name: Install isolated Firestore Rules test clients
         run: npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing firebase
       - name: Exercise real Firestore Rules with revoked and forged test identities (emulator ONLY)
-        run: npx --yes firebase-tools@14.20.0 emulators:exec --only firestore --project lan-security-rules-emulator-only "node --test tests/firestore-security-emulator.test.mjs"
+        run: npx --yes firebase-tools@14.20.0 emulators:exec --only firestore --project lan-security-rules-emulator-only "node --test tests/firestore-security-emulator.test.mjs tests/firestore-backup-restore-emulator.test.mjs"
       - name: Live staging anonymous security denial (read-only)
         if: github.event_name == 'pull_request'
         run: node --test tests/staging-live-unauthorized.test.mjs

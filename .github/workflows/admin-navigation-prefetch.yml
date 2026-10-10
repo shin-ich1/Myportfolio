@@ -1,0 +1,32 @@
+name: Admin on-demand navigation regression
+
+on:
+  push:
+    branches:
+      - perf/admin-navigation-on-demand-20261010
+    paths:
+      - "admin/js/admin-ui.js"
+      - "tests/admin-navigation-on-demand-prefetch.test.mjs"
+      - ".github/workflows/admin-navigation-prefetch.yml"
+  pull_request:
+    paths:
+      - "admin/js/admin-ui.js"
+      - "tests/admin-navigation-on-demand-prefetch.test.mjs"
+      - ".github/workflows/admin-navigation-prefetch.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  navigation-prefetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check JavaScript syntax
+        run: node --check admin/js/admin-ui.js
+      - name: Run navigation prefetch regression
+        run: node --test tests/admin-navigation-on-demand-prefetch.test.mjs

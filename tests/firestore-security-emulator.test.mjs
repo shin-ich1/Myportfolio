@@ -47,6 +47,16 @@ before(async () => {
       setDoc(doc(db, 'adminSecuritySessions', 'temporary'), {
         uid, active: true, trustLevel: 'temporary', expiresAt: expiryFuture
       }),
+      setDoc(doc(db, 'adminSecuritySessions', 'revocation-transition'), {
+        uid, active: true, trustLevel: 'trusted', expiresAt: expiryFuture
+      }),
+      setDoc(doc(db, 'authorizedAdministrators', 'admin-deactivation-transition'), {
+        active: true
+      }),
+      setDoc(doc(db, 'adminSecuritySessions', 'deactivation-transition'), {
+        uid: 'admin-deactivation-transition', active: true,
+        trustLevel: 'temporary', expiresAt: expiryFuture
+      }),
       setDoc(doc(db, 'adminSecuritySessions', 'revoked'), {
         uid, active: false, trustLevel: 'trusted', expiresAt: expiryFuture
       }),
@@ -112,6 +122,35 @@ test('revoked and expired sessions lose private read and write access immediatel
     await assertFails(setDoc(doc(db, 'settings', 'blocked-' + session), { attempted: true }));
     await assertFails(updateDoc(doc(db, 'projects', 'emulator-draft'), { title: 'Blocked' }));
   }
+});
+
+test('the SAME formerly-authorized session token loses access as soon as the server revokes its session', async () => {
+  const db = granted('revocation-transition');
+  await assertSucceeds(getDoc(doc(db, 'settings', 'emulator-secret')));
+  await env.withSecurityRulesDisabled(async admin => {
+    await updateDoc(doc(admin.firestore(), 'adminSecuritySessions', 'revocation-transition'), {
+      active: false, revokedAt: Timestamp.now()
+    });
+  });
+  // No reauthentication, browser reload, or new claim. The original context
+  // must no longer have read or write access after the server-side change.
+  await assertFails(getDoc(doc(db, 'settings', 'emulator-secret')));
+  await assertFails(setDoc(doc(db, 'settings', 'revoked-replay-write'), { blocked: true }));
+  // Revocation must not affect a separate approved session.
+  await assertSucceeds(getDoc(doc(granted('active'), 'settings', 'emulator-secret')));
+});
+
+test('deactivating the administrator allowlist denies the SAME formerly-valid token immediately', async () => {
+  const subject = 'admin-deactivation-transition';
+  const db = dbFor(subject, { lanSecurityVerified: true, lanSessionId: 'deactivation-transition' });
+  await assertSucceeds(getDoc(doc(db, 'settings', 'emulator-secret')));
+  await env.withSecurityRulesDisabled(async admin => {
+    await updateDoc(doc(admin.firestore(), 'authorizedAdministrators', subject), {
+      active: false
+    });
+  });
+  await assertFails(getDoc(doc(db, 'settings', 'emulator-secret')));
+  await assertFails(updateDoc(doc(db, 'projects', 'emulator-draft'), { title: 'Blocked' }));
 });
 
 test('wrong-owner sessions and inactive administrator records cannot gain access', async () => {

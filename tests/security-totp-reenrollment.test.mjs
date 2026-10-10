@@ -143,3 +143,37 @@ test("Firebase infrastructure failure must not masquerade as an incorrect authen
     assert.equal(f.stats.sessions, 0);
   } finally { f.restore(); }
 });
+
+test("post-recovery Firebase ID-token invalidation reports enrollment-session expiry without granting access", async () => {
+  const f = await fixture();
+  try {
+    f.setFirebaseFailure("INVALID_ID_TOKEN");
+    const prepared = await f.start();
+    assert.equal(prepared.status, 200, JSON.stringify(prepared.body));
+    const failure = await f.complete(prepared.body.challengeId);
+    assert.equal(failure.status, 401);
+    assert.equal(failure.body.code, "security-totp-enrollment-session-expired");
+    assert.equal(f.stats.sessions, 0);
+    assert.equal((await f.complete(prepared.body.challengeId)).body.code, "security-challenge-invalid");
+    f.setFirebaseFailure("");
+    const renewed = await f.start();
+    assert.equal(renewed.status, 200);
+    assert.notEqual(renewed.body.challengeId, prepared.body.challengeId);
+    assert.equal((await f.complete(renewed.body.challengeId)).status, 200);
+  } finally { f.restore(); }
+});
+
+test("canonical Admin login controller renews the consumed QR, clears its old code, and never silently reuses it", async () => {
+  const { readFileSync } = await import("node:fs");
+  const login = readFileSync(new URL("../admin/js/admin.js", import.meta.url), "utf8");
+  const workerSource = readFileSync(new URL("../telemetry-worker/src/index.js", import.meta.url), "utf8");
+  assert.equal((login.match(/async function renewTotpEnrollmentChallenge\(/g) || []).length, 1,
+    "one canonical login-controller retry owner");
+  assert.match(login, /pendingEnrollmentChallenge\s*=\s*'';\s*const fresh=await beginTotpEnrollment\(pendingBootstrapPassword\)/);
+  assert.match(login, /pendingEnrollmentChallenge=fresh\.challengeId/);
+  assert.match(login, /renderQr\(enrollmentQr,fresh\.totpUri\)/);
+  assert.match(login, /enrollmentCode\.value=''/);
+  assert.match(login, /if\(!await renewTotpEnrollmentChallenge\(error\)\)/);
+  assert.doesNotMatch(workerSource, /uid:first\.uid,idToken:first\.idToken,sessionInfo,secret/,
+    "ephemeral Firebase TOTP secret must not be copied into coordinator state");
+});

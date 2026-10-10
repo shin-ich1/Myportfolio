@@ -426,3 +426,37 @@ test("signed-in normal Recovery Kit rotation does not invalidate the old key bef
     assert.equal(replay.body.masterKey,undefined);
   }finally{f.restore();}
 });
+
+test("post-recovery enrollment rejects the retired public key but accepts a new unique key without resurrecting the old device",async()=>{
+  const f=await fixture({recovered:true});
+  try{
+    f.addLegacyDevice("retired-before-recovery",key(850),{active:false});
+    const reused=await createChallenge(f,"s1","retired-before-recovery",850);
+    const rejected=await complete(f,reused);
+    assert.equal(rejected.status,409);
+    assert.equal(rejected.body.code,"security-device-credential-duplicate");
+    assert.equal(f.devices().length,1);
+    assert.equal(f.devices()[0][1].active,false,"old server-side device remains revoked");
+
+    const fresh=await createChallenge(f,"s1","fresh-after-recovery",851);
+    const enrolled=await complete(f,fresh);
+    assert.equal(enrolled.status,200,JSON.stringify(enrolled.body));
+    assert.equal(f.devices().length,2);
+    assert.equal(f.devices().find(([,doc])=>doc.deviceId==="retired-before-recovery")[1].active,false);
+    assert.equal(f.devices().find(([,doc])=>doc.deviceId==="fresh-after-recovery")[1].active,true);
+    assert.equal(f.credentials().length,1,"new credential has a unique server-side claim");
+    assert.equal(f.bootstrapClaims().length,1,"fresh recovery epoch can only bootstrap once");
+    assert.equal((await complete(f,fresh)).status,400,"first enrollment challenge cannot be reused");
+  }finally{f.restore();}
+});
+
+test("explicit trusted-device enrollment rotates local key material; completing the challenge retains that exact new key",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const source=readFileSync(new URL("../admin/services/adminSecurityService.js",import.meta.url),"utf8");
+  assert.match(source,/export async function createDeviceKeyPair\(\{renew=false\}=\{\}\)/);
+  assert.match(source,/if\(!renew&&existing\?\.privateKey&&existing\?\.deviceId\)/);
+  assert.match(source,/export async function createDeviceEnrollmentChallenge\(\)[\s\S]*?createDeviceKeyPair\(\{renew:true\}\)/);
+  assert.match(source,/export async function completeDeviceEnrollment\([^)]*\)[\s\S]*?createDeviceKeyPair\(\);/);
+  assert.match(source,/requireRecentStepUp\('register trusted device'\)[\s\S]*?createDeviceKeyPair\(\{renew:true\}\)/,
+    "do not rotate a stored credential without a recent step-up proof");
+});

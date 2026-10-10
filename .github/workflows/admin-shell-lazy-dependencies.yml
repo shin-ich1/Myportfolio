@@ -1,0 +1,24 @@
+name: Admin startup lazy-dependency regression
+on:
+  push:
+    branches:
+      - perf/admin-shell-lazy-deps-20261010
+    paths:
+      - "admin/js/admin-ui.js"
+      - "tests/admin-shell-lazy-dependencies.test.mjs"
+      - ".github/workflows/admin-shell-lazy-dependencies.yml"
+permissions:
+  contents: read
+jobs:
+  startup-lazy-dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: JavaScript syntax
+        run: node --check admin/js/admin-ui.js
+      - name: Admin UI lazy-dependency regressions
+        run: node --test tests/admin-shell-lazy-dependencies.test.mjs

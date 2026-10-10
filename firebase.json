@@ -13,7 +13,23 @@
       "**/node_modules/**",
       "**/*.md",
       "**/*.txt",
-      "**/*.zip"
+      "**/*.zip",
+      ".git/**",
+      "**/.git/**",
+      ".firebase/**",
+      "**/.firebase/**",
+      ".github/**",
+      "**/.github/**",
+      ".vscode/**",
+      "**/.vscode/**",
+      "tests/**",
+      "**/tests/**",
+      "**/*.pem",
+      "**/*.key",
+      "**/*.p12",
+      "**/*.pfx",
+      "**/*credentials*.json",
+      "**/service-account*.json"
     ],
     "rewrites": [
       {

@@ -88,7 +88,52 @@ if(loginForm&&emailInput&&passwordInput&&loginButton) loginForm.addEventListener
 if(totpVerifyButton) totpVerifyButton.addEventListener('click',async()=>{const code=String(totpCode?.value||'').trim();setTotpFieldError('');if(!/^\d{6}$/.test(code))return setTotpFieldError('Enter the 6-digit authenticator code.');totpVerifyButton.disabled=true;setVerificationLoading(true,'Verifying code…','Checking your authenticator code and active security challenge.','code',code);try{await completeTotpAdministratorLogin(code,pendingTotpChallenge);showMessage('Login successful. Opening your dashboard...','success');openAdminShell();}catch(error){const errorCode=String(error?.code||'');if(['security-totp-invalid','security-challenge-invalid','security-challenge-expired'].includes(errorCode)){try{await refreshTotpLoginChallenge(error);}catch(refreshError){showMessage(getFriendlyError(refreshError));}}else showMessage(getFriendlyError(error));}finally{setVerificationLoading(false);totpVerifyButton.disabled=false;}});
 if(totpCode){ totpCode.addEventListener('input',()=>setTotpFieldError('')); totpCode.addEventListener('keydown',event=>{if(event.key!=='Enter')return;event.preventDefault();event.stopPropagation();totpVerifyButton?.click();}); }
 if(enrollmentCode) enrollmentCode.addEventListener('keydown',event=>{if(event.key!=='Enter')return;event.preventDefault();event.stopPropagation();enrollmentButton?.click();});
-if(enrollmentButton) enrollmentButton.addEventListener('click',async()=>{const code=String(enrollmentCode?.value||'').trim();if(!/^\d{6}$/.test(code))return showMessage('Enter the 6-digit authenticator code.');enrollmentButton.disabled=true;setVerificationLoading(true,'Verifying code…','Confirming your authenticator enrollment code.','code',code);try{await completeTotpEnrollment(pendingEnrollmentChallenge,code,'LΛN Admin');pendingBootstrapPassword='';showMessage('Authenticator enrolled. Opening your dashboard...','success');openAdminShell();}catch(error){showMessage(getFriendlyError(error));}finally{setVerificationLoading(false);enrollmentButton.disabled=false;}});
+// A rejected attempt consumes the one-time Firebase enrollment challenge.
+// Rebuild the QR from a NEW backend challenge, never reuse the old secret or
+// pretend that entering another code can redeem an already-consumed challenge.
+async function renewTotpEnrollmentChallenge(error){
+  const code=String(error?.code||'');
+  if(!['security-totp-enrollment-code-invalid','security-totp-enrollment-session-expired',
+        'security-challenge-invalid','security-challenge-expired'].includes(code))return false;
+  if(!pendingBootstrapPassword)throw Error('Please sign in again to prepare a fresh authenticator.');
+  pendingEnrollmentChallenge='';
+  const fresh=await beginTotpEnrollment(pendingBootstrapPassword);
+  if(!fresh?.challengeId||!fresh?.totpUri)throw Error('A fresh authenticator challenge could not be created.');
+  pendingEnrollmentChallenge=fresh.challengeId;
+  manualSecret.textContent=fresh.manualSecret||'';
+  renderQr(enrollmentQr,fresh.totpUri);
+  if(enrollmentCode)enrollmentCode.value='';
+  enrollmentStage.hidden=false;
+  enrollmentCode?.focus();
+  showMessage(code==='security-totp-enrollment-code-invalid'
+    ? 'That code was not accepted. A NEW QR is ready: scan it in your authenticator and enter its current code.'
+    : 'The previous QR expired or was already used. Scan this NEW QR and enter its current code.');
+  return true;
+}
+if(enrollmentButton) enrollmentButton.addEventListener('click',async()=>{
+  const code=String(enrollmentCode?.value||'').trim();
+  if(!/^\d{6}$/.test(code))return showMessage('Enter the 6-digit authenticator code.');
+  enrollmentButton.disabled=true;
+  setVerificationLoading(true,'Verifying code…','Confirming your authenticator enrollment code.','code',code);
+  try{
+    await completeTotpEnrollment(pendingEnrollmentChallenge,code,'LΛN Admin');
+    pendingBootstrapPassword='';
+    pendingEnrollmentChallenge='';
+    showMessage('Authenticator enrolled. Opening your dashboard...','success');
+    openAdminShell();
+  }catch(error){
+    try{
+      if(!await renewTotpEnrollmentChallenge(error))showMessage(getFriendlyError(error));
+    }catch(renewalError){
+      pendingEnrollmentChallenge='';
+      enrollmentStage.hidden=true;
+      showMessage('Could not prepare a fresh authenticator. Sign in again. '+getFriendlyError(renewalError));
+    }
+  }finally{
+    setVerificationLoading(false);
+    enrollmentButton.disabled=false;
+  }
+});
 if(sendVerificationButton) sendVerificationButton.addEventListener('click',async()=>{sendVerificationButton.disabled=true;try{await sendAdministratorEmailVerification(pendingBootstrapPassword);showMessage('Firebase verification email requested. After verifying it, submit your email and password again.','success');}catch(error){showMessage(getFriendlyError(error));}finally{sendVerificationButton.disabled=false;}});
 if(showRecoveryButton) showRecoveryButton.addEventListener('click',()=>{hideStages();clearMessage();setRecoveryError('');recoveryStage.hidden=false;if(recoveryEmail&&!recoveryEmail.value)recoveryEmail.value=emailInput?.value||'';recoveryEmail?.focus();});
 if(recoverySubmitButton) recoverySubmitButton.addEventListener('click',async()=>{

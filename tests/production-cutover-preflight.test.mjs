@@ -84,3 +84,39 @@ test('Production candidate has no production-deploy automation or implicit MFA m
   assert.doesNotMatch(workflow, /identitytoolkit.*updateMask=mfa\.state/);
   assert.doesNotMatch(prodConfig, /"migrations":/);
 });
+
+test('emergency recovery start is destructive and must NEVER be used as a key checker', () => {
+  const start = gateway.indexOf("if(path==='/security/recovery/start'&&method==='POST')");
+  const end = gateway.indexOf("if(path==='/security/recovery/prepare'&&method==='POST')", start);
+  assert.ok(start > 0 && end > start, 'Canonical recovery start handler not found');
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /await enforceSecurityRateLimit\(request,env,'recovery'\)/);
+  assert.match(handler, /await verifyFirebasePassword\(/);
+  assert.match(handler, /const digest=await recoveryHmac\(body\.recoveryKey,env\)/);
+  assert.match(handler, /await claimMasterRecoveryKey\(/,
+    'Accepting a recovery key mutates the authoritative Recovery record');
+  assert.match(handler, /revokeUserSecurityState\(first\.uid,env\)/);
+  assert.match(handler, /clearFirebaseMfaForRecovery\(env,first\.uid\)/);
+  assert.ok(handler.indexOf('await claimMasterRecoveryKey(') <
+    handler.indexOf('revokeUserSecurityState(first.uid,env)'),
+    'Claim must precede destructive session/MFA reset');
+  assert.doesNotMatch(handler, /console\.(?:log|warn|error)\s*\([^)]*(?:recoveryKey|masterKey)/,
+    'Never log a plaintext recovery key');
+});
+
+test('Recovery Key cannot be validated from metadata and pepper stays server-only', () => {
+  const runbook = load('docs/production-backup-rollback-cutover.md');
+  assert.match(runbook, /two stored Recovery Key candidates/i);
+  assert.match(runbook, /not proof of key validity/i);
+  assert.match(runbook, /do not call.*\/security\/recovery\/start/i);
+  assert.match(gateway, /String\(env\.SECURITY_RECOVERY_PEPPER\|\|''\)/);
+  assert.match(gateway, /name:'HMAC',hash:'SHA-256'/);
+  for (const path of [
+    'admin/services/adminSecurityService.js',
+    'admin/js/settings-security.js',
+    'admin/index.html'
+  ]) {
+    assert.doesNotMatch(load(path), /SECURITY_RECOVERY_PEPPER/,
+      'Recovery pepper must never appear in frontend: ' + path);
+  }
+});

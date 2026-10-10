@@ -7,6 +7,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scrypt as deriveKey } from 'node:crypto';
 import { createReadStream, promises as fs, realpathSync } from 'node:fs';
 import { promisify } from 'node:util';
+import { StringDecoder } from 'node:string_decoder';
 import { execFileSync } from 'node:child_process';
 import { dirname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -149,6 +150,7 @@ export async function createEncryptedBackup({ output, request, passphrase, proje
     const digest = createHash('sha256');
     const emit = async record => {
       const line = JSON.stringify(record) + '\n';
+      ensure(Buffer.byteLength(line) < 8 * 1024 * 1024, 'Document exceeds safe encrypted record size.');
       digest.update(line);
       await writeAll(handle, cipher.update(line));
     };
@@ -191,8 +193,9 @@ export async function verifyEncryptedBackup({ input, passphrase }) {
     decipher.setAuthTag(tag);
     const digest = createHash('sha256');
     let tail = '', actual = 0, terminal = null;
+    const decoder = new StringDecoder('utf8');
     function ingest(bytes) {
-      tail += bytes.toString('utf8');
+      tail += decoder.write(bytes);
       let index;
       while ((index = tail.indexOf('\n')) !== -1) {
         const line = tail.slice(0, index); tail = tail.slice(index + 1);
@@ -211,6 +214,7 @@ export async function verifyEncryptedBackup({ input, passphrase }) {
     const stream = createReadStream(input, { start: parsed.dataStart, end: size - 17 });
     for await (const part of stream) ingest(decipher.update(part));
     ingest(decipher.final()); // rejects incorrect key or changed ciphertext/tag
+    tail += decoder.end();
     ensure(tail === '' && terminal !== null && terminal.project === PROJECT,
       'Archive missing a complete production manifest.');
     ensure(terminal.records === actual && terminal.sha256 === digest.digest('hex'),
@@ -280,7 +284,6 @@ export async function main(args = process.argv.slice(2)) {
   ensure(flags.size === 2 && flags.has('--output') &&
     flags.get('--confirm-production-read') === 'true',
     'Requires --output and explicit --confirm-production-read true (after owner authorization).');
-  ensure(process.env.CLOUD_SHELL !== 'false', 'Unexpected execution context.');
   const passphrase = await readHiddenPrompt('Create UNIQUE backup passphrase (not displayed): ');
   const confirm = await readHiddenPrompt('Confirm backup passphrase: ');
   ensure(passphrase === confirm, 'Backup passphrases do not match.');

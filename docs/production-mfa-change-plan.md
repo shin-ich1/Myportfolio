@@ -9,7 +9,7 @@
 - `mfa.state = DISABLED`
 - a TOTP `mfa.providerConfigs[]` entry has `state = ENABLED`
 - Authentication Email/Password is enabled; the UI shows SMS MFA disabled.
-- A production `authorizedAdministrators/{uid}` document has `active = true`, but independently matching that document's UID with the current sign-in identity is **not yet verified**.
+- A production `authorizedAdministrators/{uid}` document has `active = true`, and the owner checked the Authentication UID matches the allowlist document ID (**MATCH**, read-only screenshot review). A live fresh TOTP Admin login is still unverified.
 - The prior read-only API call required `X-Goog-User-Project` to avoid a quota-project 403; adding that header yielded the read-only data above.
 - A green candidate CI / staging runtime test is **not** proof of a working production MFA login.
 
@@ -30,7 +30,7 @@ References:
 
 1. Privately verify the Firebase Auth administrator UID corresponds to the existing **active** `authorizedAdministrators` document, the administrator email is verified, and working account access/recovery exists. **Do not publish UIDs, tokens, credentials, or TOTP secrets.**
 2. Verify production Worker, service-account permissions, Identity Toolkit API, Recovery Key continuity, Firestore session enforcement, **Durable Object SECURITY_COORDINATOR readiness**, and rollback plan. Never assume the current production Worker can handle the new MFA requirement.
-3. Confirm a tested rollback path / recovery access; no destructive reset or replacement of production security records.
+3. Confirm a privately stored, restore-tested production backup and a forward-corrective Worker/DO recovery path (see `docs/production-backup-rollback-cutover.md`); **Cloudflare Worker rollback may be blocked by first DO-class lifecycle changes**. No destructive reset or replacement of production security records.
 4. Take a fresh **read-only** project MFA snapshot immediately before changing anything and inspect the complete MFA part (state, individual provider states, `enabledProviders`, TOTP tolerance), preserving the original state off-chat.
 5. Obtain a **separate explicit production MFA change approval** with timing. Prefer a controlled coordinated release window; do not enable early while production login dependencies are unverified.
 
@@ -76,12 +76,12 @@ curl --fail-with-body -sS -X PATCH \
 
 ## Rollback — hold, do not run unless authorized
 
-If changing `mfa.state` causes a confirmed production authentication regression and rollback is approved, PATCH **only** `mfa.state` back to the captured prechange `DISABLED` using the same `updateMask=mfa.state` and Google quota-project header; then recheck with GET. Rollback **can itself affect anyone who enrolled MFA after enabling**, so coordinate a login-safe window. Do not overwrite TOTP provider configs or downgrade Firestore session protections. If the project's initial state differs, stop rather than assuming DISABLED.
+Do not automatically disable MFA on failure, since it can change authentication guarantees and invalidate safe login assumptions. If a confirmed authentication regression requires an exceptional change, perform a **separate security impact review and get explicit production approval**. An approved config rollback can modify **only** the specifically authorized field after validating a captured baseline; disabling MFA is not a substitute for fixing the Worker/Rules and is never permission to weaken server session protections. Firestore/KV/DO data does not roll back with this setting. See `docs/production-backup-rollback-cutover.md`.
 
 ## Release gates
 
 - [x] Candidate source CI: 159 Node / 10 Firestore emulator / 5 anonymous staging / 7 Worker runtime passed (PR #10)
-- [x] Confirmed production administrator allowlist record active (identity match still pending)
+- [x] Confirmed production administrator allowlist record active and the owner reported UID MATCH (live login still pending)
 - [x] Read-only production MFA state found: disabled project / enabled TOTP provider
 - [ ] Identity and Worker/DO migration readiness confirmed
 - [ ] Encrypted production deployment and rollback plan verified

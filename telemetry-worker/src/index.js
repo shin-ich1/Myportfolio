@@ -2209,6 +2209,9 @@ async function enforcePublicServiceRateLimit(request, env, scope) {
 
 const SECURITY_RATE_POLICIES = Object.freeze({
   password:{limit:7,windowSeconds:15*60,cooldownSeconds:15*60}, totp:{limit:8,windowSeconds:10*60,cooldownSeconds:15*60},
+  'step-up-password':{limit:10,windowSeconds:15*60,cooldownSeconds:15*60},
+  'step-up-totp':{limit:7,windowSeconds:10*60,cooldownSeconds:15*60},
+  'email-verify-send':{limit:3,windowSeconds:60*60,cooldownSeconds:30*60},
   recovery:{limit:5,windowSeconds:30*60,cooldownSeconds:30*60}, enrollment:{limit:10,windowSeconds:15*60,cooldownSeconds:10*60},
   'device-proof':{limit:10,windowSeconds:15*60,cooldownSeconds:15*60}
 });
@@ -2820,7 +2823,7 @@ const SECURITY_REQUEST_SCHEMAS = Object.freeze({
   "/security/session/revoke": { sessionId: REQUEST_SCHEMA_ANY },
   "/security/session/revoke-others": { proofId: REQUEST_SCHEMA_ANY },
   "/security/session/revoke-temporary": { proofId: REQUEST_SCHEMA_ANY },
-  "/security/email-branding": { branding: SECURITY_BRANDING_SCHEMA },
+  "/security/email-branding": { branding: SECURITY_BRANDING_SCHEMA, proofId: REQUEST_SCHEMA_ANY },
   "/security/lockdown/enter": { proofId: REQUEST_SCHEMA_ANY },
   "/security/lockdown/exit": { proofId: REQUEST_SCHEMA_ANY }
 });
@@ -2907,7 +2910,7 @@ async function handleSecurityRoute(request,env,url,context){
       await writeSecurityEvent(env,{uid:c.uid,type:'totp-enrolled',success:true,ip:securityIp(request)});
       return json(await createApprovedSessionResponse(request,env,{uid:verified.uid,trustLevel:'temporary'},context),200,origin);
     }
-    if(path==='/security/email-verification/send'&&method==='POST'){ const first=await verifyFirebasePassword(body.email||'',body.password,env); if(!first.idToken) throw serviceError('Email verification requires a password-only bootstrap state.',{status:400,code:'security-email-verification-state'}); const {response}=await identityToolkit('accounts:sendOobCode',{requestType:'VERIFY_EMAIL',idToken:first.idToken},env); if(!response.ok) throw serviceError('Verification email could not be requested.',{status:502,code:'security-email-verification-send'}); return json({ok:true},200,origin); }
+    if(path==='/security/email-verification/send'&&method==='POST'){ await enforceSecurityRateLimit(request,env,'email-verify-send'); const first=await verifyFirebasePassword(body.email||'',body.password,env); if(!first.idToken) throw serviceError('Email verification requires a password-only bootstrap state.',{status:400,code:'security-email-verification-state'}); const {response}=await identityToolkit('accounts:sendOobCode',{requestType:'VERIFY_EMAIL',idToken:first.idToken},env); if(!response.ok) throw serviceError('Verification email could not be requested.',{status:502,code:'security-email-verification-send'}); return json({ok:true},200,origin); }
     if(path==='/security/device/login-complete'&&method==='POST'){ await enforceSecurityRateLimit(request,env,'device-proof'); const c=await consumeSecurityChallenge(env,'device-login',body.challengeId); if(c.deviceId!==String(body.deviceId||'')) throw serviceError('Device challenge does not match.',{status:403,code:'security-device-proof-invalid'}); const device=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,c.deviceId); if(!device||device.uid!==c.uid||device.active!==true||!await verifyDeviceSignature(device.publicKeyJwk,c.nonce,body.signature)){ await writeSecurityEvent(env,{uid:c.uid,type:'device-proof-failure',success:false,deviceId:c.deviceId,ip:securityIp(request)}); throw serviceError('Trusted-device proof is invalid or revoked.',{status:403,code:'security-device-proof-invalid'}); } await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,c.deviceId,{lastUsedAt:new Date().toISOString()}); await clearSecurityRateLimit(request,env,'device-proof'); return json(await createApprovedSessionResponse(request,env,{uid:c.uid,trustLevel:'trusted',deviceId:c.deviceId},context),200,origin); }
 
     if(path==='/security/recovery/start'&&method==='POST'){
@@ -3074,8 +3077,46 @@ async function handleSecurityRoute(request,env,url,context){
     const admin=await requireSecurityApprovedAdministrator(request,env,{allowLockdown});
     if(path==='/security/session/validate'&&method==='GET'){ return json({ok:true,session:{sessionId:admin.session.sessionId,trustLevel:admin.session.trustLevel||'temporary',deviceId:admin.session.deviceId||'',expiresAt:admin.session.expiresAt||''}},200,origin); }
     if(path==='/security/session/end'&&method==='POST'){ await securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,admin.session.sessionId,{active:false,revokedAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:admin.uid,type:'session-revoked',sessionId:admin.session.sessionId,success:true}); return json({ok:true},200,origin); }
-    if(path==='/security/step-up/start'&&method==='POST'){ const first=await verifyFirebasePassword(admin.email,body.password,env); if(!first.mfaPendingCredential) throw serviceError('Authenticator verification is required for sensitive actions.',{status:400,code:'security-step-up-mfa-required'}); const challengeId=await putSecurityChallenge(env,'step-up',{uid:admin.uid,sessionId:admin.session.sessionId,mfaPendingCredential:first.mfaPendingCredential,mfaInfo:first.mfaInfo}); return json({challengeId},200,origin); }
-    if(path==='/security/step-up/complete'&&method==='POST'){ const c=await consumeSecurityChallenge(env,'step-up',body.challengeId); if(c.uid!==admin.uid||c.sessionId!==admin.session.sessionId) throw serviceError('Step-up challenge does not belong to this session.',{status:403,code:'security-step-up-invalid'}); const enrollmentId=String(c.mfaInfo?.find?.(x=>x?.totpInfo)?.mfaEnrollmentId||c.mfaInfo?.[0]?.mfaEnrollmentId||''); const {response}=await identityToolkit('accounts/mfaSignIn:finalize',{mfaPendingCredential:c.mfaPendingCredential,mfaEnrollmentId:enrollmentId,totpVerificationInfo:{verificationCode:String(body.code||'')}},env,'v2'); if(!response.ok) throw serviceError('Authenticator code is invalid or expired.',{status:401,code:'security-step-up-invalid'}); const proofId=securityRandomId(18),expiresAt=new Date(Date.now()+SECURITY_LIFETIMES.stepUp*1000).toISOString(); await securityWriteDoc(env,SECURITY_COLLECTIONS.stepUps,proofId,{proofId,uid:admin.uid,sessionId:admin.session.sessionId,active:true,createdAt:new Date(),expiresAt:new Date(Date.parse(expiresAt))}); return json({proofId,expiresAt},200,origin); }
+    if(path==='/security/step-up/start'&&method==='POST'){
+      await enforceSecurityRateLimit(request,env,'step-up-password');
+      let first;
+      try{ first=await verifyFirebasePassword(admin.email,body.password,env); }
+      catch(error){
+        await writeSecurityEvent(env,{uid:admin.uid,type:'step-up-failure',
+          success:false,ip:securityIp(request),summary:'Password step-up rejected.'}).catch(()=>null);
+        throw error;
+      }
+      if(!first.mfaPendingCredential)throw serviceError('Authenticator verification is required for sensitive actions.',{status:400,code:'security-step-up-mfa-required'});
+      const challengeId=await putSecurityChallenge(env,'step-up',{
+        uid:admin.uid,sessionId:admin.session.sessionId,
+        mfaPendingCredential:first.mfaPendingCredential,mfaInfo:first.mfaInfo
+      });
+      return json({challengeId},200,origin);
+    }
+    if(path==='/security/step-up/complete'&&method==='POST'){
+      await enforceSecurityRateLimit(request,env,'step-up-totp');
+      const c=await consumeSecurityChallenge(env,'step-up',body.challengeId);
+      if(c.uid!==admin.uid||c.sessionId!==admin.session.sessionId)
+        throw serviceError('Step-up challenge does not belong to this session.',{status:403,code:'security-step-up-invalid'});
+      const enrollmentId=String(c.mfaInfo?.find?.(x=>x?.totpInfo)?.mfaEnrollmentId||c.mfaInfo?.[0]?.mfaEnrollmentId||'');
+      const {response}=await identityToolkit('accounts/mfaSignIn:finalize',{
+        mfaPendingCredential:c.mfaPendingCredential,mfaEnrollmentId:enrollmentId,
+        totpVerificationInfo:{verificationCode:String(body.code||'')}
+      },env,'v2');
+      if(!response.ok){
+        await writeSecurityEvent(env,{uid:admin.uid,type:'step-up-failure',
+          success:false,ip:securityIp(request),summary:'Authenticator step-up rejected.'}).catch(()=>null);
+        throw serviceError('Authenticator code is invalid or expired.',{status:401,code:'security-step-up-invalid'});
+      }
+      const proofId=securityRandomId(18),
+        expiresAt=new Date(Date.now()+SECURITY_LIFETIMES.stepUp*1000).toISOString();
+      await securityWriteDoc(env,SECURITY_COLLECTIONS.stepUps,proofId,{
+        proofId,uid:admin.uid,sessionId:admin.session.sessionId,active:true,
+        createdAt:new Date(),expiresAt:new Date(Date.parse(expiresAt))
+      });
+      await clearSecurityRateLimit(request,env,'step-up-totp');
+      return json({proofId,expiresAt},200,origin);
+    }
     if(path==='/security/device/enrollment/create'&&method==='POST'){ await enforceSecurityRateLimit(request,env,'enrollment'); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const requestingDeviceId=String(body.deviceId||''); if(!requestingDeviceId||!body.publicKeyJwk) throw serviceError('Device public key is required.',{status:400,code:'security-device-key-required'}); const recovery=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid); const challengeId=await putSecurityChallenge(env,'device-enroll',{uid:admin.uid,requestingDeviceId,publicKeyJwk:body.publicKeyJwk,deviceBootstrapEpoch:String(recovery?.deviceBootstrapEpoch||''),approved:false}); return json({challengeId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.challenge*1000).toISOString()},200,origin); }
     if(path==='/security/device/enrollment/status'&&method==='POST'){ const c=await readSecurityEnrollmentChallenge(env,body.challengeId,admin.uid); return json({state:c.approved?'approved':'pending',expiresAt:new Date(Number(c.expiresAt)).toISOString()},200,origin); }
     if(path==='/security/device/enrollment/approve'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); await approveSecurityEnrollmentChallenge(env,body.challengeId,admin.uid,admin.session.deviceId||''); return json({ok:true,state:'approved'},200,origin); }
@@ -3229,7 +3270,26 @@ async function handleSecurityRoute(request,env,url,context){
     }
     if(path==='/security/activity'&&method==='GET'){ const events=await securityQuery(env,SECURITY_COLLECTIONS.events,[['uid','EQUAL',admin.uid]],200); events.sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)); return json({events:events.slice(0,100)},200,origin); }
     if(path==='/security/email-branding'&&method==='GET'){ const cfg=await securityGetDoc(env,'adminSecurityPreferences',admin.uid); return json({branding:cfg?.branding||{},provider:securityEmailProviderStatus(env)},200,origin); }
-    if(path==='/security/email-branding'&&method==='POST'){ const branding={senderName:String(body.branding?.senderName||'LΛN Portfolio CMS').slice(0,80),logoUrl:String(body.branding?.logoUrl||'').slice(0,500),heading:String(body.branding?.heading||'Security alert').slice(0,100),footer:String(body.branding?.footer||'').slice(0,240)}; await securityWriteDoc(env,'adminSecurityPreferences',admin.uid,{uid:admin.uid,branding,updatedAt:new Date().toISOString()}); return json({ok:true,branding},200,origin); }
+    if(path==='/security/email-branding'&&method==='POST'){
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      const senderName=String(body.branding?.senderName||'LΛN Portfolio CMS').trim();
+      if(/[\r\n<>]/.test(senderName))throw serviceError('Sender name contains unsupported characters.',{
+        status:400,code:'security-email-branding-name-invalid',source:'worker'
+      });
+      const branding={
+        senderName:senderName.slice(0,80),
+        logoUrl:validateSecurityBrandingLogoUrl(body.branding?.logoUrl),
+        heading:String(body.branding?.heading||'Security alert').slice(0,100),
+        footer:String(body.branding?.footer||'').slice(0,240)
+      };
+      await securityWriteDoc(env,'adminSecurityPreferences',admin.uid,{
+        uid:admin.uid,branding,updatedAt:new Date().toISOString()
+      });
+      await writeSecurityEvent(env,{uid:admin.uid,type:'security-email-branding-updated',
+        success:true,sessionId:admin.session.sessionId,
+        summary:'Security alert presentation preferences updated.'});
+      return json({ok:true,branding},200,origin);
+    }
     if(path==='/security/alert-status'&&method==='GET') return json({email:securityEmailProviderStatus(env),webPush:'configured'},200,origin);
     if(path==='/security/lockdown/enter'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); await securityWriteDoc(env,'adminSecurityState',admin.uid,{uid:admin.uid,lockdown:true,updatedAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:admin.uid,type:'lockdown-entered',success:true}); return json({ok:true},200,origin); }
     if(path==='/security/lockdown/exit'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); await securityWriteDoc(env,'adminSecurityState',admin.uid,{uid:admin.uid,lockdown:false,updatedAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:admin.uid,type:'lockdown-exited',success:true}); return json({ok:true},200,origin); }
@@ -3667,6 +3727,25 @@ async function removeAdminPushSubscriptionsForDevice(env, deviceId) {
   return matching.length;
 }
 
+function validateSecurityBrandingLogoUrl(raw){
+  const supplied=String(raw||'').trim();
+  if(!supplied)return '';
+  let url;
+  try{url=new URL(supplied);}catch{}
+  const host=String(url?.hostname||'').toLowerCase();
+  // Email images must not embed script/data/file URLs, redirect credentials,
+  // local-network addresses or internal hostname references. No remote fetch.
+  if(!url||url.protocol!=='https:'||url.username||url.password||
+     url.port||url.hash||supplied.length>500||
+     !host.includes('.')||host==='localhost'||host.endsWith('.localhost')||
+     host.endsWith('.local')||host.endsWith('.internal')||
+     host.startsWith('[')||/^\d+(?:\.\d+){3}$/.test(host)){
+    throw serviceError('Security email portrait/logo must be a public HTTPS image URL.',{
+      status:400,code:'security-email-branding-url-invalid',source:'worker'
+    });
+  }
+  return url.href;
+}
 function securityEmailProviderStatus(env) {
   return String(env.RESEND_API_KEY||'').trim() && String(env.SECURITY_ALERT_FROM_EMAIL||'').trim() && String(env.SECURITY_ALERT_TO_EMAIL||'').trim() ? 'configured' : 'not-configured';
 }
@@ -3678,7 +3757,7 @@ async function sendSecurityEmailAlert(env,event) {
   const safeLink=String(env.SECURITY_ALERT_ADMIN_URL||'').trim();
   const html=`<div style="font-family:system-ui,sans-serif;max-width:640px;margin:auto"><header>${logoUrl?`<img src="${escapeEmailHtml(logoUrl)}" alt="" style="max-height:72px;max-width:160px">`:''}<h1>${escapeEmailHtml(heading)}</h1></header><p><strong>${escapeEmailHtml(String(event.type||'Security event').replaceAll('-',' '))}</strong></p><p>${escapeEmailHtml(event.summary||'A security event was recorded for your administrator account.')}</p><p>${escapeEmailHtml(new Date().toISOString())}</p>${safeLink?`<p><a href="${escapeEmailHtml(safeLink)}">Open Security &amp; Access</a></p>`:''}<footer><small>${escapeEmailHtml(footer)}</small></footer></div>`;
   const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${String(env.RESEND_API_KEY)}`,'Content-Type':'application/json'},body:JSON.stringify({from:`${senderName} <${String(env.SECURITY_ALERT_FROM_EMAIL).trim()}>`,to:[String(env.SECURITY_ALERT_TO_EMAIL).trim()],subject:`LΛN security: ${String(event.type||'alert').replaceAll('-',' ')}`,html})});
-  const payload=await response.json().catch(()=>({})); if(!response.ok||!payload?.id) return {state:'failed',error:payload?.message||`HTTP ${response.status}`}; return {state:'sent',providerId:String(payload.id)};
+  const payload=await response.json().catch(()=>({})); if(!response.ok||!payload?.id) return {state:'failed',error:payload?.message||`HTTP ${response.status}`}; return {state:'accepted',providerId:String(payload.id)};
 }
 async function dispatchSecurityAlerts(env,event,{alertOrigin=''}={}) {
   const title='LΛN Security Alert', body=String(event.summary||String(event.type||'Security event').replaceAll('-',' ')).slice(0,180);

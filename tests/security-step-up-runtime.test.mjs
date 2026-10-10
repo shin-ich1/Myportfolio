@@ -17,6 +17,13 @@ const fields=obj=>Object.fromEntries(Object.entries(obj).map(([k,v])=>[k,
   typeof v==='boolean'?{booleanValue:v}:{stringValue:String(v)}
 ]));
 async function fixture({authMode='mfa'}={}){
+  const keys=await crypto.subtle.generateKey({
+    name:'RSASSA-PKCS1-v1_5',modulusLength:2048,
+    publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'
+  },true,['sign','verify']);
+  const pem='-----BEGIN PRIVATE KEY-----\n'+
+    Buffer.from(await crypto.subtle.exportKey('pkcs8',keys.privateKey)).toString('base64')+
+    '\n-----END PRIVATE KEY-----';
   const records=new Map(),doObjects=new Map();
   const now=new Date().toISOString(), expiresAt=new Date(Date.now()+900000).toISOString();
   const base='projects/lan-portfolio-staging/databases/(default)/documents';
@@ -26,6 +33,8 @@ async function fixture({authMode='mfa'}={}){
     active:true,createdAt:now,expiresAt});
   const env={
     FIREBASE_PROJECT_ID:'lan-portfolio-staging',FIREBASE_WEB_API_KEY:'test-only-api-key',
+    FIREBASE_SERVICE_ACCOUNT_EMAIL:'test-service-account@example.invalid',
+    FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY:pem,
     SECURITY_COORDINATOR:{
       idFromName(name){return name;},
       get(name){
@@ -47,6 +56,8 @@ async function fixture({authMode='mfa'}={}){
   globalThis.fetch=async(input,init={})=>{
     const url=new URL(input instanceof Request?input.url:input);
     const path=url.pathname;
+    if(url.hostname==='oauth2.googleapis.com'&&path==='/token')
+      return record({access_token:'mock-firebase-service-token',expires_in:3600});
     if(path.endsWith('/accounts:signInWithPassword')){
       passwordCalls++;
       if(authMode==='password')return record({

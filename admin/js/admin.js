@@ -146,6 +146,12 @@ if(recoverySubmitButton) recoverySubmitButton.addEventListener('click',async()=>
   if(!email||!password||!recoveryKey){
     return setRecoveryError('Enter the Admin email, current password, and Master Recovery Key.');
   }
+  // Emergency Recovery is destructive at /start, BEFORE replacement-key
+  // preparation or activation. Closing a browser cannot cancel a committed
+  // server reset. Confirm this exact boundary before sending ANY credentials.
+  if(!window.confirm(
+    'Emergency Recovery will immediately revoke ALL Admin sessions and trusted devices, invalidate existing Firebase tokens, and remove the authenticator enrollment if your key is valid. This reset cannot be canceled or undone by closing the browser. You must save and activate a new Recovery Kit, then set up TOTP and trusted devices again. Continue?'
+  ))return;
   recoverySubmitButton.disabled=true;
   recoveryResult.hidden=true;
   try{

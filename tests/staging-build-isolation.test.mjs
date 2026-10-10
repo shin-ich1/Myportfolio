@@ -171,3 +171,35 @@ test('staging builder rejects a substituted Durable Object owner before writing 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('pins staging Worker preview URLs off and preserves existing observability logging', async () => {
+  const root = await fixture();
+  try {
+    await buildFixture(root);
+    const cfg = JSON.parse(await readFile(path.join(root, 'telemetry-worker/wrangler.staging.jsonc'), 'utf8'));
+    assert.equal(cfg.preview_urls, false, 'unreviewed preview URLs must not be enabled');
+    assert.deepEqual(cfg.observability, { enabled: true, logs: { enabled: true } },
+      'staging deployment must not silently disable existing Cloudflare observability');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('rejects conflicting explicit staging preview and observability settings before build', async () => {
+  const root = await fixture();
+  try {
+    await buildFixture(root);
+    const configFile = path.join(root, 'telemetry-worker/wrangler.staging.jsonc');
+    const cfg = JSON.parse(await readFile(configFile, 'utf8'));
+    cfg.preview_urls = true;
+    await writeFile(configFile, JSON.stringify(cfg));
+    await assert.rejects(buildFixture(root), /preview_urls configuration mismatch/);
+
+    cfg.preview_urls = false;
+    cfg.observability = { enabled: false, logs: { enabled: false } };
+    await writeFile(configFile, JSON.stringify(cfg));
+    await assert.rejects(buildFixture(root), /observability configuration mismatch/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

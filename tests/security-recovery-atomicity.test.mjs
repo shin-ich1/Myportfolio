@@ -477,3 +477,67 @@ test("emergency recovery revokes every session and device beyond a single query 
       "A successful recovery must revoke ALL old trusted devices, including pages after #100");
   } finally { f.restore(); }
 });
+
+test("a successfully activated replacement Recovery Key makes every earlier key permanently unusable",async()=>{
+  const f=await fixture({existingSessions:2,existingDevices:2});
+  try{
+    const creds={email:"staging-admin@example.invalid",password:"test-password"};
+    const original=await f.post("/security/recovery/start",
+      {...creds,recoveryKey:f.oldKey},"198.51.100.101");
+    assert.equal(original.status,200,JSON.stringify(original.body));
+    const firstPrepared=await f.post("/security/recovery/prepare",
+      {recoverySessionId:original.body.recoverySessionId},"198.51.100.102");
+    assert.equal(firstPrepared.status,200);
+    const firstReplacement=firstPrepared.body.masterKey;
+    assert.ok(firstReplacement);
+    const firstCompleted=await f.post("/security/recovery/complete",{
+      recoverySessionId:original.body.recoverySessionId,
+      preparedKitId:firstPrepared.body.preparedKitId
+    },"198.51.100.103");
+    assert.equal(firstCompleted.status,200);
+    assert.equal(f.snapshot().active,true);
+    assert.equal(f.snapshot().masterKeyHash,await f.hash(firstReplacement));
+    assert.equal(f.snapshot().revokedSessions,2);
+    assert.equal(f.snapshot().revokedDevices,2);
+
+    const beforeRejectedAttempts=f.snapshot();
+    for(const [index,retired] of [f.oldKey,"wrong-master-key",f.oldKey].entries()){
+      const rejection=await f.post("/security/recovery/start",
+        {...creds,recoveryKey:retired},"198.51.100."+(104+index));
+      assert.equal(rejection.status,401);
+      assert.equal(rejection.body.code,"security-recovery-key-invalid");
+      assert.equal(rejection.body.recoverySessionId,undefined);
+    }
+    const afterRejectedAttempts=f.snapshot();
+    for(const field of ["masterKeyHash","active","claims","resets","revokedSessions","revokedDevices"]){
+      assert.equal(afterRejectedAttempts[field],beforeRejectedAttempts[field],
+        "rejected key must not mutate security state: "+field);
+    }
+
+    // The replacement key, unlike both retired keys, is legitimate. Test
+    // its entire next recovery lifecycle using only the in-process fixture.
+    const second=await f.post("/security/recovery/start",
+      {...creds,recoveryKey:firstReplacement},"198.51.100.107");
+    assert.equal(second.status,200,JSON.stringify(second.body));
+    const secondPrepared=await f.post("/security/recovery/prepare",
+      {recoverySessionId:second.body.recoverySessionId},"198.51.100.108");
+    assert.equal(secondPrepared.status,200);
+    assert.notEqual(secondPrepared.body.masterKey,firstReplacement);
+    const secondCompleted=await f.post("/security/recovery/complete",{
+      recoverySessionId:second.body.recoverySessionId,
+      preparedKitId:secondPrepared.body.preparedKitId
+    },"198.51.100.109");
+    assert.equal(secondCompleted.status,200);
+    assert.equal(f.snapshot().active,true);
+    assert.equal(f.snapshot().masterKeyHash,await f.hash(secondPrepared.body.masterKey));
+
+    for(const [index,retired] of [f.oldKey,firstReplacement].entries()){
+      const rejection=await f.post("/security/recovery/start",
+        {...creds,recoveryKey:retired},"198.51.100."+(110+index));
+      assert.equal(rejection.status,401,"retired generation "+index+" must be rejected");
+      assert.equal(rejection.body.code,"security-recovery-key-invalid");
+    }
+    assert.equal(f.snapshot().claims,2,"only two valid master keys may claim recovery");
+    assert.equal(f.snapshot().resets,2,"invalid old key probes must not reset MFA");
+  }finally{f.restore();}
+});

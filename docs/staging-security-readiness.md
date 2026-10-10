@@ -1,8 +1,46 @@
-# LΛN Staging Security & Access — Readiness Review
+# LΛN Security & Access — Staging Readiness (current)
+
+**As of 2026-10-11. Scope: staging only. Release decision: NOT PRODUCTION-READY.**
+
+## Authoritative status
+
+- **Staging deployed** at commit `7c12ae960d5b9b246036ca6d17f11a734b8f8629` on `perf/admin-workspace-investigation-20261008`, via [GitHub Actions 38060497807](https://github.com/shin-ich1/Myportfolio/actions/runs/38060497807). Worker, Firestore Rules and Firebase Hosting deployed successfully. Health checks passed. Production/main remains separate.
+- **Current hardening is NOT deployed**: the security closeout PR is a staging-test branch layered over unmerged [test-only PR #8](https://github.com/shin-ich1/Myportfolio/pull/8). It adds step-up/password/email-verification rate limits, failure audits, HTTPS logo validation, verified email-branding step-up, honest email provider acceptance, and a pre-request irreversible Emergency Recovery warning.
+- **Latest completed prior test evidence**: [GitHub Actions 38066275091](https://github.com/shin-ich1/Myportfolio/actions/runs/38066275091): 142/142 Node tests, 10/10 real Firestore Rules emulator tests, 5/5 live staging anonymous-denial checks, 7/7 local Worker atomic runtime tests. These are PR-only tests and not evidence of a live authenticated revoked-token probe.
+- **Observed live browser flows**: new/untrusted login requires TOTP; repeated temporary login after logout requires TOTP; post-recovery TOTP re-enrollment succeeded; trusted-device enrollment and logout/login without TOTP worked; individual revoked session automatically redirected without refresh; Security Activity logged session revocation. Successful recovery revoked trusted devices and authenticator, requiring reset.
+- **Confirmed staging gaps**: real Security Email delivery not configured; production sender/domain/provider acceptance and recipient delivery cannot be claimed. Exposed staging credentials should be rotated through verified security flows after testing; never ship in releases.
+- **Still pending**: live authenticated revoked-token direct Firestore request (emulator proves it, browser auto-logout prevented direct probe); specific old-key live rejection safely after confirmed activation; staging deployment/live verification of hardening; wide/compact/mobile Security settings and full Admin/Public visual regression; production UID/IAM/data/backup/rollback readiness.
+- **Deployment gates**: last user screenshot showed `LAN_STAGING_DEPLOY_APPROVED=false` and `LAN_STAGING_DIAGNOSTIC_APPROVED=false`. Never set these without distinct authorization. PR CI uses no staging deploy and never deploys production.
+- **Public QR**: canonical target derives from current public site's URL in `admin/js/settings.js` without invented production domain. Public files remain frozen; original baseline ZIP is pre-security and cannot substitute for the latest staging branch.
+
+## Canonical owners
+
+- `telemetry-worker/src/index.js`: the sole server Gateway for Firebase Identity Platform password/TOTP, verified sessions, cryptographic device trust, Recovery Key hash/atomic transitions, defensive rate limits and email provider outcomes.
+- `telemetry-worker/src/security-coordinator.js`: atomic one-time challenges, anti-replay, bounded rate counters, and Recovery Kit preparation hashes.
+- `admin/services/adminSecurityService.js`: browser API client and nonextractable local device credentials (not authoritative trust).
+- `admin/services/adminAuthorizationService.js`: Firebase authorization bridge; `admin/js/admin.js`: login/recovery screen; `admin/js/settings-security.js`: Security & Access settings.
+- `firestore.rules`: backend session-validated client access and direct denial of security collections.
+
+## Release gates
+
+1. Fail-first regression → canonical fixes → full CI plus Worker runtime and Firestore emulator.
+2. Separate staging deploy approval, then live test step-up limit/retry, Recovery confirmation/cancel/interruption, branding validation, Security Activity.
+3. Verify live authorized/revoked-token Firestore denial with a safe controlled test; ensure full Admin/Public layout/regression on final exact build.
+4. Configure and verify an approved security email provider and sender, or explicitly defer with **NOT CONFIGURED** status. Provider acceptance is not recipient delivery.
+5. Rotate staging test credentials if exposed, inventory production identities and Firebase claims, backup/rollback and IAM, then obtain **separate production authorization**. Do not deploy restrictive Rules before verified production Admin bootstrap.
+6. Produce one final sanitized ZIP only after the exact source passes functional and security gates.
+
+---
+
+## Archived historical staging review (2026-10-09 to 2026-10-10, superseded)
+
+**Every status claim below is historical and must NOT be interpreted as the current deployed state or an instruction to deploy.** The live Worker no longer returns the original placeholder; the earlier 116/116 and 98/98 test counts are retained only to document history.
+
+# Historical staging security review (archived)
 
 **Scope:** testing branch only. This review records source-level and local Cloudflare runtime evidence. **Staging and production have not been deployed or live-authenticated.**
 
-## Current staging environment
+## Historical staging environment (before deployment)
 
 - Last observed deployment of `lan-portfolio-staging.lagmayr2.workers.dev/health` still returned **Hello World!** It is the placeholder, not the canonical gateway.
 - Staging Firebase (`lan-portfolio-staging`) has Email/Password and Identity Platform TOTP enabled. Staging service-account IAM roles, encrypted Worker secrets, and the test Admin allowlist are configured. End-to-end authentication remains unverified.
@@ -70,7 +108,7 @@ The current Cloudflare token is scoped to the individual staging Worker; whether
 - **Capacity guard:** exhaustive revocation fails closed if a single collection exceeds 10,000 enumerated security records; this is an explicit operational escalation, never partial-success reporting.
 - **Testing provenance:** new regression files `tests/firestore-administrator-allowlist-gate.test.mjs` and `tests/security-bulk-revocation-contract.test.mjs`, plus expanded `tests/security-recovery-atomicity.test.mjs`. CI remains a local/source verification gate; direct Firestore denial, session revocation and recovery must be observed against isolated staging before release.
 
-## Remaining blockers before any staging deployment
+## Historical blockers before first staging deployment (now superseded)
 
 - **Live Firebase/Cloudflare authorization:** Approve staging-only least-privilege service identity, secure Worker secrets, Firestore Rules and authorized test administrator bootstrap. Run real TOTP, QR trusted-device, session and recovery tests and direct unauthorized Firestore/backend request rejection.
 - **Recovery flows still need live tests:** Emergency Recovery now displays the prepared kit before activation and confirms the exact commit server-side after uncertain responses. Normal authenticated Recovery Kit rotation likewise only prepares hash-only one-time challenges until the Admin confirms the offline saved kit, then atomically commits its hash and Security Activity entry; its original key remains valid until confirmed activation. No plaintext key is kept in backend state or logged. Real Firebase MFA revocation, expiry, browser close/reload, email verification, uncertain network responses, and browser-visible secret handling must be verified in staging.

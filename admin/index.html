@@ -177,7 +177,7 @@
             <button type="button" id="showRecoveryButton" class="login-recovery-link">Use Recovery Kit</button>
             <section id="recoveryStage" class="login-security-stage" hidden aria-labelledby="recoveryStageHeading">
               <h3 id="recoveryStageHeading">Emergency recovery</h3>
-              <p>Recovery requires the Admin password plus the offline Master Recovery Key. Successful use revokes prior sessions, trusted devices, Firebase tokens, and enrolled MFA before fresh setup.</p>
+              <p><strong>Irreversible security reset:</strong> If the Master Recovery Key is accepted, the server immediately revokes all sessions, trusted devices, Firebase tokens, and enrolled MFA. Closing the browser does not cancel this reset. You must save and activate a replacement Recovery Kit, then set up your authenticator and trusted devices again.</p>
               <label for="recoveryEmail">Admin email</label>
               <input id="recoveryEmail" type="email" autocomplete="email">
               <label for="recoveryPassword">Current password</label>

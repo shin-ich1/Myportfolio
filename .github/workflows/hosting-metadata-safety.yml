@@ -1,0 +1,18 @@
+name: Firebase Hosting metadata exposure regression
+on:
+  push:
+    branches:
+      - security/hosting-exclude-git-metadata-20261010
+permissions:
+  contents: read
+jobs:
+  hosting-metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Test canonical Hosting exclude configuration
+        run: node --test tests/firebase-hosting-private-metadata.test.mjs

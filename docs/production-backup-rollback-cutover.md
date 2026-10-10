@@ -37,13 +37,37 @@ The release fallback must be a **reviewed, tested forward corrective deployment*
 | Cloudflare KV | Identify whether old `SECURITY_STATE` holds **pending login/recovery/enrollment challenges** or active rate-limit windows; inventory `STORAGE_OAUTH` and `PORTFOLIO_MESSAGES` | Do not copy expired one-time challenges to the new DO, replay tokens, or delete old KV before new behavior is verified. OAuth/message KV state must remain on same canonical namespaces. |
 | Runtime secrets | Presence, least privilege and continuity of `FIREBASE_SERVICE_ACCOUNT_EMAIL`, `FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY`, `SECURITY_RECOVERY_PEPPER`, Cloudinary, OAuth secrets | **Never expose secret values**. Do not rotate Recovery Pepper as part of migration; changing it breaks verification of previously hashed Recovery Keys. Secrets are not included in Git history or Firestore export. |
 
-### Backup method decision — currently BLOCKED
+### Backup method decision — Spark selected; implementation PREPARED, execution BLOCKED
 
 **Option A: Managed Firestore export.** Requires explicit owner authorization to upgrade the Firebase project to Blaze/enable billing and an owner-controlled Cloud Storage bucket. Follow documented export/verify/import process. Firestore export isn't necessarily a point-in-time snapshot if writes continue; set a safe release window. This option must not be silently selected.
 
-**Option B: Encrypted, least-privilege, owner-operated backup utility.** If the owner wants to retain Spark, design and test one dedicated server-side, read-only Admin SDK export utility, with authenticated least-privilege credentials, explicit collection allowlist, authenticated encryption (nonce per artifact), verified manifest/hash, safe offline key management, and offline/emulator restore validation. It must not write any private production data into repo, CI artifacts, public site, staging project, assistant context, browser/localStorage, or GitHub. A backup is **not considered available** until the owner has actually generated it, stored it privately, and tested restoration safely. A custom backup does not equal the managed Google export and must cover subcollections, Firestore types, indexes/rules, and Auth metadata separately.
+**Option B — OWNER SELECTED: Encrypted, least-privilege, owner-operated backup utility.** If the owner wants to retain Spark, design and test one dedicated server-side, read-only Admin SDK export utility, with authenticated least-privilege credentials, explicit collection allowlist, authenticated encryption (nonce per artifact), verified manifest/hash, safe offline key management, and offline/emulator restore validation. It must not write any private production data into repo, CI artifacts, public site, staging project, assistant context, browser/localStorage, or GitHub. A backup is **not considered available** until the owner has actually generated it, stored it privately, and tested restoration safely. A custom backup does not equal the managed Google export and must cover subcollections, Firestore types, indexes/rules, and Auth metadata separately.
 
 **Release is NO-GO until an appropriate private backup plus restore verification actually exist.** It is unacceptable to claim a backup merely from a script, Cloudflare Worker deployment or staging database.
+
+
+### Spark (free) backup utility prepared — NOT RUN against production
+
+The owner chose to remain on **Spark**. The candidate now includes one canonical backup-only owner, `scripts/secure-firestore-backup.mjs`, with synthetic regression tests in `tests/secure-firestore-backup.test.mjs` and CI. This does **not** constitute an existing Firestore backup or a verified restoration.
+
+- Uses a short-lived `gcloud auth print-access-token` credential for read-only Firestore REST `listDocuments`/`listCollectionIds` calls, an explicit quota project, exact project ID gate, and an interactive non-echoed passphrase. No service-account private key is exported or logged.
+- Enumerates known root collections plus the reviewed `privateMessageThreads/{id}/messages` nested collection, including missing ancestor document resources; any unexpected collection/depth/pagination failure **aborts** instead of silently dropping records. The live collection inventory may differ; stop and review names before any authorized execution.
+- Streams raw Firestore document representations (preserving REST field types) through AES-256-GCM encryption and a key derived with scrypt; encrypted files are created outside the repository with owner-only `0600` permissions, authenticated manifest/count/checksum, never plaintext on disk. Offline verification is implemented without writing plaintext or logging records.
+- Read-only mode has **no restore or mutation command**. On any partial failure, the temporary encrypted artifact is removed. Existing backups are not overwritten.
+- Does **NOT** back up Firebase Authentication accounts, TOTP enrollments, Cloudflare KV/DO, Worker versions, runtime secrets, Firestore Rules/indexes, or IAM. Those sources still require separately verified continuity/restore planning.
+- Firestore list pagination is **not a transactionally consistent point-in-time export** while documents are changing. A controlled quiet window and document/inventory counts must be checked; an encrypted archive alone is not proof of a correct restoration.
+- Release blocker remains open until the owner separately approves the production read, holds the archive privately **and separately from its passphrase**, verifies its authenticity offline, and tests a safe offline/emulator restoration. Do not attach or paste backup bytes, a password, Firebase tokens, or security documents in ChatGPT/GitHub.
+- The utility uses Google Cloud Firestore document read quotas. Free-tier quotas/permissions still apply; this is not Google-managed Firestore export/import.
+
+**Commands are documented for later controlled execution only, not authorized now.** Do not run these yet or pass real passphrases in a command line:
+```bash
+node scripts/secure-firestore-backup.mjs backup \
+  --output /ABSOLUTE/PRIVATE-LOCATION/production-firestore.lanfbak \
+  --confirm-production-read true
+node scripts/secure-firestore-backup.mjs verify \
+  --input /ABSOLUTE/PRIVATE-LOCATION/production-firestore.lanfbak
+```
+The first command prompts twice for a unique backup passphrase, the second prompts once. Never run with production credentials from public/CI environments.
 
 ## Old owner → new owner transition
 

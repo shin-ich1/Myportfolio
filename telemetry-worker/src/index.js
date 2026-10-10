@@ -2845,13 +2845,62 @@ async function handleSecurityRoute(request,env,url,context){
       await enforceSecurityRateLimit(request,env,'totp'); const c=await consumeSecurityChallenge(env,'totp-login',body.challengeId); const enrollmentId=String(c.mfaInfo?.find?.(x=>x?.totpInfo)?.mfaEnrollmentId||c.mfaInfo?.[0]?.mfaEnrollmentId||''); const {response,payload}=await identityToolkit('accounts/mfaSignIn:finalize',{mfaPendingCredential:c.mfaPendingCredential,mfaEnrollmentId:enrollmentId,totpVerificationInfo:{verificationCode:String(body.code||'')}},env,'v2'); if(!response.ok||!payload?.idToken){ await writeSecurityEvent(env,{uid:c.uid,type:'totp-failure',success:false,ip:securityIp(request)}); throw serviceError('Authenticator code is invalid or expired.',{status:401,code:'security-totp-invalid',source:'firebase'}); } const verified=await verifyFirebaseIdToken(payload.idToken,env); await clearSecurityRateLimit(request,env,'totp'); return json(await createApprovedSessionResponse(request,env,{uid:verified.uid,trustLevel:'temporary'},context),200,origin);
     }
     if(path==='/security/totp/enrollment/start'&&method==='POST'){
-      await enforceSecurityRateLimit(request,env,'enrollment'); const first=await verifyFirebasePassword(body.email||'',body.password,env); if(!first.uid||!first.idToken) throw serviceError('A password-verified non-MFA Firebase session is required for bootstrap.',{status:400,code:'security-bootstrap-state',source:'firebase'}); if(!first.emailVerified) throw serviceError('Verify the administrator email before enrolling an authenticator.',{status:403,code:'security-email-unverified',source:'firebase'}); const {response,payload}=await identityToolkit('accounts/mfaEnrollment:start',{idToken:first.idToken,totpEnrollmentInfo:{}},env,'v2'); if(!response.ok) throw serviceError('Authenticator enrollment could not be started.',{status:502,code:'security-totp-enrollment-start',source:'firebase'}); const info=payload?.totpSessionInfo||payload?.totpEnrollmentInfo||payload; const secret=String(info?.sharedSecretKey||''); const sessionInfo=String(info?.sessionInfo||payload?.sessionInfo||''); const challengeId=await putSecurityChallenge(env,'totp-enroll',{uid:first.uid,idToken:first.idToken,sessionInfo,secret}); const issuer=encodeURIComponent('LΛN Portfolio CMS'),account=encodeURIComponent(first.email||'Admin'); return json({challengeId,manualSecret:secret,totpUri:`otpauth://totp/${issuer}:${account}?secret=${encodeURIComponent(secret)}&issuer=${issuer}&digits=6&period=30`},200,origin);
+      await enforceSecurityRateLimit(request,env,'enrollment'); const first=await verifyFirebasePassword(body.email||'',body.password,env); if(!first.uid||!first.idToken) throw serviceError('A password-verified non-MFA Firebase session is required for bootstrap.',{status:400,code:'security-bootstrap-state',source:'firebase'}); if(!first.emailVerified) throw serviceError('Verify the administrator email before enrolling an authenticator.',{status:403,code:'security-email-unverified',source:'firebase'}); const {response,payload}=await identityToolkit('accounts/mfaEnrollment:start',{idToken:first.idToken,totpEnrollmentInfo:{}},env,'v2'); if(!response.ok) throw serviceError('Authenticator enrollment could not be started.',{status:502,code:'security-totp-enrollment-start',source:'firebase'}); const info=payload?.totpSessionInfo||payload?.totpEnrollmentInfo||payload;
+      const secret=String(info?.sharedSecretKey||'');
+      const sessionInfo=String(info?.sessionInfo||payload?.sessionInfo||'');
+      const digits=Number(info?.verificationCodeLength||6);
+      const period=Number(info?.periodSec||30);
+      const algorithm=String(info?.hashingAlgorithm||'SHA1').toUpperCase().replace(/-/g,'');
+      // Generate QR parameters from the authoritative Firebase enrollment
+      // response, rather than silently displaying a QR for the wrong TOTP
+      // settings. Our existing six-digit login UI supports six digits only.
+      if(!/^[A-Z2-7]+=*$/.test(secret)||!sessionInfo||digits!==6||
+         !Number.isInteger(period)||period<15||period>120||
+         !['SHA1','SHA256','SHA512'].includes(algorithm)){
+        throw serviceError('Firebase returned an unsupported authenticator enrollment.',{
+          status:502,code:'security-totp-enrollment-configuration',source:'firebase'
+        });
+      }
+      // Firebase owns the secret. The one-use server challenge needs only the
+      // opaque enrollment session and token; never persist a second secret copy.
+      const challengeId=await putSecurityChallenge(env,'totp-enroll',{
+        uid:first.uid,idToken:first.idToken,sessionInfo
+      });
+      const issuer=encodeURIComponent('LΛN Portfolio CMS'),account=encodeURIComponent(first.email||'Admin');
+      return json({challengeId,manualSecret:secret,
+        totpUri:`otpauth://totp/${issuer}:${account}?secret=${encodeURIComponent(secret)}&issuer=${issuer}&algorithm=${algorithm}&digits=${digits}&period=${period}`
+      },200,origin);
     }
     if(path==='/security/totp/enrollment/complete'&&method==='POST'){
       await enforceSecurityRateLimit(request,env,'enrollment');
       const c=await consumeSecurityChallenge(env,'totp-enroll',body.challengeId);
       const {response,payload}=await identityToolkit('accounts/mfaEnrollment:finalize',{idToken:c.idToken,displayName:String(body.displayName||'Authenticator').slice(0,60),totpVerificationInfo:{sessionInfo:c.sessionInfo,verificationCode:String(body.code||'')}},env,'v2');
-      if(!response.ok||!payload?.idToken) throw serviceError('Authenticator code was not accepted.',{status:400,code:'security-totp-enrollment-invalid',source:'firebase'});
+      if(!response.ok||!payload?.idToken){
+        // The challenge was atomically consumed before contacting Firebase:
+        // a failed attempt cannot be replayed. Return a stable, nonsecret
+        // classification so the existing login controller can request a NEW
+        // enrollment challenge instead of leaving a dead QR on screen.
+        const providerCode=String(payload?.error?.message||'').split(/[\s:]/)[0].toUpperCase();
+        const codeRejected=['INVALID_TOTP_CODE','INVALID_VERIFICATION_CODE',
+          'INVALID_CODE','TOTP_CODE_INVALID','INVALID_TOTP_VERIFICATION_CODE',
+          'INVALID_MFA_VERIFICATION_CODE'].includes(providerCode);
+        const expired=['INVALID_ID_TOKEN','TOKEN_EXPIRED','EXPIRED_ID_TOKEN',
+          'INVALID_SESSION_INFO','SESSION_EXPIRED','INVALID_MFA_SESSION'].includes(providerCode);
+        const category=codeRejected?'code-rejected':expired?'session-expired':'provider-failure';
+        await writeSecurityEvent(env,{uid:c.uid,type:'totp-enrollment-failure',
+          success:false,ip:securityIp(request),summary:'Authenticator enrollment '+category+'.'
+        }).catch(()=>null);
+        throw serviceError(
+          codeRejected?'Authenticator code was not accepted. Scan the new QR to retry.':
+          expired?'Authenticator enrollment session expired. Sign in again.':
+          'Authenticator enrollment verification is temporarily unavailable.',
+          {status:codeRejected?400:expired?401:502,
+           code:codeRejected?'security-totp-enrollment-code-invalid':
+                expired?'security-totp-enrollment-session-expired':
+                'security-totp-enrollment-provider-failed',
+           source:'firebase'}
+        );
+      }
       const verified=await verifyFirebaseIdToken(payload.idToken,env);
       if(verified.uid!==c.uid) throw serviceError('Authenticator enrollment identity changed unexpectedly.',{status:403,code:'security-totp-enrollment-identity',source:'worker'});
       await clearSecurityRateLimit(request,env,'enrollment');

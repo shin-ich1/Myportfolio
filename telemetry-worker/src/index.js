@@ -1,3 +1,6 @@
+import { SecurityCoordinator } from "./security-coordinator.js";
+export { SecurityCoordinator };
+
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 
 function serviceError(message, { status = 500, code = "internal", source = "worker", retryAt = "" } = {}) {
@@ -371,7 +374,6 @@ async function kvJsonPut(env, key, value, options = undefined) {
 function driveTokenKey(profileId) { return `drive-token:${profileId}`; }
 function driveProfileKey(profileId) { return `drive-profile:${profileId}`; }
 function driveAssetKey(profileId, fileId) { return `drive-asset:${profileId}:${fileId}`; }
-function drivePendingKey(profileId, token) { return `drive-pending:${profileId}:${token}`; }
 function driveFolderKey(profileId, parentId, logicalKey) { return `drive-folder:${profileId}:${parentId}:${logicalKey}`; }
 
 function drivePublicCacheKey(profileId, fileId, download = false, variant = "original", format = "source") {
@@ -425,8 +427,8 @@ function driveConfig(env) {
 }
 
 function randomToken(prefix = "") {
-  const value = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-  return `${prefix}${value}`;
+  // Never fall back to Math.random for OAuth state or upload capabilities.
+  return String(prefix || "") + base64Url(crypto.getRandomValues(new Uint8Array(24)));
 }
 
 function driveRedirectUri(request, env) {
@@ -659,7 +661,10 @@ async function handleDriveConnectStart(request, env) {
     const state = randomToken("drv-");
     const redirectUri = driveRedirectUri(request, env);
     const stateRecord = { profileId, uid, origin, redirectUri, expiresAt: Date.now() + DRIVE_OAUTH_STATE_TTL_MS };
-    await kvJsonPut(env, `oauth-state:${state}`, stateRecord, { expirationTtl: Math.ceil(DRIVE_OAUTH_STATE_TTL_MS / 1000) });
+    await coordinateSecurity(env,securityChallengeOwner("drive-oauth-state",state),{
+      op:"challenge-put",scope:"drive-oauth-state",id:state,
+      record:{...stateRecord,scope:"drive-oauth-state"}
+    });
     const auth = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     auth.searchParams.set("client_id", clientId);
     auth.searchParams.set("redirect_uri", redirectUri);
@@ -683,10 +688,28 @@ async function handleDriveConnectCallback(request, env) {
   const url = new URL(request.url);
   const state = String(url.searchParams.get("state") || "");
   const code = String(url.searchParams.get("code") || "");
-  const stateKey = `oauth-state:${state}`;
-  const stateRecord = state ? await kvJsonGet(env, stateKey) : null;
-  if (state) await storageKv(env).delete(stateKey);
-  if (!stateRecord || Number(stateRecord.expiresAt || 0) <= Date.now()) return new Response("Invalid or expired Google Drive authorization state.", { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+  let stateRecord;
+  try{
+    if(!/^[A-Za-z0-9_-]{20,90}$/.test(state))
+      return new Response("Invalid or expired Google Drive authorization state.",{
+        status:400,headers:{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"}
+      });
+    // The state itself is the opaque one-use capability. Consumption is
+    // strongly consistent across Worker instances and Cloudflare regions.
+    stateRecord=await consumeSecurityChallenge(env,"drive-oauth-state",state);
+  }catch(error){
+    const invalid=["security-challenge-invalid","security-challenge-expired"].includes(error?.code);
+    return new Response(invalid
+      ?"Invalid or expired Google Drive authorization state."
+      :"Google Drive authorization state service is unavailable.",{
+      status:invalid?400:Number(error?.status)||503,
+      headers:{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"}
+    });
+  }
+  if (!stateRecord || Number(stateRecord.expiresAt || 0) <= Date.now())
+    return new Response("Invalid or expired Google Drive authorization state.", {
+      status:400,headers:{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"}
+    });
   if (!code) return new Response("Google Drive authorization code is missing.", { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
   try {
     await enforceAdminServiceRateLimit(request, env, stateRecord.uid, "drive-write");
@@ -764,39 +787,82 @@ async function handleDriveUploadSession(request, env) {
     const sessionUrl = create.headers.get("Location") || create.headers.get("location") || "";
     if (!create.ok || !sessionUrl) throw serviceError(`Google Drive resumable upload session failed with HTTP ${create.status}.`, { status: 502, code: "google-drive-upload-session", source: "google-drive" });
     const pendingToken = randomToken("up-");
-    await kvJsonPut(env, drivePendingKey(profileId, pendingToken), { profileId, pendingToken, folderId, name, mimeType, bytes, access, sessionUrl, context: body.context || {}, expiresAt: Date.now() + DRIVE_PENDING_UPLOAD_TTL_MS }, { expirationTtl: Math.ceil(DRIVE_PENDING_UPLOAD_TTL_MS / 1000) });
+    await coordinateSecurity(env,securityChallengeOwner("drive-upload",pendingToken),{
+      op:"challenge-put",scope:"drive-upload",id:pendingToken,
+      record:{
+        scope:"drive-upload",profileId,pendingToken,folderId,name,mimeType,
+        bytes,access,sessionUrl,context:body.context||{},
+        expiresAt:Date.now()+DRIVE_PENDING_UPLOAD_TTL_MS
+      }
+    });
     return json({ profileId, sessionUrl, pendingToken }, 200, origin);
   } catch (error) {
     return json({ error: error?.message || "Google Drive upload could not start.", code: String(error?.code || "internal"), source: String(error?.source || "google-drive") }, Number(error?.status) || 500, origin);
   }
 }
 
-async function driveFinalizePending(profileId, pendingToken, fileId, env) {
-  const pendingKey = drivePendingKey(profileId, pendingToken);
-  const pending = await kvJsonGet(env, pendingKey);
-  if (!pending || Number(pending.expiresAt || 0) <= Date.now()) throw serviceError("Google Drive upload confirmation expired or is invalid.", { status: 409, code: "google-drive-upload-pending", source: "google-drive" });
-  if (!fileId) throw serviceError("Google Drive file ID is missing.", { status: 422, code: "google-drive-file-id", source: "google-drive" });
-  const response = await driveApi(profileId, env, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=${encodeURIComponent("id,name,mimeType,size,webViewLink,parents,trashed,appProperties")}`);
-  const file = await response.json().catch(() => ({}));
-  if (!response.ok || !file?.id) throw serviceError(`Google Drive upload verification failed with HTTP ${response.status}.`, { status: 502, code: "google-drive-upload-verify", source: "google-drive" });
-  if (file.trashed || !Array.isArray(file.parents) || !file.parents.includes(pending.folderId)) throw serviceError("Google Drive upload does not belong to the expected CMS folder.", { status: 409, code: "google-drive-upload-ownership", source: "google-drive" });
-  const asset = {
-    provider: "google-drive",
-    storageProfileId: profileId,
-    assetId: String(file.id),
-    fileId: String(file.id),
-    name: String(file.name || pending.name || ""),
-    mimeType: String(file.mimeType || pending.mimeType || "application/octet-stream"),
-    bytes: Math.max(0, Number(file.size ?? pending.bytes) || 0),
-    access: pending.access,
-    context: pending.context || {},
-    folderId: String(pending.folderId || ""),
-    webViewLink: String(file.webViewLink || ""),
-    createdAt: new Date().toISOString()
-  };
-  await kvJsonPut(env, driveAssetKey(profileId, fileId), asset);
-  await storageKv(env).delete(pendingKey);
-  return asset;
+async function drivePendingOperation(env, profileId, pendingToken, op, extra = {}) {
+  const token = String(pendingToken || "").trim();
+  if(!/^[A-Za-z0-9_-]{20,90}$/.test(token) || !String(profileId||"").trim()) {
+    throw serviceError("Google Drive upload confirmation expired or is invalid.",{
+      status:409,code:"google-drive-upload-pending",source:"google-drive"
+    });
+  }
+  return coordinateSecurity(env,securityChallengeOwner("drive-upload",token),{
+    op,scope:"drive-upload",id:token,profileId,...extra
+  });
+}
+
+async function driveFinalizePending(profileId, pendingToken, fileId, env, uploadFile = null) {
+  // One canonical lease serializes content upload and metadata-only finalize.
+  // Failed upstream operations release it for retry; Worker crashes leave a
+  // bounded lease that can be reclaimed after expiry.
+  const claimId=randomCapability(24);
+  const claim=await drivePendingOperation(env,profileId,pendingToken,"upload-claim",{claimId});
+  const pending=claim.record;
+  try {
+    let verifiedFileId=String(fileId||"").trim();
+    if(uploadFile){
+      verifiedFileId=String(await uploadFile(pending)||"").trim();
+    }
+    if(!verifiedFileId) throw serviceError("Google Drive file ID is missing.",{
+      status:422,code:"google-drive-file-id",source:"google-drive"
+    });
+    const response=await driveApi(profileId,env,
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(verifiedFileId)}?fields=${encodeURIComponent("id,name,mimeType,size,webViewLink,parents,trashed,appProperties")}`);
+    const file=await response.json().catch(()=>({}));
+    if(!response.ok || !file?.id) throw serviceError(
+      `Google Drive upload verification failed with HTTP ${response.status}.`,{
+        status:502,code:"google-drive-upload-verify",source:"google-drive"
+      });
+    if(file.trashed || !Array.isArray(file.parents) ||
+       !file.parents.includes(pending.folderId)){
+      throw serviceError("Google Drive upload does not belong to the expected CMS folder.",{
+        status:409,code:"google-drive-upload-ownership",source:"google-drive"
+      });
+    }
+    const asset={
+      provider:"google-drive",
+      storageProfileId:profileId,
+      assetId:String(file.id),
+      fileId:String(file.id),
+      name:String(file.name||pending.name||""),
+      mimeType:String(file.mimeType||pending.mimeType||"application/octet-stream"),
+      bytes:Math.max(0,Number(file.size??pending.bytes)||0),
+      access:pending.access,
+      context:pending.context||{},
+      folderId:String(pending.folderId||""),
+      webViewLink:String(file.webViewLink||""),
+      createdAt:new Date().toISOString()
+    };
+    await kvJsonPut(env,driveAssetKey(profileId,verifiedFileId),asset);
+    await drivePendingOperation(env,profileId,pendingToken,"upload-consume",{claimId});
+    return asset;
+  }catch(error){
+    await drivePendingOperation(env,profileId,pendingToken,"upload-release",{claimId})
+      .catch(()=>null);
+    throw error;
+  }
 }
 
 async function handleDriveUploadContent(request, env) {
@@ -809,19 +875,37 @@ async function handleDriveUploadContent(request, env) {
     const profileId = String(form.get("profileId") || "").trim();
     const pendingToken = String(form.get("pendingToken") || "").trim();
     const file = form.get("file");
-    const pending = await kvJsonGet(env, drivePendingKey(profileId, pendingToken));
-    if (!pending || Number(pending.expiresAt || 0) <= Date.now()) throw serviceError("Google Drive upload confirmation expired or is invalid.", { status: 409, code: "google-drive-upload-pending", source: "google-drive" });
-    if (!file || typeof file.arrayBuffer !== "function") throw serviceError("Google Drive upload file is missing.", { status: 422, code: "google-drive-upload-file", source: "google-drive" });
-    if (pending.bytes > 0 && Number(file.size || 0) !== Number(pending.bytes)) throw serviceError("Google Drive upload size does not match the prepared upload.", { status: 409, code: "google-drive-upload-size", source: "google-drive" });
-    const session = String(pending.sessionUrl || "").trim();
-    if (!session) throw serviceError("Google Drive upload session is missing.", { status: 409, code: "google-drive-upload-session-missing", source: "google-drive" });
-    const upload = await fetch(session, { method: "PUT", headers: { "Content-Type": pending.mimeType || file.type || "application/octet-stream" }, body: file });
-    const uploaded = await upload.json().catch(() => ({}));
-    if (!upload.ok || !uploaded?.id) throw serviceError(`Google Drive upload failed with HTTP ${upload.status}.`, { status: 502, code: "google-drive-upload-content", source: "google-drive" });
-    const asset = await driveFinalizePending(profileId, pendingToken, String(uploaded.id), env);
-    return json(asset, 200, origin);
+    if(!file || typeof file.arrayBuffer!=="function") throw serviceError(
+      "Google Drive upload file is missing.",{
+        status:422,code:"google-drive-upload-file",source:"google-drive"
+      });
+    const asset=await driveFinalizePending(profileId,pendingToken,"",env,async pending=>{
+      if(pending.bytes>0 && Number(file.size||0)!==Number(pending.bytes)){
+        throw serviceError("Google Drive upload size does not match the prepared upload.",{
+          status:409,code:"google-drive-upload-size",source:"google-drive"
+        });
+      }
+      const session=String(pending.sessionUrl||"").trim();
+      if(!session) throw serviceError("Google Drive upload session is missing.",{
+        status:409,code:"google-drive-upload-session-missing",source:"google-drive"
+      });
+      const upload=await fetch(session,{
+        method:"PUT",
+        headers:{"Content-Type":pending.mimeType||file.type||"application/octet-stream"},
+        body:file
+      });
+      const uploaded=await upload.json().catch(()=>({}));
+      if(!upload.ok || !uploaded?.id) throw serviceError(
+        `Google Drive upload failed with HTTP ${upload.status}.`,{
+          status:502,code:"google-drive-upload-content",source:"google-drive"
+        });
+      return String(uploaded.id);
+    });
+    return json(asset,200,origin);
   } catch (error) {
-    return json({ error: error?.message || "Google Drive upload failed.", code: String(error?.code || "internal"), source: String(error?.source || "google-drive") }, Number(error?.status) || 500, origin);
+    return json({ error: error?.message || "Google Drive upload failed.",
+      code: String(error?.code || "internal"), source: String(error?.source || "google-drive") },
+      Number(error?.status) || 500, origin);
   }
 }
 
@@ -1472,10 +1556,6 @@ async function privateMessageClientBinding(request) {
   return sha256Text(`${ip}|${agent}`);
 }
 
-function privateMessageChallengeKey(id) {
-  return `message:challenge:${id}`;
-}
-
 function privateMessageImagePoolKey(queryIndex, page) {
   return `message:puzzle-image-pool:v1:${queryIndex}:${page}`;
 }
@@ -1686,10 +1766,22 @@ function publicPuzzleImageUrl(request, challengeId) {
 }
 
 async function handleMessagePuzzleImage(request, env, challengeId) {
-  if (!/^[A-Za-z0-9_-]{24}$/.test(String(challengeId || ""))) return new Response("Not found.", { status: 404 });
-  const challenge = await pushStore(env).get(privateMessageChallengeKey(challengeId), "json").catch(() => null);
-  if (!challenge || Number(challenge.expiresAt) <= Date.now()) return new Response("Challenge expired.", { status: 410 });
-  const image = challenge?.image || {};
+  if (!/^[A-Za-z0-9_-]{24}$/.test(String(challengeId || "")))
+    return new Response("Not found.", { status: 404 });
+  let image;
+  try {
+    const record = await coordinateSecurity(env,
+      securityChallengeOwner("message-puzzle", challengeId), {
+        op: "puzzle-image-read", scope: "message-puzzle", id: challengeId
+      });
+    image = record.image || {};
+  } catch (error) {
+    return new Response(error?.code === "message-puzzle-expired"
+      ? "Challenge expired." : "Puzzle image unavailable.", {
+      status: error?.code === "message-puzzle-expired" ? 410 : Number(error?.status) || 503,
+      headers: { "Cache-Control": "no-store" }
+    });
+  }
   const cache = globalThis.caches?.default || null;
   const cacheKey = puzzleImageCacheKey(image?.id || challengeId);
   const cached = cache ? await cache.match(cacheKey) : null;
@@ -1698,7 +1790,6 @@ async function handleMessagePuzzleImage(request, env, challengeId) {
     headers.set("Cache-Control", `private, max-age=${MESSAGE_CHALLENGE_TTL_SECONDS}`);
     return new Response(cached.body, { status: 200, headers });
   }
-
   const fetched = await fetchPuzzleImageCandidate(image);
   if (!fetched) {
     return new Response("Verification image is no longer available. Request a new challenge.", {
@@ -1721,8 +1812,10 @@ async function handleMessagePuzzleImage(request, env, challengeId) {
   return new Response(cacheResponse.body, { status: 200, headers });
 }
 
-async function privateMessageVerificationKey(token) {
-  return `message:verification:${await sha256Text(token)}`;
+// Verification tokens are never stored raw. Their SHA-256 derived identifiers
+// select exactly one canonical atomic Coordinator record.
+async function privateMessageProofId(token) {
+  return sha256Text(token);
 }
 
 async function handleMessagePuzzleChallenge(request, env) {
@@ -1742,15 +1835,14 @@ async function handleMessagePuzzleChallenge(request, env) {
     const binding = await privateMessageClientBinding(request);
     const image = await chooseOpenversePuzzleImage(env, binding);
     const now = Date.now();
-    await pushStore(env).put(privateMessageChallengeKey(challengeId), JSON.stringify({
-      ...geometry,
-      origin: context.origin,
-      binding,
-      image,
-      attempts: 0,
-      createdAt: now,
-      expiresAt: now + MESSAGE_CHALLENGE_TTL_SECONDS * 1000
-    }), { expirationTtl: MESSAGE_CHALLENGE_TTL_SECONDS });
+    await coordinateSecurity(env,securityChallengeOwner("message-puzzle",challengeId),{
+      op:"challenge-put",scope:"message-puzzle",id:challengeId,
+      record:{
+        scope:"message-puzzle",...geometry,origin:context.origin,binding,
+        image,attempts:0,createdAt:now,
+        expiresAt:now+MESSAGE_CHALLENGE_TTL_SECONDS*1000
+      }
+    });
     return json({
       challengeId,
       ...geometry,
@@ -1780,97 +1872,111 @@ async function handleMessagePuzzleVerify(request, env) {
   try {
     context = messageRequestContext(request, env);
     assertPrivateMessageRelayConfigured(env);
-    const body = await readStrictJsonBody(request, { challengeId: REQUEST_SCHEMA_ANY, answer: REQUEST_SCHEMA_ANY, turnstileToken: REQUEST_SCHEMA_ANY });
+    const body = await readStrictJsonBody(request, {
+      challengeId: REQUEST_SCHEMA_ANY, answer: REQUEST_SCHEMA_ANY,
+      turnstileToken: REQUEST_SCHEMA_ANY
+    });
     const challengeId = String(body?.challengeId || "").trim();
     const answer = Number(body?.answer);
-    const turnstileToken = String(body?.turnstileToken || "").trim();
-    if (!/^[A-Za-z0-9_-]{24}$/.test(challengeId)) throw serviceError("Verification puzzle is invalid.", { status: 400, code: "message-puzzle-invalid", source: "worker" });
-    if (!Number.isFinite(answer) || answer < 0 || answer > 100) throw serviceError("Complete the verification puzzle first.", { status: 400, code: "message-puzzle-answer", source: "worker" });
-    const store = pushStore(env);
-    const key = privateMessageChallengeKey(challengeId);
-    const challenge = await store.get(key, "json");
-    if (!challenge || Number(challenge.expiresAt) <= Date.now()) {
-      if (challenge) await store.delete(key);
-      throw serviceError("Verification puzzle expired. Load a new puzzle.", { status: 410, code: "message-puzzle-expired", source: "worker" });
-    }
+    if (!/^[A-Za-z0-9_-]{24}$/.test(challengeId))
+      throw serviceError("Verification puzzle is invalid.",{
+        status:400,code:"message-puzzle-invalid",source:"worker"
+      });
+    if (!Number.isFinite(answer) || answer < 0 || answer > 100)
+      throw serviceError("Complete the verification puzzle first.",{
+        status:400,code:"message-puzzle-answer",source:"worker"
+      });
     const binding = await privateMessageClientBinding(request);
-    if (String(challenge.origin || "") !== context.origin || String(challenge.binding || "") !== binding) {
-      await store.delete(key);
-      throw serviceError("Verification puzzle does not belong to this browser session.", { status: 403, code: "message-puzzle-binding", source: "worker" });
-    }
-
-    if (Math.abs(answer - Number(challenge.targetPercent)) > MESSAGE_PUZZLE_TOLERANCE) {
-      const attempts = Math.max(0, Number(challenge.attempts) || 0) + 1;
-      if (attempts >= MESSAGE_PUZZLE_MAX_ATTEMPTS) {
-        await store.delete(key);
-        return json({
-          ok: false,
-          outcome: "replace",
-          code: "message-puzzle-reset-required",
-          message: "That puzzle did not match. Switching to the next prepared image…"
-        }, 200, context.origin);
-      }
-      const geometry = randomPuzzleGeometry(challenge);
-      const ttlSeconds = Math.max(1, Math.ceil((Number(challenge.expiresAt) - Date.now()) / 1000));
-      await store.put(key, JSON.stringify({ ...challenge, ...geometry, attempts }), { expirationTtl: ttlSeconds });
+    const reply = await coordinateSecurity(env,
+      securityChallengeOwner("message-puzzle",challengeId), {
+        op:"puzzle-check",scope:"message-puzzle",id:challengeId,
+        origin:context.origin,binding,answer,
+        tolerance:MESSAGE_PUZZLE_TOLERANCE,
+        maxAttempts:MESSAGE_PUZZLE_MAX_ATTEMPTS,
+        nextGeometry:randomPuzzleGeometry(),
+        verificationNonce:securityRandomId(24)
+      });
+    if (reply.outcome === "replace") {
       return json({
-        ok: false,
-        outcome: "retry",
-        code: "message-puzzle-retry",
-        message: "Not quite. The matching space moved — try again.",
-        challenge: geometry,
-        attempts,
-        attemptsRemaining: Math.max(0, MESSAGE_PUZZLE_MAX_ATTEMPTS - attempts)
-      }, 200, context.origin);
+        ok:false,outcome:"replace",code:"message-puzzle-reset-required",
+        message:"That puzzle did not match. Switching to the next prepared image…"
+      },200,context.origin);
     }
-
-    await verifyTurnstile(request, env, turnstileToken);
-    await store.delete(key);
-    const verificationToken = randomCapability(24);
-    const proofKey = await privateMessageVerificationKey(verificationToken);
-    const now = Date.now();
-    await store.put(proofKey, JSON.stringify({ origin: context.origin, binding, createdAt: now, expiresAt: now + MESSAGE_VERIFICATION_TTL_SECONDS * 1000 }), { expirationTtl: MESSAGE_VERIFICATION_TTL_SECONDS });
-    return json({ ok: true, verificationToken, expiresIn: MESSAGE_VERIFICATION_TTL_SECONDS }, 200, context.origin);
+    if (reply.outcome === "retry") {
+      return json({
+        ok:false,outcome:"retry",code:"message-puzzle-retry",
+        message:"Not quite. The matching space moved — try again.",
+        challenge:reply.challenge,attempts:reply.attempts,
+        attemptsRemaining:reply.attemptsRemaining
+      },200,context.origin);
+    }
+    if (reply.outcome !== "pending") {
+      throw serviceError("Puzzle verification could not be completed.",{
+        status:503,code:"message-puzzle-state",source:"worker"
+      });
+    }
+    // The puzzle is now reserved by one nonce. Even if Turnstile is slow or
+    // fails, concurrent puzzle solves cannot issue another proof.
+    await verifyTurnstile(request,env,body?.turnstileToken);
+    await coordinateSecurity(env,securityChallengeOwner("message-puzzle",challengeId),{
+      op:"puzzle-finalize",scope:"message-puzzle",id:challengeId,
+      verificationNonce:reply.verificationNonce
+    });
+    const verificationToken=randomCapability(24);
+    const proofId=await privateMessageProofId(verificationToken);
+    const now=Date.now();
+    await coordinateSecurity(env,securityChallengeOwner("message-proof",proofId),{
+      op:"challenge-put",scope:"message-proof",id:proofId,
+      record:{
+        scope:"message-proof",origin:context.origin,binding,createdAt:now,
+        expiresAt:now+MESSAGE_VERIFICATION_TTL_SECONDS*1000
+      }
+    });
+    return json({ok:true,verificationToken,expiresIn:MESSAGE_VERIFICATION_TTL_SECONDS},200,context.origin);
   } catch (error) {
-    const origin = context?.origin || allowedOrigin(request.headers.get("Origin") || "", env);
-    return json({ error: error?.message || "Verification puzzle could not be completed.", code: error?.code || "internal", challenge: error?.challenge || undefined }, Number(error?.status) || 500, origin);
+    const origin=context?.origin||allowedOrigin(request.headers.get("Origin")||"",env);
+    return json({error:error?.message||"Verification puzzle could not be completed.",
+      code:error?.code||"internal"},Number(error?.status)||500,origin);
   }
 }
 
-async function consumePrivateMessageVerification(request, env, token) {
-  const value = String(token || "").trim();
-  if (!/^[A-Za-z0-9_-]{32}$/.test(value)) throw serviceError("Complete human verification before sending.", { status: 403, code: "message-verification-required", source: "worker" });
-  const store = pushStore(env);
-  const key = await privateMessageVerificationKey(value);
-  const proof = await store.get(key, "json");
-  await store.delete(key);
-  if (!proof || Number(proof.expiresAt) <= Date.now()) throw serviceError("Human verification expired. Complete the puzzle again.", { status: 403, code: "message-verification-expired", source: "worker" });
-  const context = messageRequestContext(request, env);
-  const binding = await privateMessageClientBinding(request);
-  if (String(proof.origin || "") !== context.origin || String(proof.binding || "") !== binding) {
-    throw serviceError("Human verification does not belong to this browser session.", { status: 403, code: "message-verification-binding", source: "worker" });
+async function consumePrivateMessageVerification(request,env,token) {
+  const value=String(token||"").trim();
+  if(!/^[A-Za-z0-9_-]{32}$/.test(value)) throw serviceError(
+    "Complete human verification before sending.",{
+      status:403,code:"message-verification-required",source:"worker"
+    });
+  const proofId=await privateMessageProofId(value);
+  let proof;
+  try{
+    proof=await consumeSecurityChallenge(env,"message-proof",proofId);
+  }catch(error){
+    if(["security-challenge-invalid","security-challenge-expired"].includes(error?.code)){
+      throw serviceError("Human verification expired. Complete the puzzle again.",{
+        status:403,code:"message-verification-expired",source:"worker"
+      });
+    }
+    throw error;
+  }
+  const context=messageRequestContext(request,env);
+  const binding=await privateMessageClientBinding(request);
+  if(proof.origin!==context.origin||proof.binding!==binding){
+    throw serviceError("Human verification does not belong to this browser session.",{
+      status:403,code:"message-verification-binding",source:"worker"
+    });
   }
   return true;
 }
 
-async function enforceMessageRateLimit(request, env, { scope, limit, windowSeconds, cooldownSeconds }) {
-  const store = pushStore(env);
-  const ip = String(request.headers.get("CF-Connecting-IP") || "local").trim() || "local";
-  const hash = await sha256Text(`${ip}:${scope}`);
-  const key = `message:rate:${hash}`;
-  const now = Date.now();
-  const current = await store.get(key, "json");
-  const fresh = current && Number(current.resetAt) > now
-    ? { count: Number(current.count) || 0, resetAt: Number(current.resetAt), lastAt: Number(current.lastAt) || 0 }
-    : { count: 0, resetAt: now + windowSeconds * 1000, lastAt: 0 };
-  if (cooldownSeconds > 0 && fresh.lastAt && now - fresh.lastAt < cooldownSeconds * 1000) {
-    throw serviceError("Please wait a moment before sending another message.", { status: 429, code: "message-rate-cooldown", source: "worker", retryAt: new Date(fresh.lastAt + cooldownSeconds * 1000).toISOString() });
-  }
-  if (fresh.count >= limit) {
-    throw serviceError("Too many messages were sent. Please try again later.", { status: 429, code: "message-rate-window", source: "worker", retryAt: new Date(fresh.resetAt).toISOString() });
-  }
-  const next = { count: fresh.count + 1, resetAt: fresh.resetAt, lastAt: now };
-  await store.put(key, JSON.stringify(next), { expirationTtl: Math.max(60, Math.ceil((fresh.resetAt - now) / 1000)) });
+async function enforceMessageRateLimit(request,env,{
+  scope,limit,windowSeconds,cooldownSeconds
+}){
+  const identity=securityIp(request);
+  const owner=await rateCoordinatorOwner("public-message:"+scope,identity);
+  await coordinateSecurity(env,owner,{
+    op:"rate-hit",category:"message",
+    policy:{limit,windowSeconds,cooldownSeconds},now:Date.now()
+  });
 }
 
 function pemPrivateKeyBytes(value = "") {
@@ -1973,6 +2079,13 @@ async function firestoreAdminCommit(env, writes) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const conflict = [409, 412].includes(response.status) ||
+      ["ABORTED", "FAILED_PRECONDITION"].includes(String(payload?.error?.status || ""));
+    if (conflict) {
+      throw serviceError("Firestore write precondition was not satisfied.", {
+        status: 409, code: "firestore-precondition-failed", source: "firebase"
+      });
+    }
     throw serviceError(payload?.error?.message || "Private message could not be stored.", { status: 502, code: "message-firestore-write", source: "firebase" });
   }
   return payload;
@@ -2024,29 +2137,70 @@ const ADMIN_SERVICE_RATE_POLICIES = Object.freeze({
   "drive-write": { limit: 30, windowSeconds: 10 * 60 }
 });
 
-export function serviceRateKvExpirationTtl(resetAt, now = Date.now()) {
-  return Math.max(60, Math.ceil((Number(resetAt) - Number(now)) / 1000));
+// One canonical coordinator backs all sensitive Admin, Cloudinary and Drive
+// rate limits. It must be bound as a SQLite-backed Durable Object.
+function securityCoordinatorNamespace(env) {
+  const namespace = env?.SECURITY_COORDINATOR;
+  if (!namespace || typeof namespace.idFromName !== "function" || typeof namespace.get !== "function") {
+    throw serviceError("Atomic security coordinator is not configured.", {
+      status: 503, code: "security-coordinator-not-configured", source: "worker"
+    });
+  }
+  return namespace;
+}
+
+async function coordinateSecurity(env, owner, operation) {
+  const namespace = securityCoordinatorNamespace(env);
+  const stub = namespace.get(namespace.idFromName(owner));
+  if (!stub || typeof stub.fetch !== "function") {
+    throw serviceError("Atomic security coordinator is unavailable.", {
+      status: 503, code: "security-coordinator-not-configured", source: "worker"
+    });
+  }
+  let response;
+  try {
+    response = await stub.fetch("https://security-coordinator.internal/operation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(operation)
+    });
+  } catch {
+    throw serviceError("Atomic security coordinator could not be reached.", {
+      status: 503, code: "security-coordinator-unavailable", source: "worker"
+    });
+  }
+  const result = await response.json().catch(() => null);
+  if (!result || (!response.ok && !result.code)) {
+    throw serviceError("Atomic security coordinator response was invalid.", {
+      status: 503, code: "security-coordinator-unavailable", source: "worker"
+    });
+  }
+  if (!response.ok) {
+    throw serviceError(result.error || "Sensitive operation was rejected.", {
+      status: response.status, code: result.code, source: "worker", retryAt: result.retryAt || ""
+    });
+  }
+  return result;
+}
+
+async function rateCoordinatorOwner(scope, subject) {
+  const digest = await sha256Text(scope + ":" + String(subject || "unknown"));
+  return "security-rate:" + scope + ":" + digest;
 }
 
 async function enforceServiceRateLimit(request, env, scope, policy, identity = "") {
-  const cfg = policy || { limit: 30, windowSeconds: 60 };
-  const subject = String(identity || securityIp(request) || "unknown").slice(0, 180);
-  const digest = await sha256Text(`${scope}:${subject}`);
-  const key = `service-rate:${scope}:${digest}`;
-  const kv = securityKv(env);
-  const now = Date.now();
-  const current = await kv.get(key, "json");
-  const start = current && Number(current.resetAt) > now ? Number(current.startAt || now) : now;
-  const resetAt = current && Number(current.resetAt) > now ? Number(current.resetAt) : now + cfg.windowSeconds * 1000;
-  const count = current && Number(current.resetAt) > now ? Math.max(0, Number(current.count) || 0) + 1 : 1;
-  await kv.put(key, JSON.stringify({ count, startAt: start, resetAt }), { expirationTtl: serviceRateKvExpirationTtl(resetAt, now) });
-  if (count > cfg.limit) {
-    throw serviceError("Too many service requests. Try again after the rate-limit window.", { status: 429, code: "service-rate-limited", source: "worker", retryAt: new Date(resetAt).toISOString() });
-  }
+  const owner = await rateCoordinatorOwner("service:" + scope,
+    String(identity || securityIp(request) || "unknown").slice(0, 180));
+  await coordinateSecurity(env, owner, {
+    op: "rate-hit", category: "service",
+    policy: policy || { limit: 30, windowSeconds: 60 },
+    now: Date.now()
+  });
 }
 
 async function enforceAdminServiceRateLimit(request, env, uid, scope) {
-  return enforceServiceRateLimit(request, env, scope, ADMIN_SERVICE_RATE_POLICIES[scope], `admin:${String(uid || "")}`);
+  return enforceServiceRateLimit(request, env, scope, ADMIN_SERVICE_RATE_POLICIES[scope],
+    "admin:" + String(uid || ""));
 }
 
 async function enforcePublicServiceRateLimit(request, env, scope) {
@@ -2055,23 +2209,100 @@ async function enforcePublicServiceRateLimit(request, env, scope) {
 
 const SECURITY_RATE_POLICIES = Object.freeze({
   password:{limit:7,windowSeconds:15*60,cooldownSeconds:15*60}, totp:{limit:8,windowSeconds:10*60,cooldownSeconds:15*60},
+  'step-up-password':{limit:10,windowSeconds:15*60,cooldownSeconds:15*60},
+  'step-up-totp':{limit:7,windowSeconds:10*60,cooldownSeconds:15*60},
+  'email-verify-send':{limit:3,windowSeconds:60*60,cooldownSeconds:30*60},
   recovery:{limit:5,windowSeconds:30*60,cooldownSeconds:30*60}, enrollment:{limit:10,windowSeconds:15*60,cooldownSeconds:10*60},
   'device-proof':{limit:10,windowSeconds:15*60,cooldownSeconds:15*60}
 });
 function securityRandomId(bytes=24){ const out=new Uint8Array(bytes); crypto.getRandomValues(out); return base64Url(out); }
-function securityKv(env){ const kv=env?.SECURITY_STATE; if(!kv?.get || !kv?.put || !kv?.delete) throw serviceError('SECURITY_STATE KV binding is not configured.',{status:503,code:'security-state-not-configured',source:'worker'}); return kv; }
-function securityIp(request){ return String(request.headers.get('CF-Connecting-IP')||request.headers.get('X-Forwarded-For')||'unknown').split(',')[0].trim().slice(0,96); }
-async function putSecurityChallenge(env,scope,data,ttl=SECURITY_LIFETIMES.challenge){ const id=securityRandomId(); await securityKv(env).put(`challenge:${scope}:${id}`,JSON.stringify({...data,scope,createdAt:Date.now(),expiresAt:Date.now()+ttl*1000}),{expirationTtl:ttl}); return id; }
-async function consumeSecurityChallenge(env,scope,id){ const key=`challenge:${scope}:${String(id||'')}`; const kv=securityKv(env); const raw=await kv.get(key); await kv.delete(key); if(!raw) throw serviceError('Security challenge is invalid, expired, or already used.',{status:400,code:'security-challenge-invalid',source:'worker'}); const data=JSON.parse(raw); if(data.scope!==scope || Number(data.expiresAt)<=Date.now()) throw serviceError('Security challenge has expired.',{status:400,code:'security-challenge-expired',source:'worker'}); return data; }
-async function enforceSecurityRateLimit(request,env,scope,policy=SECURITY_RATE_POLICIES[scope]||{limit:10,windowSeconds:900,cooldownSeconds:900}){
-  const kv=securityKv(env), id=securityIp(request), now=Date.now(), key=`rate:${scope}:${id}`, raw=await kv.get(key), state=raw?JSON.parse(raw):{count:0,windowStart:now,blockedUntil:0};
-  if(Number(state.blockedUntil)>now){ await writeSecurityEvent(env,{type:'rate-limited',success:false,ip:id,summary:`${scope} security rate limit remains active`}).catch(()=>null); throw serviceError('Too many security attempts. Try again after the cooldown.',{status:429,code:'security-rate-limited',source:'worker',retryAt:new Date(state.blockedUntil).toISOString()}); }
-  if(now-Number(state.windowStart)>policy.windowSeconds*1000){ state.count=0; state.windowStart=now; }
-  state.count=Number(state.count||0)+1; if(state.count>policy.limit) state.blockedUntil=now+policy.cooldownSeconds*1000;
-  await kv.put(key,JSON.stringify(state),{expirationTtl:Math.max(policy.windowSeconds,policy.cooldownSeconds)+60});
-  if(state.blockedUntil){ await writeSecurityEvent(env,{type:'rate-limited',success:false,ip:id,summary:`${scope} security rate limit triggered`}).catch(()=>null); throw serviceError('Too many security attempts. Temporary cooldown is active.',{status:429,code:'security-rate-limited',source:'worker',retryAt:new Date(state.blockedUntil).toISOString()}); }
+// The rate identity must come from Cloudflare's controlled client address
+// header, not user-supplied X-Forwarded-For. Missing means one shared bucket.
+function securityIp(request) {
+  return String(request.headers.get("CF-Connecting-IP") || "unknown").trim().slice(0, 96) || "unknown";
 }
-async function clearSecurityRateLimit(request,env,scope){ try{ await securityKv(env).delete(`rate:${scope}:${securityIp(request)}`); }catch{} }
+
+function securityChallengeOwner(scope, id) {
+  return "security-challenge:" + String(scope) + ":" + String(id);
+}
+
+async function putSecurityChallenge(env, scope, data, ttl = SECURITY_LIFETIMES.challenge) {
+  const id = securityRandomId();
+  const now = Date.now();
+  await coordinateSecurity(env, securityChallengeOwner(scope, id), {
+    op: "challenge-put", scope, id, record: {
+      ...data, scope, createdAt: now, expiresAt: now + ttl * 1000
+    }
+  });
+  return id;
+}
+
+async function consumeSecurityChallenge(env, scope, id) {
+  const outcome = await coordinateSecurity(env, securityChallengeOwner(scope, id), {
+    op: "challenge-consume", scope, id: String(id || "")
+  });
+  return outcome.record;
+}
+
+async function readPendingRecoveryChallenge(env, id, scope="recovery") {
+  const result = await coordinateSecurity(env, securityChallengeOwner(scope, id), {
+    op: "recovery-read", scope, id: String(id || "")
+  });
+  return result.record;
+}
+
+async function savePreparedRecoveryKit(env, id, prepared, scope="recovery") {
+  await coordinateSecurity(env,securityChallengeOwner(scope,id),{
+    op:"recovery-prepare",scope,id,prepared
+  });
+}
+
+
+async function readSecurityEnrollmentChallenge(env, id, uid) {
+  const result = await coordinateSecurity(env, securityChallengeOwner("device-enroll", id), {
+    op: "challenge-read", scope: "device-enroll", id: String(id || ""), uid
+  });
+  return result.record;
+}
+
+async function approveSecurityEnrollmentChallenge(env, id, uid, approvedByDeviceId) {
+  return coordinateSecurity(env, securityChallengeOwner("device-enroll", id), {
+    op: "challenge-approve", scope: "device-enroll", id: String(id || ""),
+    uid, approvedByDeviceId
+  });
+}
+
+async function consumeSecurityEnrollmentChallenge(env, id, uid, deviceId, publicKeyJwk, requiresApproval) {
+  const result = await coordinateSecurity(env, securityChallengeOwner("device-enroll", id), {
+    op: "enrollment-consume", scope: "device-enroll", id: String(id || ""),
+    uid, deviceId, publicKeyJwk, requiresApproval
+  });
+  return result.record;
+}
+
+async function enforceSecurityRateLimit(request, env, scope,
+    policy = SECURITY_RATE_POLICIES[scope] || { limit: 10, windowSeconds: 900, cooldownSeconds: 900 }) {
+  const ip = securityIp(request);
+  const owner = await rateCoordinatorOwner("security:" + scope, ip);
+  try {
+    await coordinateSecurity(env, owner, {
+      op: "rate-hit", category: "security", policy, now: Date.now()
+    });
+  } catch (error) {
+    if (error?.code === "security-rate-limited") {
+      await writeSecurityEvent(env, {
+        type: "rate-limited", success: false, ip,
+        summary: scope + " security rate limit blocked the request"
+      }).catch(() => null);
+    }
+    throw error;
+  }
+}
+
+async function clearSecurityRateLimit(request, env, scope) {
+  const owner = await rateCoordinatorOwner("security:" + scope, securityIp(request));
+  await coordinateSecurity(env, owner, { op: "rate-clear" });
+}
 
 function firestoreValue(value){
   if(value===null || value===undefined) return firestoreNull();
@@ -2088,11 +2319,156 @@ function fromFirestoreDoc(doc){ if(!doc)return null; const id=decodeURIComponent
 async function securityWriteDoc(env,collection,id,record){ return firestoreAdminCommit(env,[{update:{name:firestoreDocumentName(env,collection,id),fields:firestoreFields(record)}}]); }
 async function securityPatchDoc(env,collection,id,record,fieldPaths=Object.keys(record)){ return firestoreAdminCommit(env,[{update:{name:firestoreDocumentName(env,collection,id),fields:firestoreFields(record)},updateMask:{fieldPaths}}]); }
 async function securityGetDoc(env,collection,id){ return fromFirestoreDoc(await firestoreAdminGetDocument(env,collection,id)); }
-async function securityQuery(env,collection,filters=[],limit=100){
+
+// Recovery is owned by one versioned Firestore document per Admin, not KV or
+// browser state. All security-sensitive recovery transitions use Firestore's
+// server-evaluated updateTime precondition, preventing parallel replay and stale
+// completion from overwriting a more recent recovery key.
+async function writeRecoveryConditional(env, uid, version, record, {
+  merge = false, conflictCode = "security-recovery-state-changed"
+} = {}) {
+  const updateTime = String(version || "").trim();
+  if (!updateTime || !Number.isFinite(Date.parse(updateTime))) {
+    throw serviceError("Recovery version could not be verified.", {
+      status: 503, code: "security-recovery-version-missing", source: "firebase"
+    });
+  }
+  const write = {
+    update: {
+      name: firestoreDocumentName(env, SECURITY_COLLECTIONS.recovery, uid),
+      fields: firestoreFields(record)
+    },
+    ...(merge ? { updateMask: { fieldPaths: Object.keys(record) } } : {}),
+    currentDocument: { updateTime }
+  };
+  try {
+    return await firestoreAdminCommit(env, [write]);
+  } catch (error) {
+    if (error?.code === "firestore-precondition-failed") {
+      throw serviceError("Recovery state changed; the previous key or challenge is no longer valid.", {
+        status: 409, code: conflictCode, source: "worker"
+      });
+    }
+    throw error;
+  }
+}
+
+const RECOVERY_RESET_LEASE_MS = 30 * 1000;
+const RECOVERY_INTERRUPTED_MAX_AGE_MS = 60 * 60 * 1000;
+
+async function claimMasterRecoveryKey(env, uid, recoveryRecord, recoverySessionId) {
+  const now = Date.now();
+  // A prepared-but-not-activated recovery is still pending. If its browser
+  // challenge expired or was lost, the SAME offline Master Key plus a fresh
+  // verified password may restart the incomplete ceremony within its bounded
+  // recovery window. A successful activation writes active:true and rejects
+  // the old key permanently.
+  const resuming = recoveryRecord?.active === false;
+  if (resuming) {
+    const age = now - Date.parse(String(recoveryRecord.usedAt || ""));
+    if (!Number.isFinite(age) || age < 0 || age > RECOVERY_INTERRUPTED_MAX_AGE_MS) {
+      throw serviceError("Interrupted recovery has expired; account access remains locked.", {
+        status: 403, code: "security-recovery-resume-expired", source: "worker"
+      });
+    }
+    if (Number(recoveryRecord.recoveryResetLeaseUntil || 0) > now) {
+      throw serviceError("A security recovery reset is already in progress.", {
+        status: 409, code: "security-recovery-in-progress", source: "worker"
+      });
+    }
+  }
+  return writeRecoveryConditional(env, uid, recoveryRecord?._updateTime, {
+    active: false,
+    ...(!resuming ? { usedAt: new Date(now).toISOString() } : {}),
+    pendingRecoverySessionId: recoverySessionId,
+    recoveryResetsComplete: false,
+    recoveryResetLeaseUntil: now + RECOVERY_RESET_LEASE_MS
+  }, { merge: true, conflictCode: "security-recovery-key-already-used" });
+}
+
+async function finalizeRecoveryResetPreparation(env, uid, recoverySessionId, completed) {
+  const record = await securityGetDoc(env, SECURITY_COLLECTIONS.recovery, uid);
+  if (!record || record.active !== false ||
+      record.recoveryResetsComplete === true ||
+      record.pendingRecoverySessionId !== recoverySessionId) {
+    throw serviceError("Recovery state changed during reset.", {
+      status: 409, code: "security-recovery-state-changed", source: "worker"
+    });
+  }
+  return writeRecoveryConditional(env, uid, record._updateTime, completed
+    ? { recoveryResetsComplete: true, recoveryResetAt: new Date().toISOString(),
+        recoveryResetLeaseUntil: 0 }
+    : { recoveryResetLeaseUntil: 0 },
+    { merge: true, conflictCode: "security-recovery-state-changed" });
+}
+
+async function finishMasterRecoveryKey(env, uid, recoveryRecord, replacementRecord) {
+  if (recoveryRecord?.active !== false || recoveryRecord?.recoveryResetsComplete !== true) {
+    throw serviceError("Recovery must revoke prior security access before issuing a new key.", {
+      status: 403, code: "security-recovery-not-ready", source: "worker"
+    });
+  }
+  const updateTime=String(recoveryRecord._updateTime||"").trim();
+  if(!updateTime || !Number.isFinite(Date.parse(updateTime))){
+    throw serviceError("Recovery version could not be verified.",{
+      status:503,code:"security-recovery-version-missing",source:"firebase"
+    });
+  }
+  // A replacement key is disclosed only if both its secure hash and the audit
+  // event were committed together. An Activity outage cannot strand the admin
+  // with a key already changed but never displayed.
+  const eventId=securityRandomId(18);
+  const writes=[
+    {
+      update:{
+        name:firestoreDocumentName(env,SECURITY_COLLECTIONS.recovery,uid),
+        fields:firestoreFields(replacementRecord)
+      },
+      currentDocument:{updateTime}
+    },
+    {
+      update:{
+        name:firestoreDocumentName(env,SECURITY_COLLECTIONS.events,eventId),
+        fields:firestoreFields({
+          uid,type:"recovery-reset-complete",success:true,sessionId:"",
+          deviceId:"",summary:"Fresh security bootstrap and Recovery Kit required.",
+          ip:"",createdAt:new Date().toISOString()
+        })
+      },
+      currentDocument:{exists:false}
+    }
+  ];
+  try{
+    await firestoreAdminCommit(env,writes);
+  }catch(error){
+    if(error?.code==="firestore-precondition-failed"){
+      throw serviceError("Recovery state changed; the previous challenge is no longer valid.",{
+        status:409,code:"security-recovery-state-changed",source:"worker"
+      });
+    }
+    throw error;
+  }
+  return {eventId};
+}
+
+async function securityQuery(env,collection,filters=[],limit=100,offset=0){
   const token=await firebaseAdminAccessToken(env),projectId=firestoreProjectId(env); const fieldFilters=filters.map(([field,op,value])=>({fieldFilter:{field:{fieldPath:field},op,value:firestoreValue(value)}}));
-  const structuredQuery={from:[{collectionId:collection}],limit}; if(fieldFilters.length===1) structuredQuery.where=fieldFilters[0]; else if(fieldFilters.length>1) structuredQuery.where={compositeFilter:{op:'AND',filters:fieldFilters}};
+  const structuredQuery={from:[{collectionId:collection}],limit,...(offset?{offset}:{})}; if(fieldFilters.length===1) structuredQuery.where=fieldFilters[0]; else if(fieldFilters.length>1) structuredQuery.where={compositeFilter:{op:'AND',filters:fieldFilters}};
   const response=await fetch(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:runQuery`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({structuredQuery})});
   const payload=await response.json().catch(()=>[]); if(!response.ok) throw serviceError('Security records could not be queried.',{status:502,code:'security-firestore-query',source:'firebase'}); return payload.map(x=>fromFirestoreDoc(x.document)).filter(Boolean);
+}
+// Destructive operations must enumerate the complete server-side set, never
+// silently accept a UI-sized query limit as proof that all access was revoked.
+async function securityQueryAll(env,collection,filters=[]){
+  const pageSize=200,maxRecords=10000,records=[];
+  for(let offset=0;offset<=maxRecords;offset+=pageSize){
+    const page=await securityQuery(env,collection,filters,pageSize,offset);
+    records.push(...page);
+    if(page.length<pageSize)return records;
+  }
+  throw serviceError('Too many security records to safely finish revocation.',{
+    status:503,code:'security-revocation-set-too-large',source:'firebase'
+  });
 }
 async function writeSecurityEvent(env,event,{context=null,alertOrigin=''}={}){
   const eventId=securityRandomId(18),now=new Date().toISOString();
@@ -2143,15 +2519,15 @@ function effectiveSecuritySessionTrustLevel(session,activeDeviceIds){ const devi
 function serializeSecuritySessions(sessions,currentSessionId,devices){ const activeDeviceIds=activeTrustedDeviceIds(devices); return (sessions||[]).map(session=>({...session,trustLevel:effectiveSecuritySessionTrustLevel(session,activeDeviceIds),current:session.sessionId===currentSessionId})); }
 async function buildSecurityAccessState(admin,env){ const [devices,sessions]=await Promise.all([securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid]],100),securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid]],200)]); const currentDevice=devices.find(device=>device.deviceId===admin.session.deviceId); return {devices:devices.map(({publicKeyJwk,_updateTime,...device})=>({...device,current:device.deviceId===admin.session.deviceId})),sessions:serializeSecuritySessions(sessions,admin.session.sessionId,devices),capabilities:{securityManagement:canManageTrustedSecurity(admin,currentDevice)}}; }
 async function canonicalizeActiveSecuritySessionTrust(uid,session,env){
-  if(session?.trustLevel!=='trusted') return {...session,trustLevel:'temporary',deviceId:''};
+  if(session?.trustLevel!=='trusted')return {...session,trustLevel:'temporary',deviceId:''};
   const deviceId=String(session?.deviceId||'');
   const device=deviceId?await securityGetDoc(env,SECURITY_COLLECTIONS.devices,deviceId):null;
-  if(device&&device.uid===uid&&device.active===true) return session;
-  const now=Date.now(),storedExpiry=Date.parse(String(session?.expiresAt||'')),createdValue=String(session?.createdAt||'').trim(),createdAt=createdValue?Date.parse(createdValue):NaN;
-  const temporaryCeiling=(Number.isFinite(createdAt)&&createdAt>0?createdAt:now)+SECURITY_LIFETIMES.temporary*1000;
-  const effectiveExpiry=Math.min(Number.isFinite(storedExpiry)?storedExpiry:temporaryCeiling,temporaryCeiling);
-  if(effectiveExpiry<=now) throw serviceError('Administrator security session has expired or was revoked.',{status:401,code:'security-session-expired',source:'worker'});
-  return {...session,trustLevel:'temporary',deviceId:'',expiresAt:new Date(effectiveExpiry).toISOString()};
+  if(device && device.uid===uid && device.active===true)return session;
+  // Revocation must invalidate the existing session, not silently convert
+  // its signed-in Firebase token into a still-authorized temporary session.
+  throw serviceError('Administrator security session has expired or was revoked.',{
+    status:401,code:'security-session-expired',source:'worker'
+  });
 }
 async function requireActiveSecuritySession(uid,sessionId,env){ const s=await securityGetDoc(env,SECURITY_COLLECTIONS.sessions,sessionId); if(!s||s.uid!==uid||s.active!==true||Date.parse(s.expiresAt)<=Date.now()) throw serviceError('Administrator security session has expired or was revoked.',{status:401,code:'security-session-expired',source:'worker'}); return canonicalizeActiveSecuritySessionTrust(uid,s,env); }
 async function requireSecurityApprovedAdministrator(request,env,{trustLevels=null,allowLockdown=false}={}){
@@ -2188,13 +2564,236 @@ async function promoteSecuritySessionToTrusted(admin,deviceId,env){
   await securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,admin.session.sessionId,{trustLevel:'trusted',deviceId,lastActivityAt:new Date(now),expiresAt});
   return {customToken,session};
 }
+
+// This migration is part of the canonical trusted-device registration owner.
+// Existing active devices retain their trust and identity; we only backfill
+// server-owned uniqueness claims. Never auto-enroll, un-revoke, or erase a key.
+// Interrupted migration can run again safely because each claim is verified.
+async function migrateHistoricalTrustedDeviceClaims(env,uid,devices,epoch){
+  if(devices.length>=100){
+    throw serviceError("Too many device records for a complete security migration.",{
+      status:503,code:"security-device-migration-required",source:"worker"
+    });
+  }
+  const active=devices.filter(device=>device.active===true);
+  const candidates=[],unique=new Set();
+  for(const device of active){
+    const jwk=device.publicKeyJwk;
+    if(device.uid!==uid || !device.deviceId ||
+        jwk?.kty!=="EC" || jwk?.crv!=="P-256" ||
+        typeof jwk.x!=="string" || !jwk.x ||
+        typeof jwk.y!=="string" || !jwk.y){
+      throw serviceError("A historical trusted device needs verified security migration.",{
+        status:503,code:"security-device-migration-required",source:"worker"
+      });
+    }
+    const credentialId=await sha256Text(JSON.stringify([
+      jwk.kty,jwk.crv,jwk.x,jwk.y
+    ]));
+    if(unique.has(credentialId)){
+      throw serviceError("Existing trusted devices share a cryptographic key.",{
+        status:409,code:"security-device-credential-duplicate",source:"worker"
+      });
+    }
+    unique.add(credentialId);
+    candidates.push({deviceId:device.deviceId,credentialId});
+  }
+
+  for(const candidate of candidates){
+    let claim=await securityGetDoc(env,"adminSecurityDeviceCredentials",candidate.credentialId);
+    if(!claim){
+      try{
+        await firestoreAdminCommit(env,[{
+          update:{
+            name:firestoreDocumentName(env,"adminSecurityDeviceCredentials",candidate.credentialId),
+            fields:firestoreFields({
+              uid,deviceId:candidate.deviceId,
+              migratedAt:new Date().toISOString()
+            })
+          },
+          currentDocument:{exists:false}
+        }]);
+      }catch(error){
+        if(error?.code!=="firestore-precondition-failed")throw error;
+      }
+      claim=await securityGetDoc(env,"adminSecurityDeviceCredentials",candidate.credentialId);
+    }
+    if(!claim || claim.uid!==uid || claim.deviceId!==candidate.deviceId){
+      throw serviceError("Trusted-device credential claim is inconsistent.",{
+        status:409,code:"security-device-credential-duplicate",source:"worker"
+      });
+    }
+  }
+
+  if(devices.length>0 && !epoch){
+    const markerId=await sha256Text(uid+"|trusted-device-bootstrap|initial");
+    let marker=await securityGetDoc(env,"adminSecurityDeviceBootstrap",markerId);
+    if(!marker){
+      try{
+        await firestoreAdminCommit(env,[{
+          update:{
+            name:firestoreDocumentName(env,"adminSecurityDeviceBootstrap",markerId),
+            fields:firestoreFields({
+              uid,epoch:"initial",deviceId:devices[0].deviceId,
+              migratedAt:new Date().toISOString()
+            })
+          },
+          currentDocument:{exists:false}
+        }]);
+      }catch(error){
+        if(error?.code!=="firestore-precondition-failed")throw error;
+      }
+      marker=await securityGetDoc(env,"adminSecurityDeviceBootstrap",markerId);
+    }
+    if(!marker || marker.uid!==uid || marker.epoch!=="initial"){
+      throw serviceError("First trusted-device bootstrap claim is inconsistent.",{
+        status:409,code:"security-device-migration-required",source:"worker"
+      });
+    }
+  }
+}
+
+// The initial trusted-device claim and the device document must become visible
+// in ONE Firestore commit. The marker's exists:false precondition ensures that
+// two independent QR challenges cannot both initialize the same security epoch.
+// The epoch changes ONLY after an authenticated emergency recovery or an
+// explicitly verified TOTP reset, never when all devices are merely revoked.
+async function completeTrustedDeviceEnrollment(request,env,admin,body){
+  const deviceId=String(body.deviceId||'');
+  const [existingDevices,recovery]=await Promise.all([
+    securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid]],100),
+    securityGetDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid)
+  ]);
+  const epoch=String(recovery?.deviceBootstrapEpoch||'');
+  // Historical devices from older builds must never reopen unapproved first
+  // enrollment. A new epoch exists only after a verified security reset.
+  const requiresApproval=existingDevices.some(device=>device.active===true) ||
+    (existingDevices.length>0 && !epoch);
+  const enrollment=await consumeSecurityEnrollmentChallenge(
+    env,body.challengeId,admin.uid,deviceId,body.publicKeyJwk,requiresApproval
+  );
+  if(String(enrollment.deviceBootstrapEpoch||'')!==epoch){
+    throw serviceError('Trusted-device enrollment was invalidated by a security reset.',{
+      status:403,code:'security-enrollment-epoch-changed',source:'worker'
+    });
+  }
+  // Enforce one cryptographic keypair per registered device. This check covers
+  // devices created before the credential-claim collection was introduced.
+  // The atomic claim below covers simultaneous new registrations.
+  if(existingDevices.some(device =>
+      sameEnrollmentPublicKey(device.publicKeyJwk,enrollment.publicKeyJwk))){
+    throw serviceError('A device with this public key is already registered.',{
+      status:409,code:'security-device-credential-duplicate',source:'worker'
+    });
+  }
+  // Protect existing devices during migration without introducing a second
+  // state owner or trusting browser-supplied migration data.
+  await migrateHistoricalTrustedDeviceClaims(env,admin.uid,existingDevices,epoch);
+  if(enrollment.approved===true){
+    // Revoking the approving device also revokes its outstanding approvals.
+    const approverId=String(enrollment.approvedByDeviceId||'');
+    const approver=approverId
+      ? await securityGetDoc(env,SECURITY_COLLECTIONS.devices,approverId) : null;
+    if(!approver||approver.uid!==admin.uid||approver.active!==true){
+      throw serviceError('The approving trusted device is no longer active.',{
+        status:403,code:'security-enrollment-approver-revoked',source:'worker'
+      });
+    }
+  }
+  const now=new Date().toISOString();
+  const record={
+    deviceId,uid:admin.uid,publicKeyJwk:enrollment.publicKeyJwk,
+    displayName:String(body.displayName||'Trusted device').slice(0,80),
+    browserSummary:String(request.headers.get('User-Agent')||'').slice(0,180),
+    active:true,createdAt:now,lastUsedAt:now
+  };
+  const writes=[];
+  if(enrollment.approved!==true){
+    const markerId=await sha256Text(admin.uid+'|trusted-device-bootstrap|'+(epoch||'initial'));
+    writes.push({
+      update:{
+        name:firestoreDocumentName(env,'adminSecurityDeviceBootstrap',markerId),
+        fields:firestoreFields({uid:admin.uid,epoch:epoch||'initial',deviceId,createdAt:now})
+      },
+      currentDocument:{exists:false}
+    });
+  }
+  // Key identity is hashed server-side; no credential/public-key material is
+  // written to the uniqueness index. The index is never released on revoke.
+  const credentialId=await sha256Text(JSON.stringify([
+    record.publicKeyJwk.kty,record.publicKeyJwk.crv,
+    record.publicKeyJwk.x,record.publicKeyJwk.y
+  ]));
+  writes.push({
+    update:{
+      name:firestoreDocumentName(env,'adminSecurityDeviceCredentials',credentialId),
+      fields:firestoreFields({uid:admin.uid,deviceId,createdAt:now})
+    },
+    currentDocument:{exists:false}
+  });
+  writes.push({
+    update:{
+      name:firestoreDocumentName(env,SECURITY_COLLECTIONS.devices,deviceId),
+      fields:firestoreFields(record)
+    },
+    currentDocument:{exists:false}
+  });
+  try{
+    await firestoreAdminCommit(env,writes);
+  }catch(error){
+    if(error?.code==='firestore-precondition-failed'){
+      throw serviceError('Trusted-device bootstrap was already used, or this device ID exists.',{
+        status:409,
+        code:enrollment.approved===true
+          ?'security-device-credential-duplicate'
+          :'security-device-bootstrap-already-used',
+        source:'worker'
+      });
+    }
+    throw error;
+  }
+  const promoted=await promoteSecuritySessionToTrusted(admin,deviceId,env);
+  await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-enrolled',
+    deviceId,success:true,sessionId:promoted.session.sessionId});
+  return {ok:true,deviceId,customToken:promoted.customToken,session:promoted.session};
+}
+
 async function createApprovedSessionResponse(request,env,{uid,trustLevel,deviceId=''},context=null){ const session=await createSecuritySession(env,{uid,trustLevel,deviceId,userAgent:request.headers.get('User-Agent')||'',ip:securityIp(request)}); const customToken=await mintSecurityCustomToken({uid,sessionId:session.sessionId,trustLevel,deviceId},env); const type=trustLevel==='temporary'?'new-temporary-login':'login-success'; await writeSecurityEvent(env,{uid,type,success:true,sessionId:session.sessionId,deviceId,ip:securityIp(request),summary:`${trustLevel} administrator session created`},{context,alertOrigin:new URL(request.url).origin}); return {customToken,session}; }
 
 async function verifyDeviceSignature(publicKeyJwk,nonce,signature){ try{ const key=await crypto.subtle.importKey('jwk',publicKeyJwk,{name:'ECDSA',namedCurve:'P-256'},false,['verify']); const normalized=String(signature||'').replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(String(signature||'').length/4)*4,'='); const bytes=Uint8Array.from(atob(normalized),c=>c.charCodeAt(0)); return crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},key,bytes,new TextEncoder().encode(nonce)); }catch{return false;} }
 async function recoveryHmac(value,env){ const pepper=String(env.SECURITY_RECOVERY_PEPPER||''); if(!pepper) throw serviceError('SECURITY_RECOVERY_PEPPER is not configured.',{status:503,code:'security-recovery-config',source:'worker'}); const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pepper),{name:'HMAC',hash:'SHA-256'},false,['sign']); return base64Url(new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(String(value||'').trim())))); }
 function recoveryKey(){ const bytes=new Uint8Array(32); crypto.getRandomValues(bytes); const token=base64Url(bytes).toUpperCase(); return token.match(/.{1,6}/g).join('-'); }
 function backupCode(){ const b=new Uint8Array(8); crypto.getRandomValues(b); return base64Url(b).toUpperCase().slice(0,12).match(/.{1,4}/g).join('-'); }
-async function revokeUserSecurityState(uid,env){ const [sessions,devices]=await Promise.all([securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',uid]],200),securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',uid]],100)]); await Promise.all([...sessions.map(s=>securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()})),...devices.map(d=>securityPatchDoc(env,SECURITY_COLLECTIONS.devices,d.deviceId,{active:false,revokedAt:new Date().toISOString()}))]); }
+// One backend-only batch writer for all destructive device/session revocation.
+async function revokeSecurityDocuments(env,records){
+  const ids=records.map(({collection,id})=>({
+    collection,id:String(id||'').trim()
+  }));
+  if(ids.some(({id})=>!id))throw serviceError('Security revocation identity is incomplete.',{
+    status:503,code:'security-revocation-record-invalid',source:'worker'
+  });
+  const fields=firestoreFields({active:false,revokedAt:new Date().toISOString()});
+  const writes=ids.map(({collection,id})=>({
+    update:{name:firestoreDocumentName(env,collection,id),fields},
+    updateMask:{fieldPaths:['active','revokedAt']},
+    currentDocument:{exists:true}
+  }));
+  // A Firestore commit supports at most 500 writes. Partial batch failures
+  // leave the operation retryable; a caller must not report success.
+  for(let start=0;start<writes.length;start+=450)
+    await firestoreAdminCommit(env,writes.slice(start,start+450));
+}
+async function revokeUserSecurityState(uid,env){
+  // Never confuse truncated management lists with complete security records.
+  const [sessions,devices]=await Promise.all([
+    securityQueryAll(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',uid]]),
+    securityQueryAll(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',uid]])
+  ]);
+  await revokeSecurityDocuments(env,[
+    ...sessions.map(s=>({collection:SECURITY_COLLECTIONS.sessions,id:s.sessionId})),
+    ...devices.map(d=>({collection:SECURITY_COLLECTIONS.devices,id:d.deviceId}))
+  ]);
+}
 
 
 const SECURITY_REQUEST_SCHEMAS = Object.freeze({
@@ -2205,7 +2804,10 @@ const SECURITY_REQUEST_SCHEMAS = Object.freeze({
   "/security/email-verification/send": { email: REQUEST_SCHEMA_ANY, password: REQUEST_SCHEMA_ANY },
   "/security/device/login-complete": { challengeId: REQUEST_SCHEMA_ANY, deviceId: REQUEST_SCHEMA_ANY, signature: REQUEST_SCHEMA_ANY },
   "/security/recovery/start": { email: REQUEST_SCHEMA_ANY, password: REQUEST_SCHEMA_ANY, recoveryKey: REQUEST_SCHEMA_ANY },
-  "/security/recovery/complete": { recoverySessionId: REQUEST_SCHEMA_ANY, newEmail: REQUEST_SCHEMA_ANY },
+  "/security/recovery/prepare": { recoverySessionId: REQUEST_SCHEMA_ANY },
+  "/security/recovery/rotate/activate": { rotationId: REQUEST_SCHEMA_ANY, preparedKitId: REQUEST_SCHEMA_ANY, proofId: REQUEST_SCHEMA_ANY },
+  "/security/recovery/complete": { recoverySessionId: REQUEST_SCHEMA_ANY, preparedKitId: REQUEST_SCHEMA_ANY, newEmail: REQUEST_SCHEMA_ANY },
+  "/security/recovery/status": { recoverySessionId: REQUEST_SCHEMA_ANY, preparedKitId: REQUEST_SCHEMA_ANY },
   "/security/session/end": {},
   "/security/step-up/start": { password: REQUEST_SCHEMA_ANY },
   "/security/step-up/complete": { challengeId: REQUEST_SCHEMA_ANY, code: REQUEST_SCHEMA_ANY },
@@ -2221,7 +2823,7 @@ const SECURITY_REQUEST_SCHEMAS = Object.freeze({
   "/security/session/revoke": { sessionId: REQUEST_SCHEMA_ANY },
   "/security/session/revoke-others": { proofId: REQUEST_SCHEMA_ANY },
   "/security/session/revoke-temporary": { proofId: REQUEST_SCHEMA_ANY },
-  "/security/email-branding": { branding: SECURITY_BRANDING_SCHEMA },
+  "/security/email-branding": { branding: SECURITY_BRANDING_SCHEMA, proofId: REQUEST_SCHEMA_ANY },
   "/security/lockdown/enter": { proofId: REQUEST_SCHEMA_ANY },
   "/security/lockdown/exit": { proofId: REQUEST_SCHEMA_ANY }
 });
@@ -2246,51 +2848,448 @@ async function handleSecurityRoute(request,env,url,context){
       await enforceSecurityRateLimit(request,env,'totp'); const c=await consumeSecurityChallenge(env,'totp-login',body.challengeId); const enrollmentId=String(c.mfaInfo?.find?.(x=>x?.totpInfo)?.mfaEnrollmentId||c.mfaInfo?.[0]?.mfaEnrollmentId||''); const {response,payload}=await identityToolkit('accounts/mfaSignIn:finalize',{mfaPendingCredential:c.mfaPendingCredential,mfaEnrollmentId:enrollmentId,totpVerificationInfo:{verificationCode:String(body.code||'')}},env,'v2'); if(!response.ok||!payload?.idToken){ await writeSecurityEvent(env,{uid:c.uid,type:'totp-failure',success:false,ip:securityIp(request)}); throw serviceError('Authenticator code is invalid or expired.',{status:401,code:'security-totp-invalid',source:'firebase'}); } const verified=await verifyFirebaseIdToken(payload.idToken,env); await clearSecurityRateLimit(request,env,'totp'); return json(await createApprovedSessionResponse(request,env,{uid:verified.uid,trustLevel:'temporary'},context),200,origin);
     }
     if(path==='/security/totp/enrollment/start'&&method==='POST'){
-      await enforceSecurityRateLimit(request,env,'enrollment'); const first=await verifyFirebasePassword(body.email||'',body.password,env); if(!first.uid||!first.idToken) throw serviceError('A password-verified non-MFA Firebase session is required for bootstrap.',{status:400,code:'security-bootstrap-state',source:'firebase'}); if(!first.emailVerified) throw serviceError('Verify the administrator email before enrolling an authenticator.',{status:403,code:'security-email-unverified',source:'firebase'}); const {response,payload}=await identityToolkit('accounts/mfaEnrollment:start',{idToken:first.idToken,totpEnrollmentInfo:{}},env,'v2'); if(!response.ok) throw serviceError('Authenticator enrollment could not be started.',{status:502,code:'security-totp-enrollment-start',source:'firebase'}); const info=payload?.totpSessionInfo||payload?.totpEnrollmentInfo||payload; const secret=String(info?.sharedSecretKey||''); const sessionInfo=String(info?.sessionInfo||payload?.sessionInfo||''); const challengeId=await putSecurityChallenge(env,'totp-enroll',{uid:first.uid,idToken:first.idToken,sessionInfo,secret}); const issuer=encodeURIComponent('LΛN Portfolio CMS'),account=encodeURIComponent(first.email||'Admin'); return json({challengeId,manualSecret:secret,totpUri:`otpauth://totp/${issuer}:${account}?secret=${encodeURIComponent(secret)}&issuer=${issuer}&digits=6&period=30`},200,origin);
+      await enforceSecurityRateLimit(request,env,'enrollment'); const first=await verifyFirebasePassword(body.email||'',body.password,env); if(!first.uid||!first.idToken) throw serviceError('A password-verified non-MFA Firebase session is required for bootstrap.',{status:400,code:'security-bootstrap-state',source:'firebase'}); if(!first.emailVerified) throw serviceError('Verify the administrator email before enrolling an authenticator.',{status:403,code:'security-email-unverified',source:'firebase'}); const {response,payload}=await identityToolkit('accounts/mfaEnrollment:start',{idToken:first.idToken,totpEnrollmentInfo:{}},env,'v2'); if(!response.ok) throw serviceError('Authenticator enrollment could not be started.',{status:502,code:'security-totp-enrollment-start',source:'firebase'}); const info=payload?.totpSessionInfo||payload?.totpEnrollmentInfo||payload;
+      const secret=String(info?.sharedSecretKey||'');
+      const sessionInfo=String(info?.sessionInfo||payload?.sessionInfo||'');
+      const digits=Number(info?.verificationCodeLength||6);
+      const period=Number(info?.periodSec||30);
+      const algorithm=String(info?.hashingAlgorithm||'SHA1').toUpperCase().replace(/-/g,'');
+      // Generate QR parameters from the authoritative Firebase enrollment
+      // response, rather than silently displaying a QR for the wrong TOTP
+      // settings. Our existing six-digit login UI supports six digits only.
+      if(!/^[A-Z2-7]+=*$/.test(secret)||!sessionInfo||digits!==6||
+         !Number.isInteger(period)||period<15||period>120||
+         !['SHA1','SHA256','SHA512'].includes(algorithm)){
+        throw serviceError('Firebase returned an unsupported authenticator enrollment.',{
+          status:502,code:'security-totp-enrollment-configuration',source:'firebase'
+        });
+      }
+      // Firebase owns the secret. The one-use server challenge needs only the
+      // opaque enrollment session and token; never persist a second secret copy.
+      const challengeId=await putSecurityChallenge(env,'totp-enroll',{
+        uid:first.uid,idToken:first.idToken,sessionInfo
+      });
+      const issuer=encodeURIComponent('LΛN Portfolio CMS'),account=encodeURIComponent(first.email||'Admin');
+      return json({challengeId,manualSecret:secret,
+        totpUri:`otpauth://totp/${issuer}:${account}?secret=${encodeURIComponent(secret)}&issuer=${issuer}&algorithm=${algorithm}&digits=${digits}&period=${period}`
+      },200,origin);
     }
     if(path==='/security/totp/enrollment/complete'&&method==='POST'){
       await enforceSecurityRateLimit(request,env,'enrollment');
       const c=await consumeSecurityChallenge(env,'totp-enroll',body.challengeId);
       const {response,payload}=await identityToolkit('accounts/mfaEnrollment:finalize',{idToken:c.idToken,displayName:String(body.displayName||'Authenticator').slice(0,60),totpVerificationInfo:{sessionInfo:c.sessionInfo,verificationCode:String(body.code||'')}},env,'v2');
-      if(!response.ok||!payload?.idToken) throw serviceError('Authenticator code was not accepted.',{status:400,code:'security-totp-enrollment-invalid',source:'firebase'});
+      if(!response.ok||!payload?.idToken){
+        // The challenge was atomically consumed before contacting Firebase:
+        // a failed attempt cannot be replayed. Return a stable, nonsecret
+        // classification so the existing login controller can request a NEW
+        // enrollment challenge instead of leaving a dead QR on screen.
+        const providerCode=String(payload?.error?.message||'').split(/[\s:]/)[0].toUpperCase();
+        const codeRejected=['INVALID_TOTP_CODE','INVALID_VERIFICATION_CODE',
+          'INVALID_CODE','TOTP_CODE_INVALID','INVALID_TOTP_VERIFICATION_CODE',
+          'INVALID_MFA_VERIFICATION_CODE'].includes(providerCode);
+        const expired=['INVALID_ID_TOKEN','TOKEN_EXPIRED','EXPIRED_ID_TOKEN',
+          'INVALID_SESSION_INFO','SESSION_EXPIRED','INVALID_MFA_SESSION'].includes(providerCode);
+        const category=codeRejected?'code-rejected':expired?'session-expired':'provider-failure';
+        await writeSecurityEvent(env,{uid:c.uid,type:'totp-enrollment-failure',
+          success:false,ip:securityIp(request),summary:'Authenticator enrollment '+category+'.'
+        }).catch(()=>null);
+        throw serviceError(
+          codeRejected?'Authenticator code was not accepted. Scan the new QR to retry.':
+          expired?'Authenticator enrollment session expired. Sign in again.':
+          'Authenticator enrollment verification is temporarily unavailable.',
+          {status:codeRejected?400:expired?401:502,
+           code:codeRejected?'security-totp-enrollment-code-invalid':
+                expired?'security-totp-enrollment-session-expired':
+                'security-totp-enrollment-provider-failed',
+           source:'firebase'}
+        );
+      }
       const verified=await verifyFirebaseIdToken(payload.idToken,env);
       if(verified.uid!==c.uid) throw serviceError('Authenticator enrollment identity changed unexpectedly.',{status:403,code:'security-totp-enrollment-identity',source:'worker'});
       await clearSecurityRateLimit(request,env,'enrollment');
       await writeSecurityEvent(env,{uid:c.uid,type:'totp-enrolled',success:true,ip:securityIp(request)});
       return json(await createApprovedSessionResponse(request,env,{uid:verified.uid,trustLevel:'temporary'},context),200,origin);
     }
-    if(path==='/security/email-verification/send'&&method==='POST'){ const first=await verifyFirebasePassword(body.email||'',body.password,env); if(!first.idToken) throw serviceError('Email verification requires a password-only bootstrap state.',{status:400,code:'security-email-verification-state'}); const {response}=await identityToolkit('accounts:sendOobCode',{requestType:'VERIFY_EMAIL',idToken:first.idToken},env); if(!response.ok) throw serviceError('Verification email could not be requested.',{status:502,code:'security-email-verification-send'}); return json({ok:true},200,origin); }
+    if(path==='/security/email-verification/send'&&method==='POST'){ await enforceSecurityRateLimit(request,env,'email-verify-send'); const first=await verifyFirebasePassword(body.email||'',body.password,env); if(!first.idToken) throw serviceError('Email verification requires a password-only bootstrap state.',{status:400,code:'security-email-verification-state'}); const {response}=await identityToolkit('accounts:sendOobCode',{requestType:'VERIFY_EMAIL',idToken:first.idToken},env); if(!response.ok) throw serviceError('Verification email could not be requested.',{status:502,code:'security-email-verification-send'}); return json({ok:true},200,origin); }
     if(path==='/security/device/login-complete'&&method==='POST'){ await enforceSecurityRateLimit(request,env,'device-proof'); const c=await consumeSecurityChallenge(env,'device-login',body.challengeId); if(c.deviceId!==String(body.deviceId||'')) throw serviceError('Device challenge does not match.',{status:403,code:'security-device-proof-invalid'}); const device=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,c.deviceId); if(!device||device.uid!==c.uid||device.active!==true||!await verifyDeviceSignature(device.publicKeyJwk,c.nonce,body.signature)){ await writeSecurityEvent(env,{uid:c.uid,type:'device-proof-failure',success:false,deviceId:c.deviceId,ip:securityIp(request)}); throw serviceError('Trusted-device proof is invalid or revoked.',{status:403,code:'security-device-proof-invalid'}); } await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,c.deviceId,{lastUsedAt:new Date().toISOString()}); await clearSecurityRateLimit(request,env,'device-proof'); return json(await createApprovedSessionResponse(request,env,{uid:c.uid,trustLevel:'trusted',deviceId:c.deviceId},context),200,origin); }
 
     if(path==='/security/recovery/start'&&method==='POST'){
-      await enforceSecurityRateLimit(request,env,'recovery'); const first=await verifyFirebasePassword(body.email,body.password,env); if(!first.uid) throw serviceError('Recovery requires the administrator password.',{status:401,code:'security-recovery-password'}); const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,first.uid),digest=await recoveryHmac(body.recoveryKey,env); if(!rec||rec.active!==true||rec.masterKeyHash!==digest){ await writeSecurityEvent(env,{uid:first.uid,type:'recovery-attempt',success:false,ip:securityIp(request)}); throw serviceError('Recovery key is invalid.',{status:401,code:'security-recovery-key-invalid'}); } const recoverySessionId=await putSecurityChallenge(env,'recovery',{uid:first.uid,email:first.email},SECURITY_LIFETIMES.recovery); await Promise.all([revokeUserSecurityState(first.uid,env),clearFirebaseMfaForRecovery(env,first.uid)]); await securityPatchDoc(env,SECURITY_COLLECTIONS.recovery,first.uid,{active:false,usedAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:first.uid,type:'recovery-used',success:true,ip:securityIp(request),summary:'Recovery key accepted; prior sessions, trusted devices, Firebase tokens, and MFA enrollment were invalidated.'}); return json({state:'recovery',recoverySessionId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.recovery*1000).toISOString()},200,origin);
+      await enforceSecurityRateLimit(request,env,'recovery');
+      const first=await verifyFirebasePassword(body.email,body.password,env);
+      if(!first.uid) throw serviceError('Recovery requires the administrator password.',{status:401,code:'security-recovery-password'});
+      const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,first.uid);
+      const digest=await recoveryHmac(body.recoveryKey,env);
+      // The old key stays inactive after an interrupted reset. Resumption
+      // requires the SAME Master Key plus a fresh Firebase password check,
+      // is rate limited and may run only within a bounded server-side window.
+      // Neither other keys nor a finished recovery may reopen the reset.
+      const resumable=rec?.active===false;
+      if(!rec || rec.masterKeyHash!==digest || (!resumable && rec.active!==true)){
+        await writeSecurityEvent(env,{uid:first.uid,type:'recovery-attempt',success:false,ip:securityIp(request)}).catch(()=>null);
+        throw serviceError('Recovery key is invalid.',{status:401,code:'security-recovery-key-invalid'});
+      }
+      const recoverySessionId=await putSecurityChallenge(env,'recovery',{uid:first.uid,email:first.email},SECURITY_LIFETIMES.recovery);
+      await claimMasterRecoveryKey(env,first.uid,rec,recoverySessionId);
+      try{
+        // Both operations are idempotent: a failed reset can retry revoking
+        // already-revoked sessions and clearing already-cleared MFA.
+        await Promise.all([
+          revokeUserSecurityState(first.uid,env),
+          clearFirebaseMfaForRecovery(env,first.uid)
+        ]);
+        await finalizeRecoveryResetPreparation(env,first.uid,recoverySessionId,true);
+      }catch(error){
+        // Do not disclose an incomplete recovery challenge. Release the short
+        // lease if possible; otherwise it expires after a Worker crash.
+        await finalizeRecoveryResetPreparation(env,first.uid,recoverySessionId,false).catch(()=>null);
+        throw serviceError('Security reset was interrupted. Retry using the same administrator password and Master Recovery Key.',{
+          status:503,code:'security-recovery-interrupted',source:'worker'
+        });
+      }
+      // An activity-email/provider outage must never turn an already-completed
+      // reset into an unclaimable response. Capture audit failures separately.
+      await writeSecurityEvent(env,{uid:first.uid,type:'recovery-used',success:true,ip:securityIp(request),summary:'Recovery key accepted; prior sessions, trusted devices, Firebase tokens, and MFA enrollment were invalidated.'}).catch(()=>null);
+      return json({state:'recovery',recoverySessionId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.recovery*1000).toISOString()},200,origin);
     }
-    if(path==='/security/recovery/complete'&&method==='POST'){ const c=await consumeSecurityChallenge(env,'recovery',body.recoverySessionId); const replacementEmail=String(body.newEmail||'').trim(); if(replacementEmail){ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replacementEmail)) throw serviceError('Replacement email is invalid.',{status:400,code:'security-recovery-email-invalid'}); await identityPlatformAdminUpdateUser(env,c.uid,{email:replacementEmail,emailVerified:false,validSince:String(Math.floor(Date.now()/1000))}); } const key=recoveryKey(),codes=Array.from({length:8},backupCode),hash=await recoveryHmac(key,env),codeHashes=await Promise.all(codes.map(x=>recoveryHmac(x,env))); await securityWriteDoc(env,SECURITY_COLLECTIONS.recovery,c.uid,{uid:c.uid,active:true,masterKeyHash:hash,backupCodeHashes:codeHashes,createdAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:c.uid,type:'recovery-reset-complete',success:true,summary:'Fresh security bootstrap and Recovery Kit required.'}); return json({state:'bootstrap-required',email:replacementEmail||c.email||'',masterKey:key,backupCodes:codes,requireEmailVerification:Boolean(replacementEmail),requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true},200,origin); }
+    if(path==='/security/recovery/prepare'&&method==='POST'){
+      await enforceSecurityRateLimit(request,env,'recovery-prepare',{limit:5,windowSeconds:900,cooldownSeconds:300});
+      const id=String(body.recoverySessionId||'');
+      const c=await readPendingRecoveryChallenge(env,id);
+      const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,c.uid);
+      if(!rec || rec.active!==false || rec.pendingRecoverySessionId!==id ||
+          rec.recoveryResetsComplete!==true) {
+        throw serviceError('The security reset must finish before preparing a new Recovery Kit.',{
+          status:403,code:'security-recovery-not-ready',source:'worker'
+        });
+      }
+      const key=recoveryKey(),codes=Array.from({length:8},backupCode);
+      const preparedKitId=securityRandomId(24);
+      const prepared={
+        preparedKitId,masterKeyHash:await recoveryHmac(key,env),
+        backupCodeHashes:await Promise.all(codes.map(code=>recoveryHmac(code,env)))
+      };
+      // Only hashes and an opaque ID enter Durable Object state. This is the
+      // sole plaintext display of this generated kit: no persistent secret.
+      await savePreparedRecoveryKit(env,id,prepared);
+      return json({
+        state:'kit-prepared',preparedKitId,
+        masterKey:key,backupCodes:codes,
+        expiresAt:c.expiresAt
+      },200,origin);
+    }
+    if(path==='/security/recovery/complete'&&method==='POST'){
+      const id=String(body.recoverySessionId||'');
+      const preparedKitId=String(body.preparedKitId||'');
+      if(!/^[A-Za-z0-9_-]{20,90}$/.test(preparedKitId)){
+        throw serviceError('Prepare and save the new Recovery Kit before activation.',{
+          status:400,code:'security-recovery-kit-required',source:'worker'
+        });
+      }
+      const c=await readPendingRecoveryChallenge(env,id);
+      if(!c.prepared || c.prepared.preparedKitId!==preparedKitId) {
+        throw serviceError('Prepared Recovery Kit does not match this recovery session.',{
+          status:403,code:'security-recovery-kit-mismatch',source:'worker'
+        });
+      }
+      const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,c.uid);
+      if(rec?.active===true && rec.completedRecoverySessionId===id &&
+         rec.completedPreparedKitId===preparedKitId){
+        // An uncertain network response after the successful Firestore commit
+        // can be checked without issuing the secret again.
+        return json({
+          state:'bootstrap-required',alreadyCompleted:true,
+          email:rec.recoveryEmail||c.email||'',
+          requireEmailVerification:Boolean(rec.recoveryEmailChanged),
+          requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true
+        },200,origin);
+      }
+      if(!rec || rec.pendingRecoverySessionId!==id || rec.active!==false ||
+          rec.recoveryResetsComplete!==true){
+        throw serviceError('Recovery challenge is no longer valid or the security reset is incomplete.',{
+          status:403,code:'security-recovery-not-ready',source:'worker'
+        });
+      }
+      const replacementEmail=String(body.newEmail||'').trim();
+      if(replacementEmail){
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replacementEmail))
+          throw serviceError('Replacement email is invalid.',{
+            status:400,code:'security-recovery-email-invalid',source:'worker'
+          });
+        await identityPlatformAdminUpdateUser(env,c.uid,{
+          email:replacementEmail,emailVerified:false,
+          validSince:String(Math.floor(Date.now()/1000))
+        });
+      }
+      // Firestore CAS makes the prepared kit active exactly once. Its hashes
+      // are the same ones displayed to the Admin BEFORE this operation began.
+      await finishMasterRecoveryKey(env,c.uid,rec,{
+        uid:c.uid,active:true,
+        masterKeyHash:c.prepared.masterKeyHash,
+        backupCodeHashes:c.prepared.backupCodeHashes,
+        completedRecoverySessionId:id,completedPreparedKitId:preparedKitId,
+        recoveryEmail:replacementEmail||c.email||'',
+        recoveryEmailChanged:Boolean(replacementEmail),
+        deviceBootstrapEpoch:securityRandomId(18),
+        createdAt:new Date().toISOString()
+      });
+      // Retain the short-lived nonsecret challenge for status confirmation;
+      // Firestore's authoritative active=true record prevents a second reset.
+      return json({
+        state:'bootstrap-required',email:replacementEmail||c.email||'',
+        requireEmailVerification:Boolean(replacementEmail),
+        requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true
+      },200,origin);
+    }
+    if(path==='/security/recovery/status'&&method==='POST'){
+      await enforceSecurityRateLimit(request,env,'recovery-status',{limit:30,windowSeconds:900,cooldownSeconds:120});
+      const id=String(body.recoverySessionId||'');
+      const preparedKitId=String(body.preparedKitId||'');
+      if(!/^[A-Za-z0-9_-]{20,90}$/.test(preparedKitId)){
+        throw serviceError('Prepared Recovery Kit ID is required.',{
+          status:400,code:'security-recovery-kit-required',source:'worker'
+        });
+      }
+      const c=await readPendingRecoveryChallenge(env,id);
+      if(!c.prepared || c.prepared.preparedKitId!==preparedKitId){
+        throw serviceError('Recovery Kit confirmation does not match.',{
+          status:403,code:'security-recovery-kit-mismatch',source:'worker'
+        });
+      }
+      const rec=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,c.uid);
+      if(rec?.active===true && rec.completedRecoverySessionId===id &&
+         rec.completedPreparedKitId===preparedKitId) {
+        return json({
+          state:'bootstrap-required',email:rec.recoveryEmail||c.email||'',
+          requireEmailVerification:Boolean(rec.recoveryEmailChanged),
+          requireTotpEnrollment:true,requireTrustedDeviceEnrollment:true
+        },200,origin);
+      }
+      if(rec?.active===false && rec.pendingRecoverySessionId===id &&
+         rec.recoveryResetsComplete===true) {
+        return json({state:'pending-activation'},200,origin);
+      }
+      throw serviceError('Recovery state is no longer valid.',{
+        status:403,code:'security-recovery-not-ready',source:'worker'
+      });
+    }
 
     const allowLockdown=path==='/security/overview'||path==='/security/lockdown/exit';
     const admin=await requireSecurityApprovedAdministrator(request,env,{allowLockdown});
     if(path==='/security/session/validate'&&method==='GET'){ return json({ok:true,session:{sessionId:admin.session.sessionId,trustLevel:admin.session.trustLevel||'temporary',deviceId:admin.session.deviceId||'',expiresAt:admin.session.expiresAt||''}},200,origin); }
     if(path==='/security/session/end'&&method==='POST'){ await securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,admin.session.sessionId,{active:false,revokedAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:admin.uid,type:'session-revoked',sessionId:admin.session.sessionId,success:true}); return json({ok:true},200,origin); }
-    if(path==='/security/step-up/start'&&method==='POST'){ const first=await verifyFirebasePassword(admin.email,body.password,env); if(!first.mfaPendingCredential) throw serviceError('Authenticator verification is required for sensitive actions.',{status:400,code:'security-step-up-mfa-required'}); const challengeId=await putSecurityChallenge(env,'step-up',{uid:admin.uid,sessionId:admin.session.sessionId,mfaPendingCredential:first.mfaPendingCredential,mfaInfo:first.mfaInfo}); return json({challengeId},200,origin); }
-    if(path==='/security/step-up/complete'&&method==='POST'){ const c=await consumeSecurityChallenge(env,'step-up',body.challengeId); if(c.uid!==admin.uid||c.sessionId!==admin.session.sessionId) throw serviceError('Step-up challenge does not belong to this session.',{status:403,code:'security-step-up-invalid'}); const enrollmentId=String(c.mfaInfo?.find?.(x=>x?.totpInfo)?.mfaEnrollmentId||c.mfaInfo?.[0]?.mfaEnrollmentId||''); const {response}=await identityToolkit('accounts/mfaSignIn:finalize',{mfaPendingCredential:c.mfaPendingCredential,mfaEnrollmentId:enrollmentId,totpVerificationInfo:{verificationCode:String(body.code||'')}},env,'v2'); if(!response.ok) throw serviceError('Authenticator code is invalid or expired.',{status:401,code:'security-step-up-invalid'}); const proofId=securityRandomId(18),expiresAt=new Date(Date.now()+SECURITY_LIFETIMES.stepUp*1000).toISOString(); await securityWriteDoc(env,SECURITY_COLLECTIONS.stepUps,proofId,{proofId,uid:admin.uid,sessionId:admin.session.sessionId,active:true,createdAt:new Date(),expiresAt:new Date(Date.parse(expiresAt))}); return json({proofId,expiresAt},200,origin); }
-    if(path==='/security/device/enrollment/create'&&method==='POST'){ await enforceSecurityRateLimit(request,env,'enrollment'); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const requestingDeviceId=String(body.deviceId||''); if(!requestingDeviceId||!body.publicKeyJwk) throw serviceError('Device public key is required.',{status:400,code:'security-device-key-required'}); const challengeId=await putSecurityChallenge(env,'device-enroll',{uid:admin.uid,requestingDeviceId,publicKeyJwk:body.publicKeyJwk,approved:false}); return json({challengeId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.challenge*1000).toISOString()},200,origin); }
-    if(path==='/security/device/enrollment/status'&&method==='POST'){ const key=`challenge:device-enroll:${String(body.challengeId||'')}`,raw=await securityKv(env).get(key); if(!raw) throw serviceError('Enrollment challenge is invalid or expired.',{status:400,code:'security-enrollment-invalid'}); const c=JSON.parse(raw); if(c.uid!==admin.uid) throw serviceError('Enrollment challenge does not belong to this administrator.',{status:403,code:'security-enrollment-invalid'}); if(Number(c.expiresAt)<=Date.now()) throw serviceError('Enrollment challenge has expired.',{status:400,code:'security-enrollment-expired'}); return json({state:c.approved?'approved':'pending',expiresAt:new Date(Number(c.expiresAt)).toISOString()},200,origin); }
-    if(path==='/security/device/enrollment/approve'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const key=`challenge:device-enroll:${String(body.challengeId||'')}`,raw=await securityKv(env).get(key); if(!raw) throw serviceError('Enrollment challenge is invalid or expired.',{status:400,code:'security-enrollment-invalid'}); const c=JSON.parse(raw); if(c.uid!==admin.uid) throw serviceError('Enrollment challenge does not belong to this administrator.',{status:403,code:'security-enrollment-invalid'}); if(Number(c.expiresAt)<=Date.now()) throw serviceError('Enrollment challenge has expired.',{status:400,code:'security-enrollment-expired'}); if(c.approved===true) throw serviceError('Enrollment challenge was already approved.',{status:409,code:'security-enrollment-already-approved'}); c.approved=true;c.approvedByDeviceId=admin.session.deviceId||'';c.approvedAt=Date.now(); const remainingTtl=Math.max(1,Math.ceil((Number(c.expiresAt)-Date.now())/1000)); await securityKv(env).put(key,JSON.stringify(c),{expirationTtl:remainingTtl}); return json({ok:true,state:'approved'},200,origin); }
-    if(path==='/security/device/enrollment/complete'&&method==='POST'){ const key=`challenge:device-enroll:${String(body.challengeId||'')}`,raw=await securityKv(env).get(key); if(!raw) throw serviceError('Enrollment challenge is invalid, expired, or already used.',{status:400,code:'security-enrollment-invalid'}); const c=JSON.parse(raw); if(c.uid!==admin.uid) throw serviceError('Enrollment challenge does not belong to this administrator.',{status:403,code:'security-enrollment-invalid'}); if(Number(c.expiresAt)<=Date.now()) throw serviceError('Enrollment challenge has expired.',{status:400,code:'security-enrollment-expired'}); const existingDevices=await securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid],['active','EQUAL',true]],10); if(existingDevices.length>0&&!c.approved) throw serviceError('An existing trusted device must approve this enrollment.',{status:403,code:'security-enrollment-approval-required'}); const deviceId=String(body.deviceId||''); if(!deviceId||deviceId!==String(c.requestingDeviceId||'')||!body.publicKeyJwk||!sameEnrollmentPublicKey(c.publicKeyJwk,body.publicKeyJwk)) throw serviceError('Enrollment challenge does not match this device key.',{status:403,code:'security-enrollment-device-mismatch'}); await securityKv(env).delete(key); await securityWriteDoc(env,SECURITY_COLLECTIONS.devices,deviceId,{deviceId,uid:admin.uid,publicKeyJwk:c.publicKeyJwk,displayName:String(body.displayName||'Trusted device').slice(0,80),browserSummary:String(request.headers.get('User-Agent')||'').slice(0,180),active:true,createdAt:new Date().toISOString(),lastUsedAt:new Date().toISOString()}); const promoted=await promoteSecuritySessionToTrusted(admin,deviceId,env); await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-enrolled',deviceId,success:true,sessionId:promoted.session.sessionId}); return json({ok:true,deviceId,customToken:promoted.customToken,session:promoted.session},200,origin); }
+    if(path==='/security/step-up/start'&&method==='POST'){
+      await enforceSecurityRateLimit(request,env,'step-up-password');
+      let first;
+      try{ first=await verifyFirebasePassword(admin.email,body.password,env); }
+      catch(error){
+        await writeSecurityEvent(env,{uid:admin.uid,type:'step-up-failure',
+          success:false,ip:securityIp(request),summary:'Password step-up rejected.'}).catch(()=>null);
+        throw error;
+      }
+      if(!first.mfaPendingCredential)throw serviceError('Authenticator verification is required for sensitive actions.',{status:400,code:'security-step-up-mfa-required'});
+      const challengeId=await putSecurityChallenge(env,'step-up',{
+        uid:admin.uid,sessionId:admin.session.sessionId,
+        mfaPendingCredential:first.mfaPendingCredential,mfaInfo:first.mfaInfo
+      });
+      return json({challengeId},200,origin);
+    }
+    if(path==='/security/step-up/complete'&&method==='POST'){
+      await enforceSecurityRateLimit(request,env,'step-up-totp');
+      const c=await consumeSecurityChallenge(env,'step-up',body.challengeId);
+      if(c.uid!==admin.uid||c.sessionId!==admin.session.sessionId)
+        throw serviceError('Step-up challenge does not belong to this session.',{status:403,code:'security-step-up-invalid'});
+      const enrollmentId=String(c.mfaInfo?.find?.(x=>x?.totpInfo)?.mfaEnrollmentId||c.mfaInfo?.[0]?.mfaEnrollmentId||'');
+      const {response}=await identityToolkit('accounts/mfaSignIn:finalize',{
+        mfaPendingCredential:c.mfaPendingCredential,mfaEnrollmentId:enrollmentId,
+        totpVerificationInfo:{verificationCode:String(body.code||'')}
+      },env,'v2');
+      if(!response.ok){
+        await writeSecurityEvent(env,{uid:admin.uid,type:'step-up-failure',
+          success:false,ip:securityIp(request),summary:'Authenticator step-up rejected.'}).catch(()=>null);
+        throw serviceError('Authenticator code is invalid or expired.',{status:401,code:'security-step-up-invalid'});
+      }
+      const proofId=securityRandomId(18),
+        expiresAt=new Date(Date.now()+SECURITY_LIFETIMES.stepUp*1000).toISOString();
+      await securityWriteDoc(env,SECURITY_COLLECTIONS.stepUps,proofId,{
+        proofId,uid:admin.uid,sessionId:admin.session.sessionId,active:true,
+        createdAt:new Date(),expiresAt:new Date(Date.parse(expiresAt))
+      });
+      await clearSecurityRateLimit(request,env,'step-up-totp');
+      return json({proofId,expiresAt},200,origin);
+    }
+    if(path==='/security/device/enrollment/create'&&method==='POST'){ await enforceSecurityRateLimit(request,env,'enrollment'); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const requestingDeviceId=String(body.deviceId||''); if(!requestingDeviceId||!body.publicKeyJwk) throw serviceError('Device public key is required.',{status:400,code:'security-device-key-required'}); const recovery=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid); const challengeId=await putSecurityChallenge(env,'device-enroll',{uid:admin.uid,requestingDeviceId,publicKeyJwk:body.publicKeyJwk,deviceBootstrapEpoch:String(recovery?.deviceBootstrapEpoch||''),approved:false}); return json({challengeId,expiresAt:new Date(Date.now()+SECURITY_LIFETIMES.challenge*1000).toISOString()},200,origin); }
+    if(path==='/security/device/enrollment/status'&&method==='POST'){ const c=await readSecurityEnrollmentChallenge(env,body.challengeId,admin.uid); return json({state:c.approved?'approved':'pending',expiresAt:new Date(Number(c.expiresAt)).toISOString()},200,origin); }
+    if(path==='/security/device/enrollment/approve'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); await approveSecurityEnrollmentChallenge(env,body.challengeId,admin.uid,admin.session.deviceId||''); return json({ok:true,state:'approved'},200,origin); }
+    if(path==='/security/device/enrollment/complete'&&method==='POST'){ return json(await completeTrustedDeviceEnrollment(request,env,admin,body),200,origin); }
     if(path==='/security/device/rename'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); const d=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,String(body.deviceId||'')); if(!d||d.uid!==admin.uid) throw serviceError('Trusted device was not found.',{status:404,code:'security-device-not-found'}); await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,d.deviceId,{displayName:String(body.displayName||'Trusted device').slice(0,80)}); return json({ok:true},200,origin); }
-    if(path==='/security/device/revoke'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const d=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,String(body.deviceId||'')); if(!d||d.uid!==admin.uid) throw serviceError('Trusted device was not found.',{status:404,code:'security-device-not-found'}); const currentDeviceRevoked=d.deviceId===admin.session.deviceId; await securityPatchDoc(env,SECURITY_COLLECTIONS.devices,d.deviceId,{active:false,revokedAt:new Date().toISOString()}); const sessions=await securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['deviceId','EQUAL',d.deviceId],['active','EQUAL',true]],100); await Promise.all([...sessions.map(s=>securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()})),removeAdminPushSubscriptionsForDevice(env,d.deviceId)]); await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-revoked',deviceId:d.deviceId,success:true}); return json({ok:true,currentDeviceRevoked},200,origin); }
+    if(path==='/security/device/revoke'&&method==='POST'){
+      await requireTrustedSecurityManagement(admin,env);
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      const d=await securityGetDoc(env,SECURITY_COLLECTIONS.devices,String(body.deviceId||''));
+      if(!d||d.uid!==admin.uid)throw serviceError('Trusted device was not found.',{status:404,code:'security-device-not-found'});
+      const currentDeviceRevoked=d.deviceId===admin.session.deviceId;
+      const sessions=await securityQueryAll(env,SECURITY_COLLECTIONS.sessions,[
+        ['uid','EQUAL',admin.uid],['deviceId','EQUAL',d.deviceId],['active','EQUAL',true]
+      ]);
+      // Revoke the device and every related session in the same batch when possible.
+      await revokeSecurityDocuments(env,[
+        {collection:SECURITY_COLLECTIONS.devices,id:d.deviceId},
+        ...sessions.map(x=>({collection:SECURITY_COLLECTIONS.sessions,id:x.sessionId}))
+      ]);
+      await removeAdminPushSubscriptionsForDevice(env,d.deviceId).catch(error=>{
+        console.error('Admin revoked-device subscription cleanup failed:',error);
+      });
+      await writeSecurityEvent(env,{uid:admin.uid,type:'trusted-device-revoked',deviceId:d.deviceId,success:true});
+      return json({ok:true,currentDeviceRevoked},200,origin);
+    }
     if(path==='/security/account/password'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const {response}=await identityToolkit('accounts:update',{idToken:admin.token,password:String(body.newPassword||''),returnSecureToken:false},env); if(!response.ok) throw serviceError('Password could not be changed.',{status:400,code:'security-password-change-failed',source:'firebase'}); await writeSecurityEvent(env,{uid:admin.uid,type:'password-changed',success:true}); return json({ok:true},200,origin); }
-    if(path==='/security/totp/reset'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); await Promise.all([revokeUserSecurityState(admin.uid,env),clearFirebaseMfaForRecovery(env,admin.uid)]); await writeSecurityEvent(env,{uid:admin.uid,type:'totp-reset',success:true,summary:'Authenticator enrollment reset; all sessions and trusted devices were revoked.'}); return json({ok:true,bootstrapRequired:true},200,origin); }
-    if(path==='/security/recovery/generate'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const key=recoveryKey(),codes=Array.from({length:8},backupCode),hash=await recoveryHmac(key,env),codeHashes=await Promise.all(codes.map(x=>recoveryHmac(x,env))); await securityWriteDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid,{uid:admin.uid,active:true,masterKeyHash:hash,backupCodeHashes:codeHashes,createdAt:new Date().toISOString()}); return json({masterKey:key,backupCodes:codes},200,origin); }
+    if(path==='/security/totp/reset'&&method==='POST'){
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      await Promise.all([
+        revokeUserSecurityState(admin.uid,env),
+        clearFirebaseMfaForRecovery(env,admin.uid)
+      ]);
+      // A verified MFA reset is a deliberate full security-reset event, not an
+      // ordinary device revoke. Rotate the authoritative bootstrap generation
+      // only AFTER prior sessions/devices and Firebase MFA are invalidated.
+      await securityPatchDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid,{
+        deviceBootstrapEpoch:securityRandomId(18)
+      });
+      await writeSecurityEvent(env,{uid:admin.uid,type:'totp-reset',success:true,summary:'Authenticator enrollment reset; all sessions and trusted devices were revoked.'});
+      return json({ok:true,bootstrapRequired:true},200,origin);
+    }
+    if(path==='/security/recovery/generate'&&method==='POST'){
+      await enforceSecurityRateLimit(request,env,'recovery-rotate',{limit:5,windowSeconds:900,cooldownSeconds:300});
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      const existing=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid);
+      if(existing?.active===false){
+        throw serviceError('Emergency recovery is in progress; a normal kit rotation cannot replace it.',{
+          status:409,code:'security-recovery-in-progress',source:'worker'
+        });
+      }
+      const rotationId=await putSecurityChallenge(env,'recovery-rotate',{
+        uid:admin.uid,sessionId:admin.session.sessionId
+      },SECURITY_LIFETIMES.recovery);
+      const key=recoveryKey(),codes=Array.from({length:8},backupCode);
+      const preparedKitId=securityRandomId(24);
+      await savePreparedRecoveryKit(env,rotationId,{
+        preparedKitId,masterKeyHash:await recoveryHmac(key,env),
+        backupCodeHashes:await Promise.all(codes.map(x=>recoveryHmac(x,env)))
+      },'recovery-rotate');
+      // No recovery record changes until the Admin sees and saves the kit.
+      return json({
+        state:'kit-prepared',rotationId,preparedKitId,
+        masterKey:key,backupCodes:codes
+      },200,origin);
+    }
+    if(path==='/security/recovery/rotate/activate'&&method==='POST'){
+      await enforceSecurityRateLimit(request,env,'recovery-activate',{limit:15,windowSeconds:900,cooldownSeconds:300});
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      const rotationId=String(body.rotationId||'');
+      const kitId=String(body.preparedKitId||'');
+      const challenge=await readPendingRecoveryChallenge(env,rotationId,'recovery-rotate');
+      if(challenge.uid!==admin.uid || challenge.sessionId!==admin.session.sessionId ||
+         !challenge.prepared || challenge.prepared.preparedKitId!==kitId) {
+        throw serviceError('Prepared Recovery Kit is not valid for the current Admin session.',{
+          status:403,code:'security-recovery-kit-mismatch',source:'worker'
+        });
+      }
+      const existing=await securityGetDoc(env,SECURITY_COLLECTIONS.recovery,admin.uid);
+      if(existing?.active===true && existing?.lastRotationId===rotationId &&
+         existing?.lastPreparedKitId===kitId){
+        return json({ok:true,state:'recovery-kit-active',alreadyCompleted:true},200,origin);
+      }
+      if(existing?.active===false){
+        throw serviceError('Emergency Recovery cannot be overridden by a normal kit rotation.',{
+          status:409,code:'security-recovery-in-progress',source:'worker'
+        });
+      }
+      const fields={
+        uid:admin.uid,active:true,
+        masterKeyHash:challenge.prepared.masterKeyHash,
+        backupCodeHashes:challenge.prepared.backupCodeHashes,
+        lastRotationId:rotationId,lastPreparedKitId:kitId,
+        createdAt:new Date().toISOString()
+      };
+      const writes=[{
+        update:{
+          name:firestoreDocumentName(env,SECURITY_COLLECTIONS.recovery,admin.uid),
+          fields:firestoreFields(fields)
+        },
+        updateMask:{fieldPaths:Object.keys(fields)},
+        currentDocument:existing?{updateTime:existing._updateTime}:{exists:false}
+      },{
+        update:{
+          name:firestoreDocumentName(env,SECURITY_COLLECTIONS.events,securityRandomId(18)),
+          fields:firestoreFields({
+            uid:admin.uid,type:'recovery-kit-rotated',success:true,
+            summary:'Recovery Kit activated after offline-save confirmation.',
+            sessionId:admin.session.sessionId,
+            createdAt:new Date().toISOString()
+          })
+        },currentDocument:{exists:false}
+      }];
+      try{
+        await firestoreAdminCommit(env,writes);
+      }catch(error){
+        if(error?.code==='firestore-precondition-failed'){
+          throw serviceError('Recovery Kit changed during activation; verify current state before retrying.',{
+            status:409,code:'security-recovery-state-changed',source:'worker'
+          });
+        }
+        throw error;
+      }
+      return json({ok:true,state:'recovery-kit-active'},200,origin);
+    }
     if(path==='/security/devices'&&method==='GET'){ const devices=await securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid]],100); return json({devices:devices.map(({publicKeyJwk,_updateTime,...d})=>({...d,current:d.deviceId===admin.session.deviceId}))},200,origin); }
     if(path==='/security/access-state'&&method==='GET'){ return json(await buildSecurityAccessState(admin,env),200,origin); }
     if(path==='/security/sessions'&&method==='GET'){ const access=await buildSecurityAccessState(admin,env); return json({sessions:access.sessions},200,origin); }
     if(path==='/security/session/revoke'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); const s=await securityGetDoc(env,SECURITY_COLLECTIONS.sessions,String(body.sessionId||'')); if(!s||s.uid!==admin.uid) throw serviceError('Security session was not found.',{status:404,code:'security-session-not-found'}); if(s.sessionId===admin.session.sessionId) throw serviceError('Use logout to end the current session.',{status:400,code:'security-current-session'}); await securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:admin.uid,type:'session-revoked',sessionId:s.sessionId,success:true}); return json({ok:true},200,origin); }
-    if(path==='/security/session/revoke-others'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const sessions=await securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['active','EQUAL',true]],200); await Promise.all(sessions.filter(s=>s.sessionId!==admin.session.sessionId).map(s=>securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()}))); return json({ok:true},200,origin); }
-    if(path==='/security/session/revoke-temporary'&&method==='POST'){ await requireTrustedSecurityManagement(admin,env); await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); const [sessions,devices]=await Promise.all([securityQuery(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['active','EQUAL',true]],200),securityQuery(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid]],100)]); const activeDeviceIds=activeTrustedDeviceIds(devices); const temporarySessions=sessions.filter(s=>s.sessionId!==admin.session.sessionId&&effectiveSecuritySessionTrustLevel(s,activeDeviceIds)!=='trusted'); await Promise.all(temporarySessions.map(s=>securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,s.sessionId,{active:false,revokedAt:new Date().toISOString()}))); return json({ok:true,revoked:temporarySessions.length},200,origin); }
+    if(path==='/security/session/revoke-others'&&method==='POST'){
+      await requireTrustedSecurityManagement(admin,env);
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      const sessions=await securityQueryAll(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['active','EQUAL',true]]);
+      await revokeSecurityDocuments(env,sessions.filter(x=>x.sessionId!==admin.session.sessionId).map(x=>({
+        collection:SECURITY_COLLECTIONS.sessions,id:x.sessionId
+      })));
+      return json({ok:true},200,origin);
+    }
+    if(path==='/security/session/revoke-temporary'&&method==='POST'){
+      await requireTrustedSecurityManagement(admin,env);
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      const [sessions,devices]=await Promise.all([
+        securityQueryAll(env,SECURITY_COLLECTIONS.sessions,[['uid','EQUAL',admin.uid],['active','EQUAL',true]]),
+        securityQueryAll(env,SECURITY_COLLECTIONS.devices,[['uid','EQUAL',admin.uid]])
+      ]);
+      const activeDeviceIds=activeTrustedDeviceIds(devices);
+      const temporarySessions=sessions.filter(x=>x.sessionId!==admin.session.sessionId&&effectiveSecuritySessionTrustLevel(x,activeDeviceIds)!=='trusted');
+      await revokeSecurityDocuments(env,temporarySessions.map(x=>({
+        collection:SECURITY_COLLECTIONS.sessions,id:x.sessionId
+      })));
+      return json({ok:true,revoked:temporarySessions.length},200,origin);
+    }
     if(path==='/security/activity'&&method==='GET'){ const events=await securityQuery(env,SECURITY_COLLECTIONS.events,[['uid','EQUAL',admin.uid]],200); events.sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)); return json({events:events.slice(0,100)},200,origin); }
     if(path==='/security/email-branding'&&method==='GET'){ const cfg=await securityGetDoc(env,'adminSecurityPreferences',admin.uid); return json({branding:cfg?.branding||{},provider:securityEmailProviderStatus(env)},200,origin); }
-    if(path==='/security/email-branding'&&method==='POST'){ const branding={senderName:String(body.branding?.senderName||'LΛN Portfolio CMS').slice(0,80),logoUrl:String(body.branding?.logoUrl||'').slice(0,500),heading:String(body.branding?.heading||'Security alert').slice(0,100),footer:String(body.branding?.footer||'').slice(0,240)}; await securityWriteDoc(env,'adminSecurityPreferences',admin.uid,{uid:admin.uid,branding,updatedAt:new Date().toISOString()}); return json({ok:true,branding},200,origin); }
+    if(path==='/security/email-branding'&&method==='POST'){
+      await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env);
+      const senderName=String(body.branding?.senderName||'LΛN Portfolio CMS').trim();
+      if(/[\r\n<>]/.test(senderName))throw serviceError('Sender name contains unsupported characters.',{
+        status:400,code:'security-email-branding-name-invalid',source:'worker'
+      });
+      const branding={
+        senderName:senderName.slice(0,80),
+        logoUrl:validateSecurityBrandingLogoUrl(body.branding?.logoUrl),
+        heading:String(body.branding?.heading||'Security alert').slice(0,100),
+        footer:String(body.branding?.footer||'').slice(0,240)
+      };
+      await securityWriteDoc(env,'adminSecurityPreferences',admin.uid,{
+        uid:admin.uid,branding,updatedAt:new Date().toISOString()
+      });
+      await writeSecurityEvent(env,{uid:admin.uid,type:'security-email-branding-updated',
+        success:true,sessionId:admin.session.sessionId,
+        summary:'Security alert presentation preferences updated.'});
+      return json({ok:true,branding},200,origin);
+    }
     if(path==='/security/alert-status'&&method==='GET') return json({email:securityEmailProviderStatus(env),webPush:'configured'},200,origin);
     if(path==='/security/lockdown/enter'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); await securityWriteDoc(env,'adminSecurityState',admin.uid,{uid:admin.uid,lockdown:true,updatedAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:admin.uid,type:'lockdown-entered',success:true}); return json({ok:true},200,origin); }
     if(path==='/security/lockdown/exit'&&method==='POST'){ await verifyStepUp(admin.uid,admin.session.sessionId,body.proofId,env); await securityWriteDoc(env,'adminSecurityState',admin.uid,{uid:admin.uid,lockdown:false,updatedAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:admin.uid,type:'lockdown-exited',success:true}); return json({ok:true},200,origin); }
@@ -2728,6 +3727,25 @@ async function removeAdminPushSubscriptionsForDevice(env, deviceId) {
   return matching.length;
 }
 
+function validateSecurityBrandingLogoUrl(raw){
+  const supplied=String(raw||'').trim();
+  if(!supplied)return '';
+  let url;
+  try{url=new URL(supplied);}catch{}
+  const host=String(url?.hostname||'').toLowerCase();
+  // Email images must not embed script/data/file URLs, redirect credentials,
+  // local-network addresses or internal hostname references. No remote fetch.
+  if(!url||url.protocol!=='https:'||url.username||url.password||
+     url.port||url.hash||supplied.length>500||
+     !host.includes('.')||host==='localhost'||host.endsWith('.localhost')||
+     host.endsWith('.local')||host.endsWith('.internal')||
+     host.startsWith('[')||/^\d+(?:\.\d+){3}$/.test(host)){
+    throw serviceError('Security email portrait/logo must be a public HTTPS image URL.',{
+      status:400,code:'security-email-branding-url-invalid',source:'worker'
+    });
+  }
+  return url.href;
+}
 function securityEmailProviderStatus(env) {
   return String(env.RESEND_API_KEY||'').trim() && String(env.SECURITY_ALERT_FROM_EMAIL||'').trim() && String(env.SECURITY_ALERT_TO_EMAIL||'').trim() ? 'configured' : 'not-configured';
 }
@@ -2739,7 +3757,7 @@ async function sendSecurityEmailAlert(env,event) {
   const safeLink=String(env.SECURITY_ALERT_ADMIN_URL||'').trim();
   const html=`<div style="font-family:system-ui,sans-serif;max-width:640px;margin:auto"><header>${logoUrl?`<img src="${escapeEmailHtml(logoUrl)}" alt="" style="max-height:72px;max-width:160px">`:''}<h1>${escapeEmailHtml(heading)}</h1></header><p><strong>${escapeEmailHtml(String(event.type||'Security event').replaceAll('-',' '))}</strong></p><p>${escapeEmailHtml(event.summary||'A security event was recorded for your administrator account.')}</p><p>${escapeEmailHtml(new Date().toISOString())}</p>${safeLink?`<p><a href="${escapeEmailHtml(safeLink)}">Open Security &amp; Access</a></p>`:''}<footer><small>${escapeEmailHtml(footer)}</small></footer></div>`;
   const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${String(env.RESEND_API_KEY)}`,'Content-Type':'application/json'},body:JSON.stringify({from:`${senderName} <${String(env.SECURITY_ALERT_FROM_EMAIL).trim()}>`,to:[String(env.SECURITY_ALERT_TO_EMAIL).trim()],subject:`LΛN security: ${String(event.type||'alert').replaceAll('-',' ')}`,html})});
-  const payload=await response.json().catch(()=>({})); if(!response.ok||!payload?.id) return {state:'failed',error:payload?.message||`HTTP ${response.status}`}; return {state:'sent',providerId:String(payload.id)};
+  const payload=await response.json().catch(()=>({})); if(!response.ok||!payload?.id) return {state:'failed',error:payload?.message||`HTTP ${response.status}`}; return {state:'accepted',providerId:String(payload.id)};
 }
 async function dispatchSecurityAlerts(env,event,{alertOrigin=''}={}) {
   const title='LΛN Security Alert', body=String(event.summary||String(event.type||'Security event').replaceAll('-',' ')).slice(0,180);
@@ -2942,6 +3960,11 @@ export default {
       ok: true,
       service: "lan-cloudinary-telemetry",
       firebaseConfigured: Boolean(String(env.FIREBASE_PROJECT_ID || "").trim()),
+      securityCoordinatorConfigured: Boolean(
+        env?.SECURITY_COORDINATOR &&
+        typeof env.SECURITY_COORDINATOR.idFromName === "function" &&
+        typeof env.SECURITY_COORDINATOR.get === "function"
+      ),
       cloudinaryConfigured: Boolean(
         String(env.CLOUDINARY_CLOUD_NAME || "").trim() &&
         String(env.CLOUDINARY_API_KEY || "").trim() &&

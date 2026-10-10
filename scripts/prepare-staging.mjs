@@ -102,6 +102,11 @@ function workerConfig(target) {
     name: target.worker.name,
     main: 'src/index.js',
     compatibility_date: '2026-08-15',
+    // Explicitly preserve the existing staging Worker access/observability policy.
+    // Missing Wrangler fields previously enabled public preview URLs and turned
+    // off remote observability during deployment.
+    preview_urls: false,
+    observability: { enabled: true, logs: { enabled: true } },
     kv_namespaces: Object.entries(target.worker.kvNamespaces).map(([binding, id]) => ({ binding, id })),
     ...structuredClone(stagingCoordinator),
     vars: { FIREBASE_PROJECT_ID: target.firebase.projectId }
@@ -125,12 +130,12 @@ async function reviewExistingWorker(file, expected) {
     assertSafe(bindings.get(item.binding) === item.id,
       'Staging Worker KV binding ' + item.binding + ' mismatch.');
   }
-  // An older generated staging config may lack the Durable Object declaration;
-  // migrate it only after all existing settings have been verified above.
-  for (const key of ['durable_objects', 'exports']) {
+  // An older generated staging config may lack these declarations; migrate
+  // only after all explicitly configured values have been verified.
+  for (const key of ['durable_objects', 'exports', 'preview_urls', 'observability']) {
     if (current[key] !== undefined) {
       assertSafe(JSON.stringify(current[key]) === JSON.stringify(expected[key]),
-        'Staging Worker Durable Object configuration mismatch.');
+        'Staging Worker ' + key + ' configuration mismatch.');
     }
   }
   const allowedVars = new Set(Object.keys(expected.vars));

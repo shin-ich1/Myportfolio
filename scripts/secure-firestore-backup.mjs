@@ -225,31 +225,55 @@ export async function verifyEncryptedBackup({ input, passphrase }) {
   }
 }
 
+/**
+ * Parse raw terminal input without echoing secrets. Chrome/Cloud Shell can
+ * send bracketed-paste escape codes split across arbitrary chunks; they are
+ * control sequences, never part of the actual backup passphrase.
+ */
+export function createHiddenInputParser() {
+  const decoder = new StringDecoder('utf8');
+  let value = '', escape = '', finished = false;
+  return {
+    accept(chunk) {
+      if (finished) return { complete: true, value };
+      for (const char of decoder.write(chunk)) {
+        if (escape) {
+          escape += char;
+          if (escape.length > 32 || /[A-Za-z~]/.test(char)) escape = '';
+          continue;
+        }
+        if (char === '\u001b') { escape = char; continue; }
+        if (char === '\r' || char === '\n') {
+          finished = true;
+          return { complete: true, value };
+        }
+        if (char === '\u0003') return { cancelled: true };
+        if (char === '\u007f' || char === '\b') { value = value.slice(0, -1); continue; }
+        // Ctrl+V may insert a control character instead of pasting. Ignore it.
+        // Never echo the password, raw terminal input, or clipboard contents.
+        if (char >= ' ' && char !== '\u007f' && value.length < 512) value += char;
+      }
+      return { complete: false };
+    }
+  };
+}
+
 async function readHiddenPrompt(message) {
   ensure(process.stdin.isTTY && typeof process.stdin.setRawMode === 'function',
     'Encrypted backup requires an interactive TTY for a hidden passphrase.');
   process.stderr.write(message);
   process.stdin.setRawMode(true);
   process.stdin.resume();
-  let secret = '';
+  const parser = createHiddenInputParser();
   try {
     return await new Promise((resolveSecret, rejectSecret) => {
       function receive(chunk) {
-        for (const char of chunk.toString('utf8')) {
-          if (char === '\r' || char === '\n') {
-            process.stdin.off('data', receive);
-            process.stderr.write('\n');
-            resolveSecret(secret);
-            return;
-          }
-          if (char === '\u0003') {
-            process.stdin.off('data', receive);
-            rejectSecret(new Error('Cancelled.'));
-            return;
-          }
-          if (char === '\u007f' || char === '\b') secret = secret.slice(0, -1);
-          else if (char >= ' ' && char <= '~' && secret.length < 512) secret += char;
-        }
+        const result = parser.accept(chunk);
+        if (!result.complete && !result.cancelled) return;
+        process.stdin.off('data', receive);
+        process.stderr.write('\n');
+        if (result.cancelled) rejectSecret(new Error('Input cancelled.'));
+        else resolveSecret(result.value);
       }
       process.stdin.on('data', receive);
     });
@@ -257,6 +281,30 @@ async function readHiddenPrompt(message) {
     process.stdin.setRawMode(false);
     process.stdin.pause();
   }
+}
+
+export function safeBackupFailureCode(error) {
+  // Intentionally a fixed allowlist. Never print arbitrary exception messages:
+  // REST error bodies could contain private documents or credentials.
+  const message = String(error?.message || '');
+  if (message.includes('Backup passphrases do not match')) return 'PASSPHRASE_MISMATCH';
+  if (message.includes('at least 24 characters')) return 'PASSPHRASE_TOO_SHORT';
+  if (message.includes('Input cancelled')) return 'INPUT_CANCELLED';
+  if (message.includes('gcloud') || message.includes('Google Cloud access token'))
+    return 'CLOUD_CREDENTIAL_UNAVAILABLE';
+  if (message.includes('Read-only Firestore request denied or failed'))
+    return 'FIRESTORE_READ_DENIED';
+  if (message.includes('Unreviewed root collections') ||
+      message.includes('Unreviewed child collections')) return 'FIRESTORE_COLLECTION_REVIEW_REQUIRED';
+  if (message.includes('pagination loop') || message.includes('Malformed') ||
+      message.includes('Invalid Firestore') || message.includes('unexpectedly contains timestamps'))
+    return 'FIRESTORE_INVENTORY_INCOMPLETE';
+  if (error?.code === 'ENOENT') return 'BACKUP_FILE_NOT_FOUND';
+  if (error?.code === 'EEXIST') return 'BACKUP_ALREADY_EXISTS';
+  if (message.includes('Not a LΛN encrypted backup') ||
+      message.includes('Archive') || message.includes('Encrypted backup'))
+    return 'BACKUP_VERIFY_FAILED';
+  return 'BACKUP_CHECK_FAILED';
 }
 
 export async function main(args = process.argv.slice(2)) {
@@ -287,6 +335,7 @@ export async function main(args = process.argv.slice(2)) {
   const passphrase = await readHiddenPrompt('Create UNIQUE backup passphrase (not displayed): ');
   const confirm = await readHiddenPrompt('Confirm backup passphrase: ');
   ensure(passphrase === confirm, 'Backup passphrases do not match.');
+  ensure(passphrase.length >= 24, 'Use a backup passphrase of at least 24 characters.');
   const token = execFileSync('gcloud', ['auth', 'print-access-token'], {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000
   }).trim();
@@ -312,9 +361,10 @@ export async function main(args = process.argv.slice(2)) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(() => {
-    // Deliberately avoid printing error objects, credentials, or record data.
-    process.stderr.write('Backup utility stopped safely. No production writes were made.\n');
+  main().catch((error) => {
+    // Emit a fixed diagnostic code, never error.message or private payloads.
+    process.stderr.write('Backup utility stopped safely [' +
+      safeBackupFailureCode(error) + ']. No production writes were made.\n');
     process.exitCode = 1;
   });
 }

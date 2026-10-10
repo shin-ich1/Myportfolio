@@ -4,9 +4,7 @@ import {
   renderSystemIcon,
   resolveModuleAdminIcon
 } from "../../icon-registry.js";
-import { listSections } from "../services/portfolioSectionService.js";
 import { resolveToolIconSource, resolveToolFallbackIcon } from "../../tool-identity.js";
-import { recoverMediaAssetLifecycle } from "../services/mediaAssetLifecycleService.js";
 import { mountAdminPageBand } from "./admin-page-band.js";
 import { initAdminAdaptiveModes } from "./admin-adaptive.js";
 import { decorateRecordCommand } from "./admin-record-actions.js";
@@ -23,7 +21,9 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
   // the same behavior when opened directly.
   if (!isPersistentWorkspace) {
     window.setTimeout(() => {
-      recoverMediaAssetLifecycle().catch((error) => console.warn("Deferred media cleanup is still pending:", error));
+      import("../services/mediaAssetLifecycleService.js")
+        .then(({ recoverMediaAssetLifecycle }) => recoverMediaAssetLifecycle())
+        .catch((error) => console.warn("Deferred media cleanup is still pending:", error));
     }, 1200);
   }
 
@@ -428,6 +428,7 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
 
     let promotedModules = [];
     try {
+      const { listSections } = await import("../services/portfolioSectionService.js");
       promotedModules = (await listSections()).filter((item) => item.lifecycle === "promoted");
     } catch (error) {
       console.warn("Promoted module navigation could not be loaded.", error);

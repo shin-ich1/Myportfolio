@@ -1,6 +1,6 @@
 # LΛN production backup, rollback, and security cutover — PLAN ONLY
 
-**2026-10-11 · Release candidate PR #10 · NOT DEPLOYED · NO BACKUP CLAIMED**
+**2026-10-11 · Release candidate PR #10 · NOT DEPLOYED · ENCRYPTED FIRESTORE SNAPSHOT VERIFIED; AUTH/CLOUDFLARE RESTORE STILL BLOCKED**
 
 This document is an operator-controlled plan to preserve production access during a security-owner migration. It does **not** authorize executing any production operation. Production targets: Firebase `rolando-portfolio-3f1a3`, Cloudflare Worker `lan-cloudinary-telemetry`. Staging `lan-portfolio-staging` is isolated, not a production backup or restore destination.
 
@@ -14,6 +14,15 @@ This document is an operator-controlled plan to preserve production access durin
 - Production Worker dashboard reports active version prefix `cbb87c06`, 100% traffic. **One deployed version** appears in rollout history; no verified older rollback target. A prefix is not a full version ID.
 - Production encrypted secret names exist for Firebase service account, Recovery Pepper, Cloudinary, Google Drive; their values, IAM scopes, validity and recovery continuity were **not** inspected or verified. **Never retrieve values for chat, frontend, CI logs or GitHub.**
 - Firebase screenshot shows **Spark plan**. Firestore managed export/import **requires billing and Blaze**; it cannot be treated as an existing free backup option. Source: https://firebase.google.com/docs/firestore/manage-data/export-import .
+
+## Confirmed offline production Firestore backup evidence (owner-operated)
+
+- User separately approved the read-only production backup. The candidate's owner-run `scripts/secure-firestore-backup.mjs` captured **392 Firestore document resources** into encrypted `production-firestore-2026-10-11-v2.lanfbak`. This is sensitive user-owned material; it has **not** been uploaded to GitHub, ChatGPT, staging, or CI.
+- The script verified the v2 encrypted archive's authenticated data/tag, manifest digest and 392-record count on Cloud Shell. Windows local download SHA-256 **matched** the original; the owner moved the downloaded archive out of the GitHub folder into a private folder and reported deleting old v1 from Cloud Shell.
+- The v2 encryption passphrase is stored separately by the owner (never provided here). Do not display, request or collect it.
+- A **synthetic-only** encrypted backup restore was run against an isolated Firestore emulator: no production data, real identities, backup bytes or credentials were loaded. This proves the synthetic type round trip—not the ability to restore 392 private documents or Firebase Authentication.
+- Limitations: inventory isn't a transactionally consistent point-in-time snapshot; Firestore rules, indexes, Firebase Auth/MFA users, IAM, Cloudflare KV/DO, and Worker secrets are **not** covered. A verified storage file is not an approved disaster recovery rehearsal.
+- Cloud Shell v2 copy can be retained until an independent owner-controlled second copy is secured. Never store an unencrypted backup in source control or the public directory.
 
 ## Critical rollback constraint
 
@@ -41,9 +50,9 @@ The release fallback must be a **reviewed, tested forward corrective deployment*
 
 **Option A: Managed Firestore export.** Requires explicit owner authorization to upgrade the Firebase project to Blaze/enable billing and an owner-controlled Cloud Storage bucket. Follow documented export/verify/import process. Firestore export isn't necessarily a point-in-time snapshot if writes continue; set a safe release window. This option must not be silently selected.
 
-**Option B — OWNER SELECTED: Encrypted, least-privilege, owner-operated backup utility.** If the owner wants to retain Spark, design and test one dedicated server-side, read-only Admin SDK export utility, with authenticated least-privilege credentials, explicit collection allowlist, authenticated encryption (nonce per artifact), verified manifest/hash, safe offline key management, and offline/emulator restore validation. It must not write any private production data into repo, CI artifacts, public site, staging project, assistant context, browser/localStorage, or GitHub. A backup is **not considered available** until the owner has actually generated it, stored it privately, and tested restoration safely. A custom backup does not equal the managed Google export and must cover subcollections, Firestore types, indexes/rules, and Auth metadata separately.
+**Option B — OWNER SELECTED, FILE CREATED AND VERIFIED: Encrypted, least-privilege, owner-operated backup utility.** The owner chose to retain Spark and ran the dedicated read-only Firestore REST export tool. It uses authenticated least-privilege Cloud Shell credentials, explicit collection allowlist, authenticated encryption with a random nonce, verified manifest/hash, and separate private passphrase. The downloaded file matched SHA-256; a synthetic-only emulator restoration passed. It must not write any private production data into repo, CI artifacts, public site, staging project, assistant context, browser/localStorage, or GitHub. A backup is **not considered available** until the owner has actually generated it, stored it privately, and tested restoration safely. A custom backup does not equal the managed Google export and must cover subcollections, Firestore types, indexes/rules, and Auth metadata separately.
 
-**Release is NO-GO until an appropriate private backup plus restore verification actually exist.** It is unacceptable to claim a backup merely from a script, Cloudflare Worker deployment or staging database.
+**Release remains NO-GO until production Auth/MFA, Worker/DO/KV recovery controls and a safe, authorized restore strategy are verified.** The v2 encrypted Firestore snapshot exists, but neither production backup completeness at one point in time nor actual production restore has been proven.
 
 
 ### Spark (free) backup utility prepared — NOT RUN against production
@@ -75,12 +84,28 @@ The first command prompts twice for a unique backup passphrase, the second promp
 2. **After cutover:** Candidate `telemetry-worker/src/index.js` uses `SECURITY_COORDINATOR` Durable Object with SQLite for atomic challenges and rates; server-validated sessions/devices/recovery remain Firestore-owned. `SECURITY_STATE` cannot remain an active competing security owner. Separate message/OAuth KV bindings remain.
 3. **Controlled release window:** Do not start a sensitive login/recovery/device-enrollment action immediately before migration. Avoid issuing new one-time challenges during deployment; let in-flight challenges finish or expire according to their scoped TTL. The known old default challenge is 5 minutes, recovery challenge 15 minutes; consult **actual** old route TTLs and rate windows (up to 30+ minutes). Do not silently reset cooldowns by migrating early.
 4. **Continuity checks:** Verify production trust records, revocation, old Recovery Key hash continuity using the same server pepper, and authorized administrator/session binding before any write. Never test a live recovery by consuming a real recovery key.
-5. **DO lifecycle:** Candidate Wrangler `exports.SecurityCoordinator` (SQLite) adds the class on the first production deployment; this is a forward-only lifecycle boundary. Test the exact production Worker deploy config and permissions in an isolated dry-run. **Staging Durable Object storage is separate and never copied.**
+5. **DO lifecycle:** Cloudflare's current declarative Wrangler `exports.SecurityCoordinator` (SQLite) is valid and is **mutually exclusive** with legacy `migrations`. It adds the class on the first production deployment; this is a forward-only lifecycle boundary. Test the exact production Worker deploy config and permissions in an isolated dry-run. **Staging Durable Object storage is separate and never copied.**
 6. **Backend readiness:** Ensure Worker JWT/custom-token issuance + Identity Toolkit permissions, active Firestore session claims, exact list of Firebase Rules under candidate, and the user's existing trusted-session proof remain valid. No bypass of direct Firestore access checks.
 7. **Production MFA sequencing:** MFA project-level `DISABLED → ENABLED` change must be separately authorized, one-field update mask `mfa.state`, only when Worker and Rules/Hosting release dependencies are ready; **never `MANDATORY`** without a new design and approval. Preserve enabled TOTP provider and disabled SMS. See `docs/production-mfa-change-plan.md`.
 8. **Health + smoke:** After each **separately approved** production mutation, test current protected Admin session, new untrusted/TOTP login, trusted-device cryptographic proof, logout/login behavior, expired/reused QR, individual device revoke, targeted sessions revoke, recovery metadata continuity, direct unauthorized Firestore denial, Public rendering & QR, and security logs. Source/CI tests are not sufficient.
 9. **Forward repair only:** If new code fails after the DO class is created, restore service with an auditable corrective release that maintains the existing DO class and server-side security checks. Do not delete DO storage, re-enable legacy KV as a second owner, or overwrite security records from stale copies.
 10. **No unsafe rollback:** Do not restore `mfa.state = DISABLED` or loosen production Rules merely to pass a test. Any emergency Auth configuration rollback requires a **separate security impact assessment and explicit approval**, because disabling MFA changes authentication guarantees. Never implicitly revoke users/devices, erase recovery, or overwrite public content.
+
+## Proposed release window and stop/go sequence — planning only
+
+**No part of this sequence is approved for execution.** Require explicit, separate user authorization for each production-changing operation. Before the window, verify full backup custody and plan for a forward-corrective Worker redeployment; an old pre-DO version cannot be assumed rollback-compatible.
+
+1. **Source-only checks, no production writes:** exact-SHA CI including the canonical Rules emulator, Worker runtime tests, production Wrangler `deploy --dry-run` with `exports.SecurityCoordinator`, and byte-identity Public layout contract. Log only metadata, never secrets or recovery material.
+2. **Read-only live preflight:** confirm matching active Admin allowlist UID, email verification and usable approved login/recovery method; no destructive recovery tests. Snapshot Firebase MFA status (currently overall `DISABLED`, TOTP provider `ENABLED`), full Worker version ID (observed prefix `cbb87c06`), existing bindings, and presence-only encrypted secrets. Confirm IAM roles and service-account abilities without disclosing keys. Confirm snapshot custody and independent recovery route.
+3. **Controlled drain window:** stop starting new security-sensitive login/device enrollment/recovery operations and allow live **legacy one-use security challenges and cooldowns** to expire. Old password/TOTP/enrollment windows are several minutes; recovery window 15 minutes, rate windows may extend to **60 minutes**. Confirm actual KV TTL coverage or use a longer controlled window; never silently reset an active lockout or copy a one-use challenge.
+4. **Canonical security backend cutover (separately authorized):** use the exact production candidate with pre-reviewed Cloudflare Durable Object `exports` and binding to publish Worker `lan-cloudinary-telemetry`. This deploy creates the first production `SecurityCoordinator` class and removes the active `SECURITY_STATE` KV binding from the Worker. Preserve `STORAGE_OAUTH`, `PORTFOLIO_MESSAGES`, Cloudinary and Google Drive. Do **not** delete the legacy KV namespace. Immediately verify `/health` returns `securityCoordinatorConfigured:true` and existing public message/Cloudinary/Drive behavior. **Stop the release if it fails; fix forward preserving the DO class, not by weakening security.**
+5. **Identity Platform MFA (separately authorized):** only after Worker access and privileged identity/config continuity are confirmed, use the reviewed one-field `mfa.state: DISABLED → ENABLED` updateMask; retain TOTP `ENABLED`, SMS disabled, and email/password primary. Do not enable `MANDATORY`. Do not activate earlier or independently of the Worker window. Reread the project config.
+6. **Firestore Rules and Admin Hosting (separately authorized):** publish the exact audited candidate Rules and Admin release in a coordinated short window, after verifying the Admin account can complete required TOTP bootstrap. Rollout/verify security-session claims immediately. Do not expose private backend docs by loosening Rules and do not touch the frozen Public UI content/layout.
+7. **Live authorization checkpoint:** test temporary/untrusted login requiring TOTP, trusted-device cryptographic proof and repeated login, one-time enrollment QR expiry/replay, individual session/device revoke and real direct Firestore denial with revoked identity, suspicious/rate-limited event handling, Recovery Kit existence **without consuming it**, and authenticated direct Rules checks. Include wide/compact/mobile Admin layout, Public media/QR and contact actions. Stop on any server-side grant discrepancy.
+8. **Email alerts:** provider is unconfigured in staging. Verify production provider status; report “not configured” until delivery provider confirms acceptance/delivery. Do not claim sent merely because branding saves.
+9. **Review:** request explicit production security audit and user approval for final release. Verify exactly the final SHA; deliver one ZIP only after completed runtime evidence.
+
+**Abort conditions:** missing Cloudflare DO binding, unknown administrator UID, unverified Auth/TOTP bootstrap, missing recovery continuity, private Firestore access without a valid session, failed one-time challenge replay check, missing backup/recovery route, unreviewed secret change, production public regression, or any unexpected Worker deployment mutation. No emergency bypass.
 
 ## Preflight stop/go matrix (current)
 
@@ -92,7 +117,9 @@ The first command prompts twice for a unique backup passphrase, the second promp
 - [x] Cloudflare staging Durable Object SQLite exists; proves account capability only.
 - [x] Current production Worker version prefix and one-row history documented.
 - [ ] Full Worker version ID and independent recovery/redeploy route safely verified.
-- [ ] Private Firestore backup method selected, securely executed and restore-tested. **Blocked by Spark managed-export limitation unless owner explicitly chooses billing or alternate encrypted method**.
+- [x] Spark-compatible encrypted Firestore backup v2 created, authenticated archive verified, matching local SHA-256, moved to private folder; **392 document resources**.
+- [x] Synthetic-only restore rehearsal passed in Firestore emulator.
+- [ ] Actual production snapshot completeness and privileged restore plan, plus Firebase Auth / Cloudflare state recovery: **still unverified**.
 - [ ] Production Firebase Auth metadata and live session / TOTP runtime readiness tested without destructive recovery.
 - [ ] Complete old challenge/cooldown window inventoried or safely drained.
 - [ ] First production DO class lifecycle and forward-corrective release strategy tested.
@@ -100,4 +127,4 @@ The first command prompts twice for a unique backup passphrase, the second promp
 - [ ] Separate production MFA mutation approval, separate production deployments approval, then final exact-SHA CI and live verification.
 - [ ] Final ZIP produced from exact verified release build.
 
-**Release decision: HOLD. This document is a plan; no changes were made to production.**
+**Release decision: HOLD. Read-only production Firestore backup was expressly approved and performed; no production data/configuration writes or deployments occurred.**

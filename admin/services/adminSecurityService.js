@@ -190,7 +190,7 @@ export const revokeAllOtherSessions=()=>workerRequest('/security/session/revoke-
 export const revokeAllTemporarySessions=()=>workerRequest('/security/session/revoke-temporary',{body:{proofId:requireRecentStepUp('sign out temporary sessions').proofId},authorization:true});
 export const listSecurityActivity=()=>workerRequest('/security/activity',{method:'GET',authorization:true});
 export const getSecurityEmailBranding=()=>workerRequest('/security/email-branding',{method:'GET',authorization:true});
-export const saveSecurityEmailBranding=branding=>workerRequest('/security/email-branding',{body:{branding},authorization:true});
+export const saveSecurityEmailBranding=branding=>workerRequest('/security/email-branding',{body:{branding,proofId:requireRecentStepUp('save security email branding').proofId},authorization:true});
 export const getSecurityAlertStatus=()=>workerRequest('/security/alert-status',{method:'GET',authorization:true});
 export async function generateRecoveryKit(){ const proof=requireRecentStepUp('rotate recovery kit'); return workerRequest('/security/recovery/generate',{body:{proofId:proof.proofId},authorization:true}); }
 export async function activatePreparedRecoveryKit(rotationId,preparedKitId){

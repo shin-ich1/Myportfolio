@@ -747,6 +747,7 @@ $('securityEmailBrandingForm')?.addEventListener('submit', async event => {
   event.preventDefault();
   const status = $('securityEmailBrandingStatus');
   try {
+    await stepUp('save security email branding');
     await saveSecurityEmailBranding({
       senderName: $('securityEmailSenderName').value,
       logoUrl: $('securityEmailLogoUrl').value,

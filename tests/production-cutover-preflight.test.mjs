@@ -55,7 +55,7 @@ test('Gateway reports DO binding status and refuses sensitive operations without
   assert.match(gateway, /if \(!namespace \|\| typeof namespace\.idFromName/);
   assert.match(gateway, /const stub = namespace\.get\(namespace\.idFromName\(owner\)\)/);
   assert.match(gateway, /op: "rate-hit"/);
-  assert.match(gateway, /"step-up-totp":?\s*\{limit:7/);
+  assert.match(gateway, /'step-up-totp':\s*\{limit:7/);
 });
 
 test('MFA activation is a separate one-field, opt-in production step', () => {
@@ -72,7 +72,7 @@ test('Direct Firestore session authorization must remain independent of Worker r
   assert.match(rules, /function isAdministrator\(\)\s*\{\s*return hasSecurityApprovedSession\(\) && hasAdministratorRecord\(\)/);
   assert.match(rules, /request\.auth\.token\.lanSecurityVerified == true/);
   assert.match(rules, /adminSecuritySessions\/\$\(request\.auth\.token\.lanSessionId\)/);
-  assert.match(rules, /allow (read|write|create|update|delete): if false/);
+  assert.match(rules, /match \/adminSecuritySessions\/\{id\} \{ allow read, write: if false; \}/);
 });
 
 test('Production candidate has no production-deploy automation or implicit MFA mutation', () => {

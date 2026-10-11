@@ -33,9 +33,11 @@ test("Public styles are unchanged apart from the canonical Cloudflare widget slo
   assert.equal(withoutTurnstileSlotRule(current("styles.css")), withoutTurnstileSlotRule(oldSource("styles.css")));
 });
 
-test("Only the five approved code, test and canonical CI ownership files differ from staging release", () => {
+test("Only approved canonical security code, tests and CI owners differ from staging release", () => {
   const allowed = new Set([
     ".github/workflows/admin-performance-regression.yml",
+    ".github/workflows/pr11-staging-hosting.yml",
+    "tests/pr11-staging-hosting-gate.test.mjs",
     "app.js",
     "styles.css",
     "tests/public-turnstile-lifecycle-regression.test.mjs",

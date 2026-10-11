@@ -23,14 +23,13 @@ test("PR11 Hosting deployment has independent validation and immutable source ch
   assert.match(yaml, /node --test tests\/public-messenger-conversation-lifecycle\.test\.mjs tests\/public-turnstile-mobile-regression\.test\.mjs tests\/public-turnstile-lifecycle-regression\.test\.mjs/);
   assert.match(yaml, /node --test tests\/public-security-source-isolation\.test\.mjs/);
   assert.match(yaml, /c1f46e3ae83687c6550fc539fc6c51773e53adb1/);
-  assert.match(yaml, /node --test tests\/public-turnstile-mobile-regression\.test\.mjs/);
   assert.match(yaml, /node scripts\/prepare-staging\.mjs/);
   assert.match(yaml, /fbbe71500e856d0c553edf689bc2c293fbbc5079/);
   assert.match(yaml, /e6e9ef5a4099b00398b545007882254775920a77/);
   assert.match(yaml, /1182759b2c37fb6d201f78c0d6c67156d3b9fc32/);
-  assert.match(yaml, /git hash-object message-service\\.js/);
-  assert.match(yaml, /git hash-object \\.lan-staging\\/site\\/message-service\\.js/);
-  assert.match(yaml, /message-service\\.js\\?pr13=/);
+  assert.match(yaml, /git hash-object message-service\.js/);
+  assert.match(yaml, /git hash-object \.lan-staging\/site\/message-service\.js/);
+  assert.match(yaml, /message-service\.js\?pr13=/);
 });
 
 test("Only isolated Firebase Hosting may be deployed; no Worker, rules, or production project writes", () => {

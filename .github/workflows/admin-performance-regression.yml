@@ -50,6 +50,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -71,6 +73,9 @@ jobs:
           node --check storage-bridge-url.js
           node --check telemetry-worker/src/index.js
           node --check telemetry-worker/src/security-coordinator.js
+      - name: Enforce exact Public security-only source changes on isolated staging PR
+        if: github.event_name == 'pull_request' && github.base_ref == 'staging/pr11-turnstile-mobile-20261011'
+        run: node --test tests/public-security-source-isolation.test.mjs
       - name: Run public Turnstile lifecycle and server-gate regressions
         run: node --test tests/public-turnstile-mobile-regression.test.mjs tests/public-turnstile-lifecycle-regression.test.mjs
       - name: Run shared-navigation and staging isolation tests
@@ -110,6 +115,9 @@ jobs:
 
 
       - name: Run immutable production-candidate source freeze contract
+        if: >-
+          github.ref == 'refs/heads/perf/admin-workspace-investigation-20261008' ||
+          (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: node --test tests/production-candidate-contract.test.mjs
 
   # Read-only Cloudflare metadata checks. This is NOT a deployment or a Wrangler retry.

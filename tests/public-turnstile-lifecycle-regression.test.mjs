@@ -85,3 +85,27 @@ test("Security architecture is untouched: mandatory Siteverify, action, hostname
   assert.match(worker, /String\(result\.hostname \|\| ""\)\.toLowerCase\(\) !== config\.host/);
   assert.match(app, /await sendPendingPublicMessage\(verified\.verificationToken\)/);
 });
+
+test("A Turnstile error before sliding fails immediately instead of waiting 45 seconds", async () => {
+  const h = turnstileHarness();
+  h.finishTurnstile(new Error("Cloudflare verification failed before slider interaction."));
+  const pending = h.runTurnstile();
+  assert.equal(h.timeouts.length, 0, "A known widget failure must not start another 45-second wait");
+  await assert.rejects(pending, /failed before slider interaction/);
+});
+
+test("A later fresh Turnstile proof clears a previous early error without bypassing Siteverify", async () => {
+  const h = turnstileHarness();
+  h.finishTurnstile(new Error("Cloudflare widget temporarily failed."));
+  h.finishTurnstile(null, "fresh-one-time-token");
+  assert.equal(await h.runTurnstile(), "fresh-one-time-token");
+  assert.equal(h.timeouts.length, 0);
+});
+
+test("One displayed puzzle does not eagerly allocate a second server challenge", () => {
+  assert.doesNotMatch(
+    app,
+    /window\.setTimeout\(\(\) => warmPublicMessagePuzzleChallenge\(\)\.catch\(\(\) => \{\}\), PUBLIC_MESSAGE_PUZZLE_NEXT_WARMUP_DELAY_MS\)/,
+    "Eager follow-up warmup doubles server challenges per ordinary form open and exhausts the existing 10-minute limit"
+  );
+});

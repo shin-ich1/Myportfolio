@@ -5,17 +5,19 @@ import vm from "node:vm";
 
 const publicSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const workerSource = readFileSync(new URL("../telemetry-worker/src/index.js", import.meta.url), "utf8");
+const styleSource = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 
-test("Public Turnstile uses canonical Public adaptive mode and narrow-slot width", () => {
-  const match = publicSource.match(/size:\s*(isPublicDocumentFlowMode\(\)\s*\|\|\s*slot\.getBoundingClientRect\(\)\.width\s*<\s*300\s*\?\s*"compact"\s*:\s*"flexible")/);
-  assert.ok(match, "Mobile Turnstile must reuse the canonical Public adaptive owner");
+test("Public Turnstile uses the measurable parent instead of the hidden empty widget slot", () => {
+  assert.match(styleSource, /\.public-message-turnstile-slot:empty\{display:none\}/);
+  const match = publicSource.match(/size:\s*(isPublicDocumentFlowMode\(\)\s*\|\|\s*slot\.parentElement\.getBoundingClientRect\(\)\.width\s*<\s*300\s*\?\s*"compact"\s*:\s*"flexible")/);
+  assert.ok(match, "Sizing must not measure the hidden :empty Turnstile slot itself");
   assert.doesNotMatch(publicSource, /matchMedia\(["']\(max-width:/);
   const chooseSize = new Function("isPublicDocumentFlowMode", "slot", `return (${match[1]});`);
-  const sizeAt = (isDocumentFlow, slotPx) => chooseSize(
-    () => isDocumentFlow,
-    { getBoundingClientRect: () => ({ width: slotPx }) }
+  const sizeAt = (documentFlow, cardWidth) => chooseSize(
+    () => documentFlow,
+    { getBoundingClientRect: () => ({ width: 0 }), parentElement: { getBoundingClientRect: () => ({ width: cardWidth }) } }
   );
-  assert.equal(sizeAt(true, 328), "compact"); // 430px phone: canonical mobile mode
+  assert.equal(sizeAt(true, 328), "compact"); // mobile 430px: canonical mobile mode
   assert.equal(sizeAt(true, 280), "compact");
   assert.equal(sizeAt(false, 280), "compact");
   assert.equal(sizeAt(false, 320), "flexible");

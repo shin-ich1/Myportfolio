@@ -2685,7 +2685,7 @@ async function loadPublicMessagePuzzleChallenge() {
       sitekey: challenge.siteKey,
       theme: "dark",
       // Managed Turnstile flexible widgets need at least 300px of available width.
-      size: window.matchMedia("(max-width: 600px)").matches || slot.getBoundingClientRect().width < 300 ? "compact" : "flexible",
+      size: isPublicDocumentFlowMode() || slot.getBoundingClientRect().width < 300 ? "compact" : "flexible",
       appearance: "interaction-only",
       execution: "execute",
       action: challenge.action || "portfolio_message_create",

@@ -6,18 +6,19 @@ import vm from "node:vm";
 const publicSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const workerSource = readFileSync(new URL("../telemetry-worker/src/index.js", import.meta.url), "utf8");
 
-test("Public Turnstile uses compact for the real 430px mobile-emulation viewport and narrow slots", () => {
-  const match = publicSource.match(/size:\s*(window\.matchMedia\("\(max-width: 600px\)"\)\.matches\s*\|\|\s*slot\.getBoundingClientRect\(\)\.width\s*<\s*300\s*\?\s*"compact"\s*:\s*"flexible")/);
-  assert.ok(match, "A 430px phone viewport must not accidentally render a wide Turnstile widget");
-  const chooseSize = new Function("window", "slot", `return (${match[1]});`);
-  const sizeAt = (viewportPx, slotPx) => chooseSize(
-    { matchMedia: () => ({ matches: viewportPx <= 600 }) },
+test("Public Turnstile uses canonical Public adaptive mode and narrow-slot width", () => {
+  const match = publicSource.match(/size:\s*(isPublicDocumentFlowMode\(\)\s*\|\|\s*slot\.getBoundingClientRect\(\)\.width\s*<\s*300\s*\?\s*"compact"\s*:\s*"flexible")/);
+  assert.ok(match, "Mobile Turnstile must reuse the canonical Public adaptive owner");
+  assert.doesNotMatch(publicSource, /matchMedia\(["']\(max-width:/);
+  const chooseSize = new Function("isPublicDocumentFlowMode", "slot", `return (${match[1]});`);
+  const sizeAt = (isDocumentFlow, slotPx) => chooseSize(
+    () => isDocumentFlow,
     { getBoundingClientRect: () => ({ width: slotPx }) }
   );
-  assert.equal(sizeAt(430, 328), "compact");
-  assert.equal(sizeAt(390, 280), "compact");
-  assert.equal(sizeAt(1200, 280), "compact");
-  assert.equal(sizeAt(1200, 320), "flexible");
+  assert.equal(sizeAt(true, 328), "compact"); // 430px phone: canonical mobile mode
+  assert.equal(sizeAt(true, 280), "compact");
+  assert.equal(sizeAt(false, 280), "compact");
+  assert.equal(sizeAt(false, 320), "flexible");
 });
 
 function executionHarness() {

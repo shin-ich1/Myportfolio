@@ -35,25 +35,27 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/staging/pr11-turnstile-mobile-20261011'
           BASE='0f4762f2ca6654d7440a2d201659a8159113f2f3'
           git merge-base --is-ancestor "$BASE" HEAD
-          test "$(git hash-object app.js)" = '361d81c7890ab1c00ac579039d8e1329feb86c11'
+          test "$(git hash-object app.js)" = 'c1f46e3ae83687c6550fc539fc6c51773e53adb1'
+          test "$(git hash-object message-service.js)" = 'fbbe71500e856d0c553edf689bc2c293fbbc5079'
+          test "$(git hash-object tests/public-messenger-conversation-lifecycle.test.mjs)" = 'e6e9ef5a4099b00398b545007882254775920a77'
           while IFS= read -r filename; do
             case "$filename" in
-              app.js|styles.css|tests/public-turnstile-mobile-regression.test.mjs|tests/public-turnstile-lifecycle-regression.test.mjs|tests/public-security-source-isolation.test.mjs|tests/pr11-staging-hosting-gate.test.mjs|.github/workflows/pr11-staging-hosting.yml|.github/workflows/admin-performance-regression.yml) ;;
+              app.js|message-service.js|styles.css|tests/public-messenger-conversation-lifecycle.test.mjs|tests/public-turnstile-mobile-regression.test.mjs|tests/public-turnstile-lifecycle-regression.test.mjs|tests/public-security-source-isolation.test.mjs|tests/pr11-staging-hosting-gate.test.mjs|.github/workflows/pr11-staging-hosting.yml|.github/workflows/admin-performance-regression.yml) ;;
               *) echo "Unexpected staging source change: $filename" >&2; exit 1 ;;
             esac
           done < <(git diff --name-only "$BASE" HEAD)
           test "$(git hash-object tests/public-turnstile-mobile-regression.test.mjs)" = '698bebd0e94c249c9085b10fd89707cdc5b16a9b'
           test "$(git hash-object styles.css)" = '0b051406a79279b6801ef71adeefa88dcaa46cba'
           test "$(git hash-object tests/public-turnstile-lifecycle-regression.test.mjs)" = '256952bbec753830254f6469347964a6de4a2745'
-          test "$(git hash-object tests/public-security-source-isolation.test.mjs)" = '5f3398cbfa68b122247707311727ff5fa99b9a43'
+          test "$(git hash-object tests/public-security-source-isolation.test.mjs)" = '1182759b2c37fb6d201f78c0d6c67156d3b9fc32'
           test -f .github/workflows/pr11-staging-hosting.yml
       - name: Validate source syntax and isolated regression/security contracts
         run: |
           set -euo pipefail
           node --check app.js
           node --check scripts/prepare-staging.mjs
-          node --test tests/public-turnstile-mobile-regression.test.mjs tests/public-turnstile-lifecycle-regression.test.mjs tests/pr11-staging-hosting-gate.test.mjs tests/staging-build-isolation.test.mjs tests/public-message-atomicity.test.mjs tests/staging-worker-health-gate.test.mjs tests/staging-deploy-gate.test.mjs tests/security-coordinator-atomicity.test.mjs
-      - name: Enforce reviewed PR12 Public source scope (no external request)
+          node --test tests/public-messenger-conversation-lifecycle.test.mjs tests/public-turnstile-mobile-regression.test.mjs tests/public-turnstile-lifecycle-regression.test.mjs tests/pr11-staging-hosting-gate.test.mjs tests/staging-build-isolation.test.mjs tests/public-message-atomicity.test.mjs tests/staging-worker-health-gate.test.mjs tests/staging-deploy-gate.test.mjs tests/security-coordinator-atomicity.test.mjs
+      - name: Enforce reviewed Messenger-only Public source scope (no external request)
         run: node --test tests/public-security-source-isolation.test.mjs
       - name: Generate and inspect synthetic staging Hosting bundle (no credentials, no deployment)
         shell: bash
@@ -61,7 +63,8 @@ jobs:
           set -euo pipefail
           export LAN_STAGING_FIREBASE_WEB_API_KEY="$(node -e "process.stdout.write('AIza'+'A'.repeat(35))")"
           node scripts/prepare-staging.mjs
-          test "$(git hash-object .lan-staging/site/app.js)" = '361d81c7890ab1c00ac579039d8e1329feb86c11'
+          test "$(git hash-object .lan-staging/site/app.js)" = 'c1f46e3ae83687c6550fc539fc6c51773e53adb1'
+          test "$(git hash-object .lan-staging/site/message-service.js)" = 'fbbe71500e856d0c553edf689bc2c293fbbc5079'
           test "$(git hash-object .lan-staging/site/styles.css)" = '0b051406a79279b6801ef71adeefa88dcaa46cba'
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
@@ -147,11 +150,13 @@ jobs:
           test "$GITHUB_REPOSITORY" = 'shin-ich1/Myportfolio'
           test "$GITHUB_EVENT_NAME" = 'push'
           test "$GITHUB_REF" = 'refs/heads/staging/pr11-turnstile-mobile-20261011'
-          test "$(git hash-object app.js)" = '361d81c7890ab1c00ac579039d8e1329feb86c11'
+          test "$(git hash-object app.js)" = 'c1f46e3ae83687c6550fc539fc6c51773e53adb1'
+          test "$(git hash-object message-service.js)" = 'fbbe71500e856d0c553edf689bc2c293fbbc5079'
+          test "$(git hash-object tests/public-messenger-conversation-lifecycle.test.mjs)" = 'e6e9ef5a4099b00398b545007882254775920a77'
           test "$(git hash-object styles.css)" = '0b051406a79279b6801ef71adeefa88dcaa46cba'
           test "$(git hash-object tests/public-turnstile-mobile-regression.test.mjs)" = '698bebd0e94c249c9085b10fd89707cdc5b16a9b'
           test "$(git hash-object tests/public-turnstile-lifecycle-regression.test.mjs)" = '256952bbec753830254f6469347964a6de4a2745'
-          test "$(git hash-object tests/public-security-source-isolation.test.mjs)" = '5f3398cbfa68b122247707311727ff5fa99b9a43'
+          test "$(git hash-object tests/public-security-source-isolation.test.mjs)" = '1182759b2c37fb6d201f78c0d6c67156d3b9fc32'
           node --input-type=module <<'NODE'
           const { LAN_STAGING_FIREBASE_WEB_API_KEY: webKey, LAN_STAGING_WIF_PROVIDER: provider,
             LAN_STAGING_DEPLOY_SERVICE_ACCOUNT: account } = process.env;
@@ -192,7 +197,8 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/prepare-staging.mjs
-          test "$(git hash-object .lan-staging/site/app.js)" = '361d81c7890ab1c00ac579039d8e1329feb86c11'
+          test "$(git hash-object .lan-staging/site/app.js)" = 'c1f46e3ae83687c6550fc539fc6c51773e53adb1'
+          test "$(git hash-object .lan-staging/site/message-service.js)" = 'fbbe71500e856d0c553edf689bc2c293fbbc5079'
           test "$(git hash-object .lan-staging/site/styles.css)" = '0b051406a79279b6801ef71adeefa88dcaa46cba'
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
@@ -208,11 +214,11 @@ jobs:
       - name: Deploy Firebase Hosting to staging project ONLY
         working-directory: .lan-staging
         run: npx --yes firebase-tools@14.20.0 deploy --only hosting --project lan-portfolio-staging --non-interactive
-      - name: Verify public staging app.js version (not Turnstile end-to-end)
+      - name: Verify exact staging frontend app and messaging service bytes (not end-to-end)
         run: |
           node --input-type=module <<'NODE'
           import { createHash } from 'node:crypto';
-          const expected = '361d81c7890ab1c00ac579039d8e1329feb86c11';
+          const expected = 'c1f46e3ae83687c6550fc539fc6c51773e53adb1';
           let ok = false;
           for (let i = 0; i < 5; i++) {
             const r = await fetch('https://lan-portfolio-staging.web.app/app.js?pr11=' + process.env.GITHUB_SHA, {
@@ -225,6 +231,13 @@ jobs:
             }
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
-          if (!ok) throw Error('Staging Hosting did not serve the exact approved PR11 app.js bytes.');
+          if (!ok) throw Error('Staging Hosting did not serve the exact approved app.js bytes.');
+          const serviceResponse = await fetch('https://lan-portfolio-staging.web.app/message-service.js?pr13=' + process.env.GITHUB_SHA, {
+            redirect: 'error', signal: AbortSignal.timeout(10000), cache: 'no-store'
+          });
+          if (!serviceResponse.ok) throw Error('Staging messenger service could not be read after deploy.');
+          const messagingSource = Buffer.from(await serviceResponse.arrayBuffer());
+          const messagingHash = createHash('sha1').update(Buffer.from('blob ' + messagingSource.length + '\\0')).update(messagingSource).digest('hex');
+          if (messagingHash !== 'fbbe71500e856d0c553edf689bc2c293fbbc5079') throw Error('Staging Hosting did not serve the exact approved message-service.js bytes.');
           console.log('Staging PR11 frontend bytes verified. Real Cloudflare Turnstile proof and message delivery still require live testing.');
           NODE

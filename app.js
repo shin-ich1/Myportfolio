@@ -2355,6 +2355,7 @@ let publicMessagePuzzleResizeObserver = null;
 let publicMessagePuzzleWarmupPromise = null;
 let publicMessagePuzzleWarmup = null;
 const PUBLIC_MESSAGE_PUZZLE_WARMUP_MAX_AGE_MS = 2 * 60 * 1000;
+const PUBLIC_MESSAGE_PUZZLE_NEXT_WARMUP_DELAY_MS = 120;
 
 function publicMessageIconUrl() {
   const source = safeImageSource(content?.hero?.image) || "assets/images/hero.png";

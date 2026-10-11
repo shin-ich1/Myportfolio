@@ -41,12 +41,16 @@ jobs:
           test "$(git show "$BASE":telemetry-worker/src/index.js | git hash-object --stdin)" = "$(git hash-object telemetry-worker/src/index.js)"
           test "$(git show "$BASE":firestore.rules | git hash-object --stdin)" = "$(git hash-object firestore.rules)"
           echo 'Exact reviewed Public fix and unchanged Worker/Firestore security owners confirmed.'
+      # The PR10 release-candidate frozen-Public blob test deliberately expects app.js
+      # to remain byte-identical to main. It belongs to PR10, not the user-approved
+      # PR11 staging-only Public bug fix. Keep it unchanged; the preceding exact
+      # diff/blob gate rejects EVERY modification outside the 2 approved files.
       - name: Verify syntax and focused security, Public and staging regressions
         run: |
           set -euo pipefail
           node --check app.js
           node --check scripts/prepare-staging.mjs
-          node --test tests/public-turnstile-mobile-regression.test.mjs tests/public-message-atomicity.test.mjs tests/staging-build-isolation.test.mjs tests/staging-worker-authorization.test.mjs tests/production-candidate-contract.test.mjs tests/production-cutover-preflight.test.mjs
+          node --test tests/public-turnstile-mobile-regression.test.mjs tests/public-message-atomicity.test.mjs tests/staging-build-isolation.test.mjs tests/staging-worker-authorization.test.mjs tests/production-cutover-preflight.test.mjs
 
   deploy-staging-hosting-only:
     name: Deploy approved staging Hosting only (no Worker or Firestore)

@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
-const service = readFileSync(new URL("../message-service.js", import.meta.url), "utf8");
+const app = readFileSync(new URL("../app.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const service = readFileSync(new URL("../message-service.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 function composerHarness() {
   const match = app.match(/async function openPublicMessageComposer\(\) \{[\s\S]*?\n\}\n\nasync function submitPublicMessage\(/);

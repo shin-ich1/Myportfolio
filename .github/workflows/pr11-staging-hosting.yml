@@ -35,28 +35,34 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/staging/pr11-turnstile-mobile-20261011'
           BASE='0f4762f2ca6654d7440a2d201659a8159113f2f3'
           git merge-base --is-ancestor "$BASE" HEAD
-          test "$(git hash-object app.js)" = '36e3309406322038d353d7f74ac739ffb8b73ec0'
+          test "$(git hash-object app.js)" = '361d81c7890ab1c00ac579039d8e1329feb86c11'
           while IFS= read -r filename; do
             case "$filename" in
-              app.js|tests/public-turnstile-mobile-regression.test.mjs|tests/pr11-staging-hosting-gate.test.mjs|.github/workflows/pr11-staging-hosting.yml) ;;
+              app.js|styles.css|tests/public-turnstile-mobile-regression.test.mjs|tests/public-turnstile-lifecycle-regression.test.mjs|tests/public-security-source-isolation.test.mjs|tests/pr11-staging-hosting-gate.test.mjs|.github/workflows/pr11-staging-hosting.yml|.github/workflows/admin-performance-regression.yml) ;;
               *) echo "Unexpected staging source change: $filename" >&2; exit 1 ;;
             esac
           done < <(git diff --name-only "$BASE" HEAD)
-          test "$(git hash-object tests/public-turnstile-mobile-regression.test.mjs)" = 'a94902f3d54c2ecd89b61a632f563d9b6af35577'
+          test "$(git hash-object tests/public-turnstile-mobile-regression.test.mjs)" = '698bebd0e94c249c9085b10fd89707cdc5b16a9b'
+          test "$(git hash-object styles.css)" = '0b051406a79279b6801ef71adeefa88dcaa46cba'
+          test "$(git hash-object tests/public-turnstile-lifecycle-regression.test.mjs)" = '256952bbec753830254f6469347964a6de4a2745'
+          test "$(git hash-object tests/public-security-source-isolation.test.mjs)" = '5f3398cbfa68b122247707311727ff5fa99b9a43'
           test -f .github/workflows/pr11-staging-hosting.yml
       - name: Validate source syntax and isolated regression/security contracts
         run: |
           set -euo pipefail
           node --check app.js
           node --check scripts/prepare-staging.mjs
-          node --test tests/public-turnstile-mobile-regression.test.mjs tests/pr11-staging-hosting-gate.test.mjs tests/staging-build-isolation.test.mjs tests/public-message-atomicity.test.mjs tests/staging-worker-health-gate.test.mjs tests/staging-deploy-gate.test.mjs tests/security-coordinator-atomicity.test.mjs
+          node --test tests/public-turnstile-mobile-regression.test.mjs tests/public-turnstile-lifecycle-regression.test.mjs tests/pr11-staging-hosting-gate.test.mjs tests/staging-build-isolation.test.mjs tests/public-message-atomicity.test.mjs tests/staging-worker-health-gate.test.mjs tests/staging-deploy-gate.test.mjs tests/security-coordinator-atomicity.test.mjs
+      - name: Enforce reviewed PR12 Public source scope (no external request)
+        run: node --test tests/public-security-source-isolation.test.mjs
       - name: Generate and inspect synthetic staging Hosting bundle (no credentials, no deployment)
         shell: bash
         run: |
           set -euo pipefail
           export LAN_STAGING_FIREBASE_WEB_API_KEY="$(node -e "process.stdout.write('AIza'+'A'.repeat(35))")"
           node scripts/prepare-staging.mjs
-          test "$(git hash-object .lan-staging/site/app.js)" = '36e3309406322038d353d7f74ac739ffb8b73ec0'
+          test "$(git hash-object .lan-staging/site/app.js)" = '361d81c7890ab1c00ac579039d8e1329feb86c11'
+          test "$(git hash-object .lan-staging/site/styles.css)" = '0b051406a79279b6801ef71adeefa88dcaa46cba'
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
           import assert from 'node:assert/strict';
@@ -141,8 +147,11 @@ jobs:
           test "$GITHUB_REPOSITORY" = 'shin-ich1/Myportfolio'
           test "$GITHUB_EVENT_NAME" = 'push'
           test "$GITHUB_REF" = 'refs/heads/staging/pr11-turnstile-mobile-20261011'
-          test "$(git hash-object app.js)" = '36e3309406322038d353d7f74ac739ffb8b73ec0'
-          test "$(git hash-object tests/public-turnstile-mobile-regression.test.mjs)" = 'a94902f3d54c2ecd89b61a632f563d9b6af35577'
+          test "$(git hash-object app.js)" = '361d81c7890ab1c00ac579039d8e1329feb86c11'
+          test "$(git hash-object styles.css)" = '0b051406a79279b6801ef71adeefa88dcaa46cba'
+          test "$(git hash-object tests/public-turnstile-mobile-regression.test.mjs)" = '698bebd0e94c249c9085b10fd89707cdc5b16a9b'
+          test "$(git hash-object tests/public-turnstile-lifecycle-regression.test.mjs)" = '256952bbec753830254f6469347964a6de4a2745'
+          test "$(git hash-object tests/public-security-source-isolation.test.mjs)" = '5f3398cbfa68b122247707311727ff5fa99b9a43'
           node --input-type=module <<'NODE'
           const { LAN_STAGING_FIREBASE_WEB_API_KEY: webKey, LAN_STAGING_WIF_PROVIDER: provider,
             LAN_STAGING_DEPLOY_SERVICE_ACCOUNT: account } = process.env;
@@ -183,7 +192,8 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/prepare-staging.mjs
-          test "$(git hash-object .lan-staging/site/app.js)" = '36e3309406322038d353d7f74ac739ffb8b73ec0'
+          test "$(git hash-object .lan-staging/site/app.js)" = '361d81c7890ab1c00ac579039d8e1329feb86c11'
+          test "$(git hash-object .lan-staging/site/styles.css)" = '0b051406a79279b6801ef71adeefa88dcaa46cba'
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
           import assert from 'node:assert/strict';
@@ -202,7 +212,7 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import { createHash } from 'node:crypto';
-          const expected = '36e3309406322038d353d7f74ac739ffb8b73ec0';
+          const expected = '361d81c7890ab1c00ac579039d8e1329feb86c11';
           let ok = false;
           for (let i = 0; i < 5; i++) {
             const r = await fetch('https://lan-portfolio-staging.web.app/app.js?pr11=' + process.env.GITHUB_SHA, {

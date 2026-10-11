@@ -17,7 +17,12 @@ test("PR11 Hosting deployment has independent validation and immutable source ch
   assert.match(yaml, /needs: validate/);
   assert.match(yaml, /git merge-base --is-ancestor/);
   assert.match(yaml, /git hash-object app\.js/);
-  assert.match(yaml, /36e3309406322038d353d7f74ac739ffb8b73ec0/);
+  assert.match(yaml, /0b051406a79279b6801ef71adeefa88dcaa46cba/);
+  assert.match(yaml, /698bebd0e94c249c9085b10fd89707cdc5b16a9b/);
+  assert.match(yaml, /256952bbec753830254f6469347964a6de4a2745/);
+  assert.match(yaml, /node --test tests\/public-turnstile-mobile-regression\.test\.mjs tests\/public-turnstile-lifecycle-regression\.test\.mjs/);
+  assert.match(yaml, /node --test tests\/public-security-source-isolation\.test\.mjs/);
+  assert.match(yaml, /361d81c7890ab1c00ac579039d8e1329feb86c11/);
   assert.match(yaml, /node --test tests\/public-turnstile-mobile-regression\.test\.mjs/);
   assert.match(yaml, /node scripts\/prepare-staging\.mjs/);
 });

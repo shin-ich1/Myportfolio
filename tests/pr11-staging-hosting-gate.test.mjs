@@ -40,3 +40,20 @@ test("GitHub deploy uses scoped keyless staging identity and refuses secrets in 
   assert.match(yaml, /571587695468/);
   assert.doesNotMatch(yaml, /credentials_json:|PRIVATE_KEY=|TURNSTILE_SECRET_KEY:/);
 });
+
+test("Staging OIDC identity is verified separately, without enabling a Hosting deployment", () => {
+  const start = yaml.indexOf("\n  oidc-preflight:");
+  const end = yaml.indexOf("\n  deploy:", start);
+  assert.ok(start > 0 && end > start, "The single canonical workflow must own the read-only identity preflight");
+  const job = yaml.slice(start, end);
+  assert.match(job, /needs: validate/);
+  assert.match(job, /environment: lan-security-staging/);
+  assert.match(job, /id-token:\s*write/);
+  assert.match(job, /google-github-actions\/auth@v3/);
+  assert.match(job, /google-github-actions\/setup-gcloud@v3/);
+  assert.match(job, /gcloud auth print-access-token >\/dev\/null/);
+  assert.match(job, /github\.ref == 'refs\/heads\/staging\/pr11-turnstile-mobile-20261011'/);
+  assert.match(job, /projects\/571587695468/);
+  assert.match(job, /@lan-portfolio-staging\\\.iam\\\.gserviceaccount\\\.com/);
+  assert.doesNotMatch(job, /firebase-tools|wrangler deploy|deploy --only|\bgcloud (?:projects|iam) (?:add|set|update|create)/);
+});

@@ -13,7 +13,6 @@ import {
   clearVisitorConversationIdentity,
   createPrivateMessageChallenge,
   createPrivateVisitorThread,
-  getPrivateVisitorThread,
   loadVisitorConversationIdentity,
   markPrivateVisitorThreadRead,
   forgetPrivateVisitorThread,
@@ -2942,32 +2941,34 @@ async function openPublicMessageComposer() {
     return;
   }
 
+  publicMessagePushState = "unregistered";
+  publicMessagePushError = "";
+  let initialThreadReceived = false;
+  // Firestore's live authorized snapshot is the canonical source. A separate
+  // getDoc creates an unnecessary blocking network dependency in in-app browsers.
+  const startupTimeoutId = window.setTimeout(() => {
+    if (initialThreadReceived || !dialog.isConnected) return;
+    publicMessageStop?.();
+    publicMessageStop = null;
+    dialog.innerHTML = `<div class="public-private-error"><strong>Conversation is taking longer than expected</strong><p>Check your connection, then try again. Your private conversation has not been removed.</p><button class="btn" data-retry-private-message type="button">Try again</button></div>`;
+    dialog.querySelector("[data-retry-private-message]")?.addEventListener("click", () => openPublicMessageComposer(), { once: true });
+  }, 12000);
+
   try {
-    const thread = await getPrivateVisitorThread(identity.id);
-    if (!thread) {
-      clearVisitorConversationIdentity();
-      updatePublicMessageLauncherUnread(false);
-      renderPublicMessageStart(dialog, "");
-      return;
-    }
-    publicMessagePushState = "unregistered";
-    publicMessagePushError = "";
-    if (("Notification" in window) && Notification.permission === "granted") {
-      try {
-        await rehydratePortfolioPush({ audience: "visitor", threadId: identity.id, iconUrl: publicMessageIconUrl() });
-        publicMessagePushState = "registered";
-      } catch (error) {
-        publicMessagePushError = error?.message || "Reply notifications could not reconnect on this browser.";
-        console.error("Visitor push registration could not be restored:", error);
+    publicMessageStop = subscribePrivateVisitorThread(identity.id, ({ thread: liveThread, messages }) => {
+      if (!dialog.isConnected) return;
+      if (!initialThreadReceived) {
+        initialThreadReceived = true;
+        window.clearTimeout(startupTimeoutId);
       }
-    }
-    publicMessageStop = subscribePrivateVisitorThread(identity.id, async ({ thread: liveThread, messages }) => {
       if (!liveThread) {
         publicMessageStop?.();
         publicMessageStop = null;
+        // Clear browser access only after a real, authorized thread snapshot
+        // confirms deletion. Initial messages snapshots cannot trigger this.
         clearVisitorConversationIdentity();
         updatePublicMessageLauncherUnread(false);
-        if (dialog.isConnected) dialog.innerHTML = publicMessageClosedMarkup();
+        dialog.innerHTML = publicMessageClosedMarkup();
         dialog.querySelector("[data-start-new-private-message]")?.addEventListener("click", () => renderPublicMessageStart(dialog, ""));
         window.lucide?.createIcons();
         return;
@@ -2976,10 +2977,26 @@ async function openPublicMessageComposer() {
       renderPublicPrivateConversation(liveThread, messages);
       if (liveThread.visitorUnread) markPrivateVisitorThreadRead(liveThread.id).catch(() => {});
     }, (error) => {
-      if (dialog.isConnected) dialog.innerHTML = `<div class="public-private-error"><strong>Private messaging unavailable</strong><p>${escapeHtml(error?.message || "Please try again later.")}</p></div>`;
+      window.clearTimeout(startupTimeoutId);
+      if (dialog.isConnected) dialog.innerHTML = `<div class="public-private-error"><strong>Private messaging unavailable</strong><p>${escapeHtml(error?.message || "Please try again later.")}</p><button class="btn" data-retry-private-message type="button">Try again</button></div>`;
+      dialog.querySelector("[data-retry-private-message]")?.addEventListener("click", () => openPublicMessageComposer(), { once: true });
     });
+
+    // Notifications are optional; never block the private conversation while
+    // a webview waits on permission, a push subscription, or service workers.
+    if (("Notification" in window) && Notification.permission === "granted") {
+      Promise.resolve()
+        .then(() => rehydratePortfolioPush({ audience: "visitor", threadId: identity.id, iconUrl: publicMessageIconUrl() }))
+        .then(() => { publicMessagePushState = "registered"; })
+        .catch((error) => {
+          publicMessagePushError = error?.message || "Reply notifications could not reconnect on this browser.";
+          console.error("Visitor push registration could not be restored:", error);
+        });
+    }
   } catch (error) {
-    dialog.innerHTML = `<div class="public-private-error"><strong>Private messaging unavailable</strong><p>${escapeHtml(error?.message || "Please try again later.")}</p></div>`;
+    window.clearTimeout(startupTimeoutId);
+    if (dialog.isConnected) dialog.innerHTML = `<div class="public-private-error"><strong>Private messaging unavailable</strong><p>${escapeHtml(error?.message || "Please try again later.")}</p><button class="btn" data-retry-private-message type="button">Try again</button></div>`;
+    dialog.querySelector("[data-retry-private-message]")?.addEventListener("click", () => openPublicMessageComposer(), { once: true });
   }
 }
 

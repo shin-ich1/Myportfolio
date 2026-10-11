@@ -9,6 +9,7 @@ on:
       - "tests/**"
       - "index.html"
       - "app.js"
+      - "message-service.js"
       - "styles.css"
       - "public-adaptive.js"
       - "public-layout-contract.js"
@@ -38,6 +39,7 @@ on:
       - "tests/**"
       - "index.html"
       - "app.js"
+      - "message-service.js"
       - "styles.css"
       - "public-adaptive.js"
       - "public-layout-contract.js"
@@ -89,6 +91,8 @@ jobs:
           node --check storage-bridge-url.js
           node --check telemetry-worker/src/index.js
           node --check telemetry-worker/src/security-coordinator.js
+      - name: Test Messenger webview conversation startup and Firestore snapshot lifecycle
+        run: node --test tests/public-messenger-conversation-lifecycle.test.mjs
       - name: Enforce exact Public security-only source changes on isolated staging PR
         if: github.event_name == 'pull_request' && github.base_ref == 'staging/pr11-turnstile-mobile-20261011'
         run: node --test tests/public-security-source-isolation.test.mjs

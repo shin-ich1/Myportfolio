@@ -37,10 +37,19 @@ const reference = assetId => ({ provider: "cloudinary", storageProfileId: "cloud
 
 async function fixture({ statuses = {}, responseBody = null, errorStatus = 0,
   outOfFolder = [], downloadStatus = 200 } = {}) {
+  const rsa = await crypto.subtle.generateKey({
+    name: "RSASSA-PKCS1-v1_5", modulusLength: 2048,
+    publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256"
+  }, true, ["sign", "verify"]);
+  const pem = "-----BEGIN PRIVATE KEY-----\\n" +
+    Buffer.from(await crypto.subtle.exportKey("pkcs8", rsa.privateKey)).toString("base64") +
+    "\\n-----END PRIVATE KEY-----";
   const objects = new Map();
   let cloudinaryGets = 0, deletionCalls = 0, downloadCalls = 0;
   const env = {
     FIREBASE_PROJECT_ID: "lan-portfolio-staging",
+    FIREBASE_SERVICE_ACCOUNT_EMAIL: "isolated-cloudinary@example.invalid",
+    FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: pem,
     CLOUDINARY_CLOUD_NAME: "test-cloud",
     CLOUDINARY_API_KEY: "isolated-fake-api-key",
     CLOUDINARY_API_SECRET: "isolated-fake-api-secret",
@@ -66,6 +75,8 @@ async function fixture({ statuses = {}, responseBody = null, errorStatus = 0,
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url);
+    if (url.hostname === "oauth2.googleapis.com" && url.pathname === "/token")
+      return json({ access_token: "isolated-fake-oauth-token", expires_in: 3600 });
     if (url.hostname === "firestore.googleapis.com") {
       if (url.pathname.endsWith("/documents/authorizedAdministrators/" + UID))
         return json(fields({ active: true }));
@@ -229,7 +240,7 @@ test("isolated browser Cloudinary upload normalizes saved media and rejects prov
     assert.equal(asset.storageProfileId, "cloudinary-default");
     assert.equal(asset.access, "public-preview");
     assert.ok(storageAssetUrl(asset, "preview").startsWith("https://res.cloudinary.com/"));
-    assert.ok(storageAssetUrl(asset, "card").includes("/f_auto,q_auto"));
+    assert.ok(storageAssetUrl(asset, "card").includes("/c_limit,w_1200,h_1200,f_auto,q_auto:best/"));
     await assert.rejects(() => cloudinaryStorageProvider.upload(file, { family: "image" }),
       /Simulated upload overload/);
     await assert.rejects(() => cloudinaryStorageProvider.upload(file, { family: "image" }),

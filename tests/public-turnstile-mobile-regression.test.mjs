@@ -8,10 +8,10 @@ const workerSource = readFileSync(new URL("../telemetry-worker/src/index.js", im
 const styleSource = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 
 test("Public Turnstile sizes the widget by available dialog width, never by hidden slot width", () => {
-  assert.match(styleSource, /\\.public-message-turnstile-slot:empty\\{display:none\\}/);
-  const match = publicSource.match(/size:\\s*(slot\\.parentElement\\.getBoundingClientRect\\(\\)\\.width\\s*<\\s*300\\s*\\?\\s*"compact"\\s*:\\s*"flexible")/);
+  assert.match(styleSource, /\.public-message-turnstile-slot:empty\{display:none\}/);
+  const match = publicSource.match(/size:\s*(slot\.parentElement\.getBoundingClientRect\(\)\.width\s*<\s*300\s*\?\s*"compact"\s*:\s*"flexible")/);
   assert.ok(match, "Sizing uses actual parent width; mobile mode alone must not force compact");
-  assert.doesNotMatch(publicSource, /matchMedia\\(["']\\(max-width:/);
+  assert.doesNotMatch(publicSource, /matchMedia\(["']\(max-width:/);
   const chooseSize = new Function("slot", `return (${match[1]});`);
   const sizeAt = (width) => chooseSize({ parentElement: { getBoundingClientRect: () => ({ width }) } });
   assert.equal(sizeAt(328), "flexible");

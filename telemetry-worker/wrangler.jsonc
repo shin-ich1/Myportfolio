@@ -3,6 +3,7 @@
   "name": "lan-cloudinary-telemetry",
   "main": "src/index.js",
   "compatibility_date": "2026-08-15",
+  "keep_vars": true,
   "kv_namespaces": [
     {
       "binding": "STORAGE_OAUTH",

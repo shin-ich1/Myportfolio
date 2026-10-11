@@ -2658,22 +2658,41 @@ async function loadPublicMessagePuzzleChallenge() {
 
     let pendingTurnstileResolve = null;
     let pendingTurnstileReject = null;
+    let turnstileExecutionTimeoutId = null;
+    const finishTurnstile = (error, token = "") => {
+      if (!pendingTurnstileResolve && !pendingTurnstileReject) return;
+      if (turnstileExecutionTimeoutId !== null) window.clearTimeout(turnstileExecutionTimeoutId);
+      turnstileExecutionTimeoutId = null;
+      const resolve = pendingTurnstileResolve;
+      const reject = pendingTurnstileReject;
+      pendingTurnstileResolve = null;
+      pendingTurnstileReject = null;
+      if (error) reject?.(error);
+      else if (cleanText(token)) resolve?.(cleanText(token));
+      else reject?.(new Error("Secure browser verification returned no token."));
+    };
     const runTurnstile = () => new Promise((resolve, reject) => {
       pendingTurnstileResolve = resolve;
       pendingTurnstileReject = reject;
-      turnstile.execute(publicMessageTurnstileWidgetId);
+      turnstileExecutionTimeoutId = window.setTimeout(
+        () => finishTurnstile(new Error("Secure browser verification timed out. Please try again.")),
+        45000
+      );
+      try { turnstile.execute(publicMessageTurnstileWidgetId); }
+      catch (error) { finishTurnstile(error); }
     });
     publicMessageTurnstileWidgetId = turnstile.render(slot, {
       sitekey: challenge.siteKey,
       theme: "dark",
-      size: "flexible",
+      // Managed Turnstile flexible widgets need at least 300px of available width.
+      size: isPublicDocumentFlowMode() || slot.parentElement.getBoundingClientRect().width < 300 ? "compact" : "flexible",
       appearance: "interaction-only",
       execution: "execute",
       action: challenge.action || "portfolio_message_create",
-      callback: (token) => { pendingTurnstileResolve?.(cleanText(token)); pendingTurnstileResolve = null; pendingTurnstileReject = null; },
-      "expired-callback": () => { pendingTurnstileReject?.(new Error("Secure browser verification expired.")); pendingTurnstileResolve = null; pendingTurnstileReject = null; },
-      "error-callback": () => { pendingTurnstileReject?.(new Error("Secure browser verification could not complete.")); pendingTurnstileResolve = null; pendingTurnstileReject = null; },
-      "timeout-callback": () => { pendingTurnstileReject?.(new Error("Secure browser verification timed out.")); pendingTurnstileResolve = null; pendingTurnstileReject = null; }
+      callback: (token) => finishTurnstile(null, token),
+      "expired-callback": () => finishTurnstile(new Error("Secure browser verification expired.")),
+      "error-callback": () => finishTurnstile(new Error("Secure browser verification could not complete.")),
+      "timeout-callback": () => finishTurnstile(new Error("Secure browser verification timed out."))
     });
 
     const resetSamePuzzle = (message = "Try the same puzzle again.", retryChallenge = null) => {
@@ -2718,6 +2737,8 @@ async function loadPublicMessagePuzzleChallenge() {
         if (status) { status.textContent = "Verified. Sending your message…"; status.className = "public-message-puzzle-status is-success"; }
         await sendPendingPublicMessage(verified.verificationToken);
       } catch (error) {
+        // A timed-out or failed Turnstile attempt must not leave the widget or puzzle disabled.
+        try { turnstile.reset?.(publicMessageTurnstileWidgetId); } catch {}
         if (status) { status.textContent = error?.message || "Secure verification could not complete. Please try again."; status.className = "public-message-puzzle-status is-error"; }
         slider.disabled = false;
         if (label) label.textContent = "Slide to complete the puzzle";

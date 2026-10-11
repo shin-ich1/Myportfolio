@@ -50,6 +50,8 @@ test('staging build pins Firebase, Worker, and Hosting without editing source or
     assert.equal(Object.hasOwn(manifest.firebase, 'apiKey'), false);
     const workerConfig = JSON.parse(await readFile(path.join(root, 'telemetry-worker/wrangler.staging.jsonc'), 'utf8'));
     assert.equal(workerConfig.vars.FIREBASE_WEB_API_KEY, undefined);
+    assert.equal(workerConfig.keep_vars, true,
+      'Staging Worker must preserve existing dashboard TURNSTILE_SITE_KEY across Wrangler deployment');
     assert.deepEqual(workerConfig.durable_objects.bindings, [
       { name: 'SECURITY_COORDINATOR', class_name: 'SecurityCoordinator' }
     ]);
@@ -199,6 +201,21 @@ test('rejects conflicting explicit staging preview and observability settings be
     cfg.observability = { enabled: false, logs: { enabled: false } };
     await writeFile(configFile, JSON.stringify(cfg));
     await assert.rejects(buildFixture(root), /observability configuration mismatch/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+
+test('staging builder refuses an explicit flag that would delete the live Turnstile site key', async () => {
+  const root = await fixture();
+  try {
+    await buildFixture(root);
+    const file = path.join(root, 'telemetry-worker/wrangler.staging.jsonc');
+    const config = JSON.parse(await readFile(file, 'utf8'));
+    config.keep_vars = false;
+    await writeFile(file, JSON.stringify(config));
+    await assert.rejects(buildFixture(root), /keep_vars configuration mismatch/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -72,6 +72,47 @@ jobs:
           assert.doesNotMatch(conf, /rolando-portfolio-3f1a3/);
           NODE
 
+  oidc-preflight:
+    name: Check approved GitHub-to-Google staging identity (NO deployment)
+    needs: validate
+    if: ${{ needs.validate.result == 'success' && github.repository == 'shin-ich1/Myportfolio' && github.event_name == 'push' && github.ref == 'refs/heads/staging/pr11-turnstile-mobile-20261011' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    environment: lan-security-staging
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      LAN_STAGING_WIF_PROVIDER: ${{ vars.LAN_STAGING_WIF_PROVIDER }}
+      LAN_STAGING_DEPLOY_SERVICE_ACCOUNT: ${{ vars.LAN_STAGING_DEPLOY_SERVICE_ACCOUNT }}
+    steps:
+      - name: Confirm exact staging identity before requesting OIDC token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'shin-ich1/Myportfolio'
+          test "$GITHUB_EVENT_NAME" = 'push'
+          test "$GITHUB_REF" = 'refs/heads/staging/pr11-turnstile-mobile-20261011'
+          test "$LAN_STAGING_WIF_PROVIDER" = 'projects/571587695468/locations/global/workloadIdentityPools/lan-github-staging/providers/github-actions'
+          test "$LAN_STAGING_DEPLOY_SERVICE_ACCOUNT" = 'lan-staging-firebase-deployer@lan-portfolio-staging.iam.gserviceaccount.com'
+      - name: Exchange GitHub OIDC token for scoped staging Google Cloud identity
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: lan-portfolio-staging
+          workload_identity_provider: ${{ vars.LAN_STAGING_WIF_PROVIDER }}
+          service_account: ${{ vars.LAN_STAGING_DEPLOY_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+      - name: Install Google Cloud CLI for token check
+        uses: google-github-actions/setup-gcloud@v3
+      - name: Verify staging token without logging it or writing resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gcloud config get-value project)" = 'lan-portfolio-staging'
+          gcloud auth print-access-token >/dev/null
+          echo 'Read-only staging OIDC exchange successful. No Firebase, Worker, or Firestore deployment occurred.'
+
   deploy:
     name: Publish PR11 to isolated Firebase staging Hosting ONLY
     needs: validate

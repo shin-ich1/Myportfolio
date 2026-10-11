@@ -6,8 +6,18 @@ import vm from "node:vm";
 const publicSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const workerSource = readFileSync(new URL("../telemetry-worker/src/index.js", import.meta.url), "utf8");
 
-test("Public Turnstile renders compact when the verification slot is under the 300px flexible minimum", () => {
-  assert.match(publicSource, /size:\s*slot\.getBoundingClientRect\(\)\.width\s*<\s*300\s*\?\s*"compact"\s*:\s*"flexible"/);
+test("Public Turnstile uses compact for the real 430px mobile-emulation viewport and narrow slots", () => {
+  const match = publicSource.match(/size:\s*(window\.matchMedia\("\(max-width: 600px\)"\)\.matches\s*\|\|\s*slot\.getBoundingClientRect\(\)\.width\s*<\s*300\s*\?\s*"compact"\s*:\s*"flexible")/);
+  assert.ok(match, "A 430px phone viewport must not accidentally render a wide Turnstile widget");
+  const chooseSize = new Function("window", "slot", `return (${match[1]});`);
+  const sizeAt = (viewportPx, slotPx) => chooseSize(
+    { matchMedia: () => ({ matches: viewportPx <= 600 }) },
+    { getBoundingClientRect: () => ({ width: slotPx }) }
+  );
+  assert.equal(sizeAt(430, 328), "compact");
+  assert.equal(sizeAt(390, 280), "compact");
+  assert.equal(sizeAt(1200, 280), "compact");
+  assert.equal(sizeAt(1200, 320), "flexible");
 });
 
 function executionHarness() {

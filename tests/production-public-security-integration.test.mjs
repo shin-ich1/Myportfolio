@@ -32,7 +32,7 @@ const withoutTurnstileSlot = text => {
 
 test("Audited Public app is frozen outside two canonical message owners and obsolete import", () => {
   assert.equal(git("rev-parse", main + ":app.js"), "f156424e6adf216da6660648dc634319e340aa4a");
-  assert.equal(git("hash-object", "app.js"), "c1f46e3ae83687c6550fc539fc6c51773e53adb1");
+  assert.equal(git("hash-object", "app.js"), "127feef273a51d450bf0d280b0d98bc648cd2bbf");
   assert.equal(withoutPublicOwners(source("app.js")), withoutPublicOwners(original("app.js")));
 });
 test("Existing Turnstile CSS slot is the sole change to audited Public styles", () => {

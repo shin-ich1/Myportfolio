@@ -10,7 +10,7 @@ const main = "2cc642e1190469dbe8ee77f130413dae09f1ab6d";
 const repo = new URL("../", import.meta.url);
 const git = (...args) => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trimEnd();
 const source = path => readFileSync(new URL("../" + path, import.meta.url), "utf8");
-const original = path => git("show", main + ":" + path) + "\n";
+const original = path => execFileSync("git", ["show", main + ":" + path], { cwd: repo, encoding: "utf8" });
 const withoutFunction = (sourceText, start, stop, label) => {
   const i = sourceText.indexOf(start);
   const j = sourceText.indexOf(stop, i);

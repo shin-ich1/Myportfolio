@@ -54,6 +54,6 @@ test("Staging OIDC identity is verified separately, without enabling a Hosting d
   assert.match(job, /gcloud auth print-access-token >\/dev\/null/);
   assert.match(job, /github\.ref == 'refs\/heads\/staging\/pr11-turnstile-mobile-20261011'/);
   assert.match(job, /projects\/571587695468/);
-  assert.match(job, /@lan-portfolio-staging\\\.iam\\\.gserviceaccount\\\.com/);
+  assert.ok(job.includes("@lan-portfolio-staging.iam.gserviceaccount.com"), "Staging service account identity must be pinned");
   assert.doesNotMatch(job, /firebase-tools|wrangler deploy|deploy --only|\bgcloud (?:projects|iam) (?:add|set|update|create)/);
 });

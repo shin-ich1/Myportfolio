@@ -1334,18 +1334,43 @@ async function handleMediaDelete(request, env) {
     }
 
     if (resolvedCloudinary.length) {
+      // Cloudinary's 2xx response is an acknowledgement of the batch request,
+      // not proof that every requested asset was deleted. Each immutable
+      // asset ID must be confirmed individually by the provider response.
+      const uniqueCloudinary = [...new Map(
+        resolvedCloudinary.map((asset) => [asset.assetId, asset])
+      ).values()];
       try {
-        await cloudinaryDeleteAssetIds(resolvedCloudinary.map((asset) => asset.assetId), env);
-        deleted.push(...resolvedCloudinary.map((asset) => ({
-          provider: "cloudinary",
-          storageProfileId: "cloudinary-default",
-          assetId: asset.assetId,
-          publicId: asset.publicId,
-          resourceType: asset.resourceType,
-          url: asset.secureUrl
-        })));
+        const result = await cloudinaryDeleteAssetIds(
+          uniqueCloudinary.map((asset) => asset.assetId), env
+        );
+        const confirmed = result?.deleted && typeof result.deleted === "object" &&
+          !Array.isArray(result.deleted) ? result.deleted : {};
+        for (const asset of uniqueCloudinary) {
+          const status = confirmed[asset.assetId];
+          if (status === "deleted") {
+            deleted.push({
+              provider: "cloudinary",
+              storageProfileId: "cloudinary-default",
+              assetId: asset.assetId,
+              publicId: asset.publicId,
+              resourceType: asset.resourceType,
+              url: asset.secureUrl
+            });
+          } else if (status === "not_found") {
+            skipped.push({ provider: "cloudinary", assetId: asset.assetId,
+              publicId: asset.publicId, reason: "already-missing" });
+          } else {
+            failed.push({ provider: "cloudinary", assetId: asset.assetId,
+              publicId: asset.publicId,
+              error: "Cloudinary did not confirm deletion of this asset." });
+          }
+        }
       } catch (error) {
-        resolvedCloudinary.forEach((asset) => failed.push({ provider: "cloudinary", assetId: asset.assetId, publicId: asset.publicId, error: error?.message || "Cloudinary deletion failed." }));
+        uniqueCloudinary.forEach((asset) => failed.push({
+          provider: "cloudinary", assetId: asset.assetId,
+          publicId: asset.publicId, error: error?.message || "Cloudinary deletion failed."
+        }));
       }
     }
 

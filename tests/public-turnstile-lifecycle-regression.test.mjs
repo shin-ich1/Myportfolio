@@ -65,9 +65,8 @@ test("Expired Turnstile tokens cannot be reused, even if slide happens later", a
   h.finishTurnstile(null, "old-token");
   h.finishTurnstile(new Error("Secure browser verification expired."));
   const pending = h.runTurnstile();
-  assert.equal(h.timeouts.length, 1);
-  h.timeouts[0].fn();
-  await assert.rejects(pending, /timed out/i);
+  assert.equal(h.timeouts.length, 0, "Already-expired Turnstile proof must fail immediately");
+  await assert.rejects(pending, /expired/i);
 });
 
 test("Failed challenge gives an actionable timeout and safe numeric Cloudflare error without secrets", () => {

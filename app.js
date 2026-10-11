@@ -13,7 +13,6 @@ import {
   clearVisitorConversationIdentity,
   createPrivateMessageChallenge,
   createPrivateVisitorThread,
-  getPrivateVisitorThread,
   loadVisitorConversationIdentity,
   markPrivateVisitorThreadRead,
   forgetPrivateVisitorThread,
@@ -2658,28 +2657,89 @@ async function loadPublicMessagePuzzleChallenge() {
 
     let pendingTurnstileResolve = null;
     let pendingTurnstileReject = null;
+    let turnstileExecutionTimeoutId = null;
+    // One short-lived, single-consumption browser proof; the Worker still validates it.
+    let completedTurnstileToken = "";
+    let completedTurnstileAt = 0;
+    const finishTurnstile = (error, token = "") => {
+      const responseToken = cleanText(token);
+      if (error) {
+        completedTurnstileToken = "";
+        completedTurnstileAt = 0;
+      } else if (responseToken) {
+        completedTurnstileToken = responseToken;
+        completedTurnstileAt = Date.now();
+      }
+      if (!pendingTurnstileResolve && !pendingTurnstileReject) return;
+      if (turnstileExecutionTimeoutId !== null) window.clearTimeout(turnstileExecutionTimeoutId);
+      turnstileExecutionTimeoutId = null;
+      const resolve = pendingTurnstileResolve;
+      const reject = pendingTurnstileReject;
+      pendingTurnstileResolve = null;
+      pendingTurnstileReject = null;
+      if (error) reject?.(error);
+      else if (responseToken) {
+        completedTurnstileToken = "";
+        completedTurnstileAt = 0;
+        resolve?.(responseToken);
+      } else reject?.(new Error("Secure browser verification returned no token."));
+    };
     const runTurnstile = () => new Promise((resolve, reject) => {
+      // Turnstile already started on render. Consume a fresh proof if the visitor
+      // completed its challenge before sliding; never use the same token twice.
+      if (completedTurnstileToken && Date.now() - completedTurnstileAt < 240000
+        && !turnstile.isExpired?.(publicMessageTurnstileWidgetId)) {
+        const token = completedTurnstileToken;
+        completedTurnstileToken = "";
+        completedTurnstileAt = 0;
+        resolve(token);
+        return;
+      }
+      completedTurnstileToken = "";
+      completedTurnstileAt = 0;
       pendingTurnstileResolve = resolve;
       pendingTurnstileReject = reject;
-      turnstile.execute(publicMessageTurnstileWidgetId);
+      turnstileExecutionTimeoutId = window.setTimeout(
+        () => finishTurnstile(new Error("Secure browser verification timed out. Please try again.")),
+        45000
+      );
     });
     publicMessageTurnstileWidgetId = turnstile.render(slot, {
       sitekey: challenge.siteKey,
       theme: "dark",
-      size: "flexible",
+      // Use actual available width rather than treating every mobile view as 150px wide.
+      size: slot.parentElement.getBoundingClientRect().width < 300 ? "compact" : "flexible",
       appearance: "interaction-only",
-      execution: "execute",
+      // Begin Cloudflare verification as soon as the modal is ready so its challenge
+      // can be completed without waiting for the puzzle slider to be released.
+      execution: "render",
       action: challenge.action || "portfolio_message_create",
-      callback: (token) => { pendingTurnstileResolve?.(cleanText(token)); pendingTurnstileResolve = null; pendingTurnstileReject = null; },
-      "expired-callback": () => { pendingTurnstileReject?.(new Error("Secure browser verification expired.")); pendingTurnstileResolve = null; pendingTurnstileReject = null; },
-      "error-callback": () => { pendingTurnstileReject?.(new Error("Secure browser verification could not complete.")); pendingTurnstileResolve = null; pendingTurnstileReject = null; },
-      "timeout-callback": () => { pendingTurnstileReject?.(new Error("Secure browser verification timed out.")); pendingTurnstileResolve = null; pendingTurnstileReject = null; }
+      callback: (token) => {
+        finishTurnstile(null, token);
+        if (!slider.disabled && status) status.textContent = "Browser check ready. Slide the puzzle to continue.";
+      },
+      "before-interactive-callback": () => {
+        if (status) status.textContent = slider.disabled
+          ? "Complete the Cloudflare check below to finish verification."
+          : "Complete the Cloudflare check below, then slide the puzzle.";
+      },
+      "expired-callback": () => finishTurnstile(new Error("Secure browser verification expired. Please try again.")),
+      "error-callback": (errorCode) => {
+        // Cloudflare error codes are numeric, not tokens. Never log challenge details.
+        const safeCode = /^\d{3,6}$/.test(String(errorCode)) ? ` (code ${String(errorCode)})` : "";
+        finishTurnstile(new Error(`Secure browser verification failed${safeCode}. Please try again.`));
+        return true;
+      },
+      "unsupported-callback": () => finishTurnstile(new Error("This browser cannot complete the secure verification.")),
+      "timeout-callback": () => finishTurnstile(new Error("Secure browser verification timed out. Please try again."))
     });
 
     const resetSamePuzzle = (message = "Try the same puzzle again.", retryChallenge = null) => {
       if (retryChallenge && publicMessagePuzzleChallenge) {
         publicMessagePuzzleChallenge = { ...publicMessagePuzzleChallenge, ...retryChallenge };
       }
+      completedTurnstileToken = "";
+      completedTurnstileAt = 0;
       turnstile.reset?.(publicMessageTurnstileWidgetId);
       setPublicMessagePuzzleSlider(slider, 0);
       syncPublicMessagePuzzleGeometry();
@@ -2696,7 +2756,7 @@ async function loadPublicMessagePuzzleChallenge() {
       if (!publicMessagePuzzleChallenge) return;
       slider.disabled = true;
       if (label) label.textContent = "Checking…";
-      if (status) status.textContent = "Verifying the puzzle securely…";
+      if (status) status.textContent = "Complete the Cloudflare check below if prompted. Verifying the puzzle securely…";
       try {
         const turnstileToken = await runTurnstile();
         const verified = await verifyPrivateMessageChallenge({
@@ -2718,6 +2778,10 @@ async function loadPublicMessagePuzzleChallenge() {
         if (status) { status.textContent = "Verified. Sending your message…"; status.className = "public-message-puzzle-status is-success"; }
         await sendPendingPublicMessage(verified.verificationToken);
       } catch (error) {
+        // Resetting discards any prior browser proof; this does not bypass Siteverify.
+        completedTurnstileToken = "";
+        completedTurnstileAt = 0;
+        try { turnstile.reset?.(publicMessageTurnstileWidgetId); } catch {}
         if (status) { status.textContent = error?.message || "Secure verification could not complete. Please try again."; status.className = "public-message-puzzle-status is-error"; }
         slider.disabled = false;
         if (label) label.textContent = "Slide to complete the puzzle";
@@ -2877,32 +2941,34 @@ async function openPublicMessageComposer() {
     return;
   }
 
+  publicMessagePushState = "unregistered";
+  publicMessagePushError = "";
+  let initialThreadReceived = false;
+  // Firestore's live authorized snapshot is the canonical source. A separate
+  // getDoc creates an unnecessary blocking network dependency in in-app browsers.
+  const startupTimeoutId = window.setTimeout(() => {
+    if (initialThreadReceived || !dialog.isConnected) return;
+    publicMessageStop?.();
+    publicMessageStop = null;
+    dialog.innerHTML = `<div class="public-private-error"><strong>Conversation is taking longer than expected</strong><p>Check your connection, then try again. Your private conversation has not been removed.</p><button class="btn" data-retry-private-message type="button">Try again</button></div>`;
+    dialog.querySelector("[data-retry-private-message]")?.addEventListener("click", () => openPublicMessageComposer(), { once: true });
+  }, 12000);
+
   try {
-    const thread = await getPrivateVisitorThread(identity.id);
-    if (!thread) {
-      clearVisitorConversationIdentity();
-      updatePublicMessageLauncherUnread(false);
-      renderPublicMessageStart(dialog, "");
-      return;
-    }
-    publicMessagePushState = "unregistered";
-    publicMessagePushError = "";
-    if (("Notification" in window) && Notification.permission === "granted") {
-      try {
-        await rehydratePortfolioPush({ audience: "visitor", threadId: identity.id, iconUrl: publicMessageIconUrl() });
-        publicMessagePushState = "registered";
-      } catch (error) {
-        publicMessagePushError = error?.message || "Reply notifications could not reconnect on this browser.";
-        console.error("Visitor push registration could not be restored:", error);
+    publicMessageStop = subscribePrivateVisitorThread(identity.id, ({ thread: liveThread, messages }) => {
+      if (!dialog.isConnected) return;
+      if (!initialThreadReceived) {
+        initialThreadReceived = true;
+        window.clearTimeout(startupTimeoutId);
       }
-    }
-    publicMessageStop = subscribePrivateVisitorThread(identity.id, async ({ thread: liveThread, messages }) => {
       if (!liveThread) {
         publicMessageStop?.();
         publicMessageStop = null;
+        // Clear browser access only after a real, authorized thread snapshot
+        // confirms deletion. Initial messages snapshots cannot trigger this.
         clearVisitorConversationIdentity();
         updatePublicMessageLauncherUnread(false);
-        if (dialog.isConnected) dialog.innerHTML = publicMessageClosedMarkup();
+        dialog.innerHTML = publicMessageClosedMarkup();
         dialog.querySelector("[data-start-new-private-message]")?.addEventListener("click", () => renderPublicMessageStart(dialog, ""));
         window.lucide?.createIcons();
         return;
@@ -2911,10 +2977,26 @@ async function openPublicMessageComposer() {
       renderPublicPrivateConversation(liveThread, messages);
       if (liveThread.visitorUnread) markPrivateVisitorThreadRead(liveThread.id).catch(() => {});
     }, (error) => {
-      if (dialog.isConnected) dialog.innerHTML = `<div class="public-private-error"><strong>Private messaging unavailable</strong><p>${escapeHtml(error?.message || "Please try again later.")}</p></div>`;
+      window.clearTimeout(startupTimeoutId);
+      if (dialog.isConnected) dialog.innerHTML = `<div class="public-private-error"><strong>Private messaging unavailable</strong><p>${escapeHtml(error?.message || "Please try again later.")}</p><button class="btn" data-retry-private-message type="button">Try again</button></div>`;
+      dialog.querySelector("[data-retry-private-message]")?.addEventListener("click", () => openPublicMessageComposer(), { once: true });
     });
+
+    // Notifications are optional; never block the private conversation while
+    // a webview waits on permission, a push subscription, or service workers.
+    if (("Notification" in window) && Notification.permission === "granted") {
+      Promise.resolve()
+        .then(() => rehydratePortfolioPush({ audience: "visitor", threadId: identity.id, iconUrl: publicMessageIconUrl() }))
+        .then(() => { publicMessagePushState = "registered"; })
+        .catch((error) => {
+          publicMessagePushError = error?.message || "Reply notifications could not reconnect on this browser.";
+          console.error("Visitor push registration could not be restored:", error);
+        });
+    }
   } catch (error) {
-    dialog.innerHTML = `<div class="public-private-error"><strong>Private messaging unavailable</strong><p>${escapeHtml(error?.message || "Please try again later.")}</p></div>`;
+    window.clearTimeout(startupTimeoutId);
+    if (dialog.isConnected) dialog.innerHTML = `<div class="public-private-error"><strong>Private messaging unavailable</strong><p>${escapeHtml(error?.message || "Please try again later.")}</p><button class="btn" data-retry-private-message type="button">Try again</button></div>`;
+    dialog.querySelector("[data-retry-private-message]")?.addEventListener("click", () => openPublicMessageComposer(), { once: true });
   }
 }
 

@@ -42,7 +42,7 @@ jobs:
               *) echo "Unexpected staging source change: $filename" >&2; exit 1 ;;
             esac
           done < <(git diff --name-only "$BASE" HEAD)
-          test -f tests/public-turnstile-mobile-regression.test.mjs
+          test "$(git hash-object tests/public-turnstile-mobile-regression.test.mjs)" = 'a94902f3d54c2ecd89b61a632f563d9b6af35577'
           test -f .github/workflows/pr11-staging-hosting.yml
       - name: Validate source syntax and isolated regression/security contracts
         run: |
@@ -101,6 +101,7 @@ jobs:
           test "$GITHUB_EVENT_NAME" = 'push'
           test "$GITHUB_REF" = 'refs/heads/staging/pr11-turnstile-mobile-20261011'
           test "$(git hash-object app.js)" = '36e3309406322038d353d7f74ac739ffb8b73ec0'
+          test "$(git hash-object tests/public-turnstile-mobile-regression.test.mjs)" = 'a94902f3d54c2ecd89b61a632f563d9b6af35577'
           node --input-type=module <<'NODE'
           const { LAN_STAGING_FIREBASE_WEB_API_KEY: webKey, LAN_STAGING_WIF_PROVIDER: provider,
             LAN_STAGING_DEPLOY_SERVICE_ACCOUNT: account } = process.env;

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const moduleUrl = new URL('../scripts/diagnose-staging-cloudflare-metadata.mjs', import.meta.url);
 const source = await readFile(moduleUrl, 'utf8');
@@ -163,7 +164,7 @@ test('invalid account and missing token fail before any API request', async () =
 
 test('direct CLI execution refuses unapproved invocation without leaking provided secrets', () => {
   const secret = 'do-not-log-this-diagnostic-secret';
-  const processRun = spawnSync(process.execPath, [new URL(moduleUrl).pathname], {
+  const processRun = spawnSync(process.execPath, [fileURLToPath(moduleUrl)], {
     env: { ...process.env, ...approved, LAN_STAGING_DEPLOY_APPROVED: 'true', CLOUDFLARE_API_TOKEN: secret },
     encoding: 'utf8', timeout: 10000
   });

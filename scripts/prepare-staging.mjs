@@ -106,6 +106,10 @@ function workerConfig(target) {
     // Missing Wrangler fields previously enabled public preview URLs and turned
     // off remote observability during deployment.
     preview_urls: false,
+    // The live Staging Turnstile site key is dashboard-managed. Preserve
+    // existing plain dashboard variables without adding a competing key owner.
+    // Cloudflare also preserves encrypted secrets on normal Worker deployment.
+    keep_vars: true,
     observability: { enabled: true, logs: { enabled: true } },
     kv_namespaces: Object.entries(target.worker.kvNamespaces).map(([binding, id]) => ({ binding, id })),
     ...structuredClone(stagingCoordinator),
@@ -132,7 +136,7 @@ async function reviewExistingWorker(file, expected) {
   }
   // An older generated staging config may lack these declarations; migrate
   // only after all explicitly configured values have been verified.
-  for (const key of ['durable_objects', 'exports', 'preview_urls', 'observability']) {
+  for (const key of ['durable_objects', 'exports', 'preview_urls', 'keep_vars', 'observability']) {
     if (current[key] !== undefined) {
       const owner = key === 'durable_objects' || key === 'exports' ? 'Durable Object' : key;
       assertSafe(JSON.stringify(current[key]) === JSON.stringify(expected[key]),

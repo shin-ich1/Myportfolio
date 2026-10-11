@@ -24,6 +24,15 @@ test('Cloudflare production target is exact; no credentials or staging Worker ta
   assert.ok(!JSON.stringify(worker).includes('SECURITY_RECOVERY_PEPPER'));
 });
 
+test('Production Wrangler preserves Cloudflare dashboard-managed Turnstile variables', () => {
+  assert.equal(worker.keep_vars, true,
+    'Production Worker deploy must retain dashboard TURNSTILE_SITE_KEY and other plaintext vars');
+  assert.equal(Object.hasOwn(worker.vars, 'TURNSTILE_SITE_KEY'), false,
+    'Do not add a competing Turnstile site-key owner to committed Wrangler vars');
+  assert.equal(Object.hasOwn(worker.vars, 'TURNSTILE_SECRET_KEY'), false,
+    'Never include the encrypted Turnstile verification secret in committed Wrangler vars');
+});
+
 test('Cloudflare declarative DO exports exclusively owns atomic security state', () => {
   assert.deepEqual(worker.exports, {
     SecurityCoordinator: { type: 'durable-object', storage: 'sqlite' }

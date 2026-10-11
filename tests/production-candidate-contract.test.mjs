@@ -14,15 +14,20 @@ function gitBlobSha(path){
     .update(bytes).digest('hex');
 }
 
-test('Public Portfolio layout and rendering sources remain byte-for-byte identical to audited main',()=>{
+test('Frozen Public structural sources and exact-reviewed message security assets are pinned',()=>{
   const frozen={
     'index.html':'ba6b29cd5d2a84286850022f9f7ef075df5a73a5',
-    'app.js':'f156424e6adf216da6660648dc634319e340aa4a',
-    'styles.css':'ec2f4078616f7435a5c9cc1a646fa44eb9db5f4c', // deliberately filled below with canonical audited main blob
+    'app.js':'127feef273a51d450bf0d280b0d98bc648cd2bbf',
+    'styles.css':'0b051406a79279b6801ef71adeefa88dcaa46cba', // reviewed single Turnstile slot CSS change
     'public-adaptive.js':'62ec14a5cde2655ce199f5e00085db884b9bcead',
     'public-layout-contract.js':'4c21875d832b06cafad0bebc0ee09b467cbd4ca8',
     'public-section-eligibility.js':'4304cc5a2c2c4d2b6b93a0fd8e49d15044dbe748'
   };
+  // app.js pins the source-only canonical Messenger correction; styles.css pins the deployed PR13 bytes.
+  // Their allowed difference from audited main is verified function-by-function
+  // by tests/production-public-security-integration.test.mjs (mandatory CI).
+  assert.equal(gitBlobSha('message-service.js'),'fbbe71500e856d0c553edf689bc2c293fbbc5079',
+    'Only the audited Firestore visitor subscription may change');
   for(const [path,sha] of Object.entries(frozen)){
     assert.ok(sha,'Missing audited production blob hash for '+path);
     assert.equal(gitBlobSha(path),sha,'Public UI must not drift: '+path);

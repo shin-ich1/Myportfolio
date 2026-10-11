@@ -2661,14 +2661,17 @@ async function loadPublicMessagePuzzleChallenge() {
     // One short-lived, single-consumption browser proof; the Worker still validates it.
     let completedTurnstileToken = "";
     let completedTurnstileAt = 0;
+    let completedTurnstileError = null;
     const finishTurnstile = (error, token = "") => {
       const responseToken = cleanText(token);
       if (error) {
         completedTurnstileToken = "";
         completedTurnstileAt = 0;
+        completedTurnstileError = error;
       } else if (responseToken) {
         completedTurnstileToken = responseToken;
         completedTurnstileAt = Date.now();
+        completedTurnstileError = null;
       }
       if (!pendingTurnstileResolve && !pendingTurnstileReject) return;
       if (turnstileExecutionTimeoutId !== null) window.clearTimeout(turnstileExecutionTimeoutId);
@@ -2685,6 +2688,14 @@ async function loadPublicMessagePuzzleChallenge() {
       } else reject?.(new Error("Secure browser verification returned no token."));
     };
     const runTurnstile = () => new Promise((resolve, reject) => {
+      // The widget may fail before the visitor reaches the slider. Do not hide
+      // its error and then wait 45 seconds for a callback that already happened.
+      if (completedTurnstileError) {
+        const error = completedTurnstileError;
+        completedTurnstileError = null;
+        reject(error);
+        return;
+      }
       // Turnstile already started on render. Consume a fresh proof if the visitor
       // completed its challenge before sliding; never use the same token twice.
       if (completedTurnstileToken && Date.now() - completedTurnstileAt < 240000
@@ -2740,6 +2751,7 @@ async function loadPublicMessagePuzzleChallenge() {
       }
       completedTurnstileToken = "";
       completedTurnstileAt = 0;
+      completedTurnstileError = null;
       turnstile.reset?.(publicMessageTurnstileWidgetId);
       setPublicMessagePuzzleSlider(slider, 0);
       syncPublicMessagePuzzleGeometry();
@@ -2781,6 +2793,7 @@ async function loadPublicMessagePuzzleChallenge() {
         // Resetting discards any prior browser proof; this does not bypass Siteverify.
         completedTurnstileToken = "";
         completedTurnstileAt = 0;
+        completedTurnstileError = null;
         try { turnstile.reset?.(publicMessageTurnstileWidgetId); } catch {}
         if (status) { status.textContent = error?.message || "Secure verification could not complete. Please try again."; status.className = "public-message-puzzle-status is-error"; }
         slider.disabled = false;
@@ -2788,9 +2801,6 @@ async function loadPublicMessagePuzzleChallenge() {
       }
     };
 
-    // Keep the next server challenge warm as soon as this one is usable so a
-    // bounded failed-attempt rotation can switch images without visible fetch latency.
-    window.setTimeout(() => warmPublicMessagePuzzleChallenge().catch(() => {}), PUBLIC_MESSAGE_PUZZLE_NEXT_WARMUP_DELAY_MS);
   } catch (error) {
     slider.disabled = true;
     if (label) label.textContent = "Verification unavailable";

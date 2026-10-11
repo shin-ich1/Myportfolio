@@ -1,0 +1,178 @@
+name: PR11 staging Hosting-only mobile verification
+
+on:
+  push:
+    branches:
+      - staging/pr11-turnstile-mobile-20261011
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr11-staging-hosting-only
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Verify immutable PR11 source and staging isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out isolated staging integration branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Refuse other repositories, branches or unknown source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'shin-ich1/Myportfolio'
+          test "$GITHUB_EVENT_NAME" = 'push'
+          test "$GITHUB_REF" = 'refs/heads/staging/pr11-turnstile-mobile-20261011'
+          BASE='0f4762f2ca6654d7440a2d201659a8159113f2f3'
+          git merge-base --is-ancestor "$BASE" HEAD
+          test "$(git hash-object app.js)" = '36e3309406322038d353d7f74ac739ffb8b73ec0'
+          while IFS= read -r filename; do
+            case "$filename" in
+              app.js|tests/public-turnstile-mobile-regression.test.mjs|tests/pr11-staging-hosting-gate.test.mjs|.github/workflows/pr11-staging-hosting.yml) ;;
+              *) echo "Unexpected staging source change: $filename" >&2; exit 1 ;;
+            esac
+          done < <(git diff --name-only "$BASE" HEAD)
+          test -f tests/public-turnstile-mobile-regression.test.mjs
+          test -f .github/workflows/pr11-staging-hosting.yml
+      - name: Validate source syntax and isolated regression/security contracts
+        run: |
+          set -euo pipefail
+          node --check app.js
+          node --check scripts/prepare-staging.mjs
+          node --test tests/public-turnstile-mobile-regression.test.mjs tests/pr11-staging-hosting-gate.test.mjs tests/staging-build-isolation.test.mjs tests/public-message-atomicity.test.mjs tests/staging-worker-health-gate.test.mjs tests/staging-deploy-gate.test.mjs tests/security-coordinator-atomicity.test.mjs
+      - name: Generate and inspect synthetic staging Hosting bundle (no credentials, no deployment)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LAN_STAGING_FIREBASE_WEB_API_KEY="$(node -e "process.stdout.write('AIza'+'A'.repeat(35))")"
+          node scripts/prepare-staging.mjs
+          test "$(git hash-object .lan-staging/site/app.js)" = '36e3309406322038d353d7f74ac739ffb8b73ec0'
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+          const hosting = JSON.parse(readFileSync('.lan-staging/firebase.json', 'utf8'));
+          const alias = JSON.parse(readFileSync('.lan-staging/.firebaserc', 'utf8'));
+          const conf = readFileSync('.lan-staging/site/config.js', 'utf8');
+          assert.equal(hosting.hosting.public, 'site');
+          assert.equal(hosting.firestore, undefined);
+          assert.equal(hosting.storage, undefined);
+          assert.equal(alias.projects.default, 'lan-portfolio-staging');
+          assert.match(conf, /projectId:\s*"lan-portfolio-staging"/);
+          assert.match(conf, /lan-portfolio-staging\.lagmayr2\.workers\.dev/);
+          assert.doesNotMatch(conf, /rolando-portfolio-3f1a3/);
+          NODE
+
+  deploy:
+    name: Publish PR11 to isolated Firebase staging Hosting ONLY
+    needs: validate
+    if: ${{ needs.validate.result == 'success' && vars.LAN_PR11_STAGING_HOSTING_DEPLOY_APPROVED == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/staging/pr11-turnstile-mobile-20261011' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: lan-security-staging
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      LAN_STAGING_FIREBASE_WEB_API_KEY: ${{ secrets.LAN_STAGING_FIREBASE_WEB_API_KEY }}
+      LAN_STAGING_WIF_PROVIDER: ${{ vars.LAN_STAGING_WIF_PROVIDER }}
+      LAN_STAGING_DEPLOY_SERVICE_ACCOUNT: ${{ vars.LAN_STAGING_DEPLOY_SERVICE_ACCOUNT }}
+    steps:
+      - name: Check out approved staging branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Refuse unexpected branch, source, federation identity and secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'shin-ich1/Myportfolio'
+          test "$GITHUB_EVENT_NAME" = 'push'
+          test "$GITHUB_REF" = 'refs/heads/staging/pr11-turnstile-mobile-20261011'
+          test "$(git hash-object app.js)" = '36e3309406322038d353d7f74ac739ffb8b73ec0'
+          node --input-type=module <<'NODE'
+          const { LAN_STAGING_FIREBASE_WEB_API_KEY: webKey, LAN_STAGING_WIF_PROVIDER: provider,
+            LAN_STAGING_DEPLOY_SERVICE_ACCOUNT: account } = process.env;
+          if (!/^AIza[A-Za-z0-9_-]{30,}$/.test(webKey || ''))
+            throw Error('Missing or invalid staging Firebase Web API key.');
+          if (!/^projects\/571587695468\/locations\/global\/workloadIdentityPools\/[a-z][a-z0-9-]{3,31}\/providers\/[a-z][a-z0-9-]{3,31}$/.test(provider || ''))
+            throw Error('Refusing identity federation outside pinned staging Google project.');
+          if (!/^[a-z][a-z0-9-]*@lan-portfolio-staging\.iam\.gserviceaccount\.com$/.test(account || ''))
+            throw Error('Refusing identity outside staging Firebase project.');
+          NODE
+      - name: Authenticate to staging Google Cloud via short-lived OIDC
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: lan-portfolio-staging
+          workload_identity_provider: ${{ vars.LAN_STAGING_WIF_PROVIDER }}
+          service_account: ${{ vars.LAN_STAGING_DEPLOY_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+      - name: Verify active staging service identity
+        uses: google-github-actions/setup-gcloud@v3
+      - name: Verify current staging Google Cloud project
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gcloud config get-value project)" = 'lan-portfolio-staging'
+          gcloud auth print-access-token >/dev/null
+      - name: Require healthy existing staging Worker (read only, no Worker upload)
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { inspectStagingWorkerHealth } from './scripts/check-staging-worker-health.mjs';
+          const health = await inspectStagingWorkerHealth();
+          if (!health.canonicalWorkerResponding || !health.atomicSecurityCoordinatorBindingPresent ||
+              !health.serverCredentialPresenceReported)
+            throw Error('Canonical staging Worker or server security bindings are not ready.');
+          NODE
+      - name: Build isolated Hosting with staging-only public API key
+        run: |
+          set -euo pipefail
+          node scripts/prepare-staging.mjs
+          test "$(git hash-object .lan-staging/site/app.js)" = '36e3309406322038d353d7f74ac739ffb8b73ec0'
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+          const cfg = JSON.parse(readFileSync('.lan-staging/firebase.json','utf8'));
+          const project = JSON.parse(readFileSync('.lan-staging/.firebaserc','utf8'));
+          assert.equal(cfg.hosting.public, 'site');
+          assert.equal(cfg.firestore, undefined);
+          assert.equal(cfg.storage, undefined);
+          assert.equal(project.projects.default, 'lan-portfolio-staging');
+          assert.match(readFileSync('.lan-staging/site/config.js','utf8'), /projectId:\s*"lan-portfolio-staging"/);
+          NODE
+      - name: Deploy Firebase Hosting to staging project ONLY
+        working-directory: .lan-staging
+        run: npx --yes firebase-tools@14.20.0 deploy --only hosting --project lan-portfolio-staging --non-interactive
+      - name: Verify public staging app.js version (not Turnstile end-to-end)
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto';
+          const expected = '36e3309406322038d353d7f74ac739ffb8b73ec0';
+          let ok = false;
+          for (let i = 0; i < 5; i++) {
+            const r = await fetch('https://lan-portfolio-staging.web.app/app.js?pr11=' + process.env.GITHUB_SHA, {
+              redirect: 'error', signal: AbortSignal.timeout(10000), cache: 'no-store'
+            });
+            if (r.ok) {
+              const source = Buffer.from(await r.arrayBuffer());
+              const hash = createHash('sha1').update(Buffer.from('blob ' + source.length + '\0')).update(source).digest('hex');
+              if (hash === expected) { ok = true; break; }
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+          if (!ok) throw Error('Staging Hosting did not serve the exact approved PR11 app.js bytes.');
+          console.log('Staging PR11 frontend bytes verified. Real Cloudflare Turnstile proof and message delivery still require live testing.');
+          NODE

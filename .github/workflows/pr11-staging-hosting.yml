@@ -237,7 +237,7 @@ jobs:
           });
           if (!serviceResponse.ok) throw Error('Staging messenger service could not be read after deploy.');
           const messagingSource = Buffer.from(await serviceResponse.arrayBuffer());
-          const messagingHash = createHash('sha1').update(Buffer.from('blob ' + messagingSource.length + '\\0')).update(messagingSource).digest('hex');
+          const messagingHash = createHash('sha1').update(Buffer.from('blob ' + messagingSource.length + '\0')).update(messagingSource).digest('hex');
           if (messagingHash !== 'fbbe71500e856d0c553edf689bc2c293fbbc5079') throw Error('Staging Hosting did not serve the exact approved message-service.js bytes.');
           console.log('Staging PR11 frontend bytes verified. Real Cloudflare Turnstile proof and message delivery still require live testing.');
           NODE

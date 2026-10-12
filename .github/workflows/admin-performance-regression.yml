@@ -150,7 +150,11 @@ jobs:
           node --test tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs tests/admin-settings-startup-requests.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-shared-navigation-performance.test.mjs tests/production-admin-performance-release.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./tests/production-google-oauth-token.test.ps1
-          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./tests/production-hosting-api-auth-scope.test.ps1
+      - name: Verify Hosting API auth scope in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          & ./tests/production-hosting-api-auth-scope.test.ps1
 
   # Read-only Cloudflare metadata checks. This is NOT a deployment or a Wrangler retry.
   # Must have a separate approval and the staging deployment gate must remain OFF.

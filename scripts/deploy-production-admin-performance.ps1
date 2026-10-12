@@ -77,7 +77,7 @@ function Get-ApprovedGitBlobBytes([string]$relativePath) {
     $message=$process.StandardError.ReadToEnd()
     $process.WaitForExit()
     if($process.ExitCode -ne 0){Stop-Lan 'Canonical Git blob read failed; no deployment.'}
-    return $memory.ToArray()
+    return ,$memory.ToArray()
   }finally{
     $memory.Dispose()
     $process.Dispose()

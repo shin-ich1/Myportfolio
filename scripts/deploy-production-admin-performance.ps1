@@ -84,6 +84,15 @@ function Get-ApprovedGitBlobBytes([string]$relativePath) {
   }
 }
 
+function Resolve-GoogleCloudAccessToken([object[]]$lines,[int]$exitCode) {
+  if($exitCode -ne 0){Stop-Lan 'Google Cloud token command failed. Check gcloud account and active project.'}
+  # RFC 6750 bearer alphabet includes + / ~ and optional trailing equals.
+  # Ignore CLI informational lines; never print or log credential values.
+  $matches=@($lines | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -cmatch '^[A-Za-z0-9._~+/-]{20,}={0,2}$' })
+  if($matches.Count -ne 1){Stop-Lan 'No unique Google OAuth token found in CLI output. Nothing was deployed.'}
+  return [string]$matches[0]
+}
+
 function Require-SameLiveRelease([string]$expected) {
   if([string](Live-Release).version.name -cne $expected){Stop-Lan 'Concurrent Production deploy detected; no release.'}
 }
@@ -111,95 +120,12 @@ try {
   if($LASTEXITCODE -ne 0){Stop-Lan 'Admin page-performance tests failed.'}
   Write-Host 'PASS: Three pinned Admin files and page-loading tests.' -ForegroundColor Green
 
-  # Google CLI may print informational stdout ahead of the credential.
-  # Capture ALL output before inspecting the exit status. Select-Object -First 1
-  # can close the native command pipe early on Windows, causing a false failure.
-  # OAuth bearer tokens use the RFC 6750 b64token alphabet, not just JWT chars.
+  # Consume the entire native gcloud stdout; Select-Object -First 1 can
+  # terminate a native pipeline prematurely on Windows PowerShell.
   $gcloud=Get-Command gcloud.cmd -ErrorAction Stop
   $authLines=@(& $gcloud.Source auth print-access-token --quiet 2>$null)
   $gcloudExit=$LASTEXITCODE
-  if($gcloudExit -ne 0){Stop-Lan 'Google Cloud token command failed. Check your gcloud account and active project.'}
-  $tokenCandidates=@($authLines | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -cmatch '^[A-Za-z0-9._~+/-]{20,}={0,2}
-  $original=[string](Live-Release).version.name
-  if($original -notmatch '^sites/rolando-portfolio-3f1a3/versions/[A-Za-z0-9_-]+$'){Stop-Lan 'Wrong Production Hosting site/version.'}
-  $version=Api GET "$api/$original"
-  if([string]$version.status -cne 'FINALIZED' -or !$version.config){Stop-Lan 'Live Hosting serving config could not be preserved.'}
-  $existing=Version-Files $original
-  if($existing.Count -lt 30 -or !$existing.ContainsKey('/index.html') -or !$existing.ContainsKey('/admin/index.html')){Stop-Lan 'Live Hosting manifest incomplete.'}
-  foreach($asset in $assets){if(!$existing.ContainsKey($asset.Path)){Stop-Lan "Live Admin asset missing: $($asset.Path)"}}
-  $fileHashes=@{}; $compressedFiles=@{}
-  foreach($asset in $assets){
-    $livePath=Join-Path $work ($asset.Path.TrimStart('/').Replace('/','-')+'.live')
-    Invoke-WebRequest -Uri ("https://$site.web.app$($asset.Path)?preflight="+[guid]::NewGuid().ToString('N')) -OutFile $livePath -UseBasicParsing -TimeoutSec 40 | Out-Null
-    $actual=Git-Blob ([IO.File]::ReadAllBytes($livePath))
-    if($actual -cne $asset.OldBlob){
-      if($actual -ceq $asset.NewBlob){Stop-Lan "Asset already live: $($asset.Path); refuse mixed deployment."}
-      Stop-Lan "Production differs from reviewed baseline: $($asset.Path)"
-    }
-    $zip=Join-Path $work ($asset.Path.TrimStart('/').Replace('/','-')+'.gz')
-    $stream=[IO.File]::Create($zip)
-    try{
-      $gzip=[IO.Compression.GZipStream]::new($stream,[IO.Compression.CompressionLevel]::Optimal,$true)
-      try{$gzip.Write($payloads[$asset.Path],0,$payloads[$asset.Path].Length)}finally{$gzip.Dispose()}
-    }finally{$stream.Dispose()}
-    $hash=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-    if($hash -ceq $existing[$asset.Path]){Stop-Lan "Already identical Hosting asset: $($asset.Path)"}
-    $fileHashes[$asset.Path]=$hash
-    $compressedFiles[$hash]=$zip
-  }
-  Write-Host "PASS: $($existing.Count) current Hosting paths/config and approved old Admin sources inspected." -ForegroundColor Green
-  Write-Host 'SCOPE: three Admin JS files (Settings, Dashboard, Home); Worker, MFA, Recovery, Rules, Public unchanged.' -ForegroundColor Yellow
-  Require-SameLiveRelease $original
-  $confirm=Read-Host 'Type DEPLOY-ADMIN-PERFORMANCE to publish THREE approved files (Enter cancels)'
-  if($confirm -cne 'DEPLOY-ADMIN-PERFORMANCE'){Stop-Lan 'Deployment not authorized.'}
-  Require-SameLiveRelease $original
-
-  $created=Api POST "$api/sites/$site/versions" @{config=$version.config}
-  $draft=[string]$created.name
-  if($draft -notmatch '^sites/rolando-portfolio-3f1a3/versions/[A-Za-z0-9_-]+$'){Stop-Lan 'Invalid draft version name.'}
-  $files=@{}
-  foreach($p in $existing.Keys){$files[$p]=$existing[$p]}
-  foreach($p in $fileHashes.Keys){$files[$p]=$fileHashes[$p]}
-  $paths=@($files.Keys|Sort-Object)
-  $required=@();$uploadUrl=''
-  for($i=0;$i -lt $paths.Count;$i+=500){
-    $batch=@{}
-    for($j=$i;$j -lt [Math]::Min($i+500,$paths.Count);$j++){$batch[$paths[$j]]=$files[$paths[$j]]}
-    $populated=Api POST ($api+'/'+$draft+':populateFiles') @{files=$batch}
-    if($populated.PSObject.Properties.Name -contains 'uploadRequiredHashes'){$required+=@($populated.uploadRequiredHashes|Where-Object {$_})}
-    if($populated.PSObject.Properties.Name -contains 'uploadUrl'){$uploadUrl=[string]$populated.uploadUrl}
-  }
-  $needed=@($required | Sort-Object -Unique)
-  foreach($item in $needed){if(!$compressedFiles.ContainsKey($item)){Stop-Lan 'Unapproved file upload requested; draft NOT released.'}}
-  if($needed.Count -gt $assets.Count){Stop-Lan 'Unexpected asset count; draft NOT released.'}
-  if($needed.Count -gt 0){
-    if($uploadUrl -notmatch '^https://upload-firebasehosting\.googleapis\.com/upload/sites/rolando-portfolio-3f1a3/versions/[A-Za-z0-9_-]+/files$'){Stop-Lan 'Unexpected Firebase upload location.'}
-    foreach($item in $needed){
-      Invoke-RestMethod -Uri ($uploadUrl+'/'+$item) -Method POST -Headers $auth -ContentType 'application/octet-stream' -InFile $compressedFiles[$item] -TimeoutSec 90 | Out-Null
-    }
-  }
-  $draftFiles=Version-Files $draft
-  if($draftFiles.Count -ne $files.Count){Stop-Lan 'Draft asset count mismatch; NOT released.'}
-  foreach($p in $files.Keys){if(!$draftFiles.ContainsKey($p) -or $draftFiles[$p] -cne $files[$p]){Stop-Lan "Draft differs at path $p; NOT released."}}
-  Require-SameLiveRelease $original
-  $final=Api PATCH ($api+'/'+$draft+'?update_mask=status') @{status='FINALIZED'}
-  if([string]$final.status -cne 'FINALIZED'){Stop-Lan 'Draft not finalized; NOT released.'}
-  Require-SameLiveRelease $original
-  $encoded=[uri]::EscapeDataString($draft)
-  $release=Api POST ("$api/sites/$site/channels/live/releases?versionName="+$encoded)
-  if([string]$release.version.name -cne $draft){Stop-Lan 'Release acknowledgement not confirmed. Check Hosting console before retrying.'}
-  Write-Host 'PRODUCTION DEPLOY CONFIRMED: Firebase Hosting.' -ForegroundColor Green
-  foreach($asset in $assets){Write-Host "UPDATED ADMIN FILE: $($asset.Path)" -ForegroundColor Green}
-  Write-Host "ORIGINAL VERSION: $original"
-  Write-Host "NEW VERSION: $draft"
-  Write-Host 'Next: same trusted Chrome; verify Home, Dashboard, Settings, login and live reads. Quota may still need reset.' -ForegroundColor Cyan
-} finally {
-  $auth=$null;$token=$null
-  if(Test-Path -LiteralPath $work){Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue}
-}
- })
-  if($tokenCandidates.Count -ne 1){Stop-Lan 'Google Cloud token output is missing or ambiguous. No credential content was displayed.'}
-  $token=[string]$tokenCandidates[0]
+  $token=Resolve-GoogleCloudAccessToken $authLines $gcloudExit
   $auth=@{Authorization="Bearer $token";Accept='application/json';'Cache-Control'='no-cache'}
   $original=[string](Live-Release).version.name
   if($original -notmatch '^sites/rolando-portfolio-3f1a3/versions/[A-Za-z0-9_-]+$'){Stop-Lan 'Wrong Production Hosting site/version.'}

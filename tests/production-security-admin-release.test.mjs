@@ -2,6 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const script=readFileSync(new URL('../scripts/deploy-production-security-admin.ps1',import.meta.url),'utf8');
+const lineEndingTest=readFileSync(new URL('./production-security-hosting-line-endings.test.ps1',import.meta.url),'utf8');
+
+test('Line-ending verifier resolves its source from the operator repository root in both file and inline modes',()=>{
+  assert.match(lineEndingTest,/Join-Path \(Get-Location\)\.Path 'scripts\/deploy-production-security-admin\.ps1'/);
+  assert.doesNotMatch(lineEndingTest,/Split-Path -Parent \$PSScriptRoot/);
+  assert.match(lineEndingTest,/Test-Path -LiteralPath \$path -PathType Leaf/);
+  assert.match(script,/\& \(\[ScriptBlock\]::Create\(\$lineEndingTest\)\)/);
+});
+
 
 test('Security Admin release has exactly seven pre-reviewed files and both source identities',()=>{
   const approved=[

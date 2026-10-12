@@ -25,7 +25,11 @@ test('release scope is exactly the CI-validated single Admin Security UI owner',
 
 test('live release must equal previously verified Production version, and manifest must be retained',()=>{
   assert.match(script,/\$site='rolando-portfolio-3f1a3'/);
-  assert.match(script,/\$expectedLiveVersion='sites\/rolando-portfolio-3f1a3\/versions\/2f18938799ecf17'/);
+  assert.match(script,/\$expectedLiveVersion='sites\/rolando-portfolio-3f1a3\/versions\/2f189387399ecf17'/);
+  // This exact 16-character version is from the operator's live Firebase Hosting
+  // release history. A previously transcribed 15-character pin blocked deploy.
+  assert.doesNotMatch(script,/versions\/2f18938799ecf17/);
+  assert.equal('2f189387399ecf17'.length,16);
   assert.match(script,/\$liveRelease=Live-Release/);
   assert.match(script,/\$original=\[string\]\$liveRelease\.version\.name/);
   assert.match(script,/\$original -cne \$expectedLiveVersion/);

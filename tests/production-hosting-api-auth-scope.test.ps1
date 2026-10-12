@@ -4,7 +4,7 @@ Set-StrictMode -Version Latest
 # Run the real API handler inside the SAME child ScriptBlock scope used by
 # the production operator, with only fake credentials and fake REST responses.
 # Neither gcloud nor the Firebase Hosting network can be accessed by this test.
-$releaseScript = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/deploy-production-admin-performance.ps1') -Raw -Encoding UTF8
+$releaseScript = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/deploy-production-security-admin.ps1') -Raw -Encoding UTF8
 $start = $releaseScript.IndexOf('function Api(')
 $end = $releaseScript.IndexOf('function Live-Release {', $start)
 if ($start -lt 0 -or $end -le $start) { throw 'Canonical Hosting API owner missing.' }

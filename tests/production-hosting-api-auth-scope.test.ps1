@@ -14,11 +14,13 @@ $setup = @'
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $auth=$null
+$site='rolando-portfolio-3f1a3'
 function Stop-Lan([string]$message){throw ("STOP: "+$message)}
 function Invoke-RestMethod {
   param([string]$Uri,[hashtable]$Headers,[string]$Method,[int]$TimeoutSec,[string]$ContentType,[string]$Body)
   if ($Uri -ne 'https://testing.invalid/hosting') {throw 'Unexpected network destination.'}
   if ($Headers.Authorization -cne 'Bearer SYNTHETIC_ACCESS_TOKEN_1234567890') {throw 'Missing local synthetic authorization.'}
+  if ($Headers['X-Goog-User-Project'] -cne 'rolando-portfolio-3f1a3') {throw 'Missing required Production quota attribution.'}
   if ($Method -ceq 'POST' -and ($Body | ConvertFrom-Json).health -cne 'check') {throw 'POST request body incorrect.'}
   return [pscustomobject]@{method=$Method;checked=$true}
 }
@@ -30,6 +32,16 @@ catch { $rejected = $_.Exception.Message -match 'without authorized local header
 if (!$rejected) { throw 'Unauthenticated API request was not blocked.' }
 
 $auth = @{Authorization='Bearer SYNTHETIC_ACCESS_TOKEN_1234567890';Accept='application/json'}
+$missingQuotaRejected=$false
+try { $null=Api GET 'https://testing.invalid/hosting' }
+catch { $missingQuotaRejected=$_.Exception.Message -match 'quota project' }
+if(!$missingQuotaRejected){throw 'Missing quota project must fail closed.'}
+$auth['X-Goog-User-Project']='lan-portfolio-staging'
+$wrongQuotaRejected=$false
+try { $null=Api GET 'https://testing.invalid/hosting' }
+catch { $wrongQuotaRejected=$_.Exception.Message -match 'quota project' }
+if(!$wrongQuotaRejected){throw 'Staging quota project must fail closed.'}
+$auth['X-Goog-User-Project']=$site
 $get = Api GET 'https://testing.invalid/hosting'
 $post = Api POST 'https://testing.invalid/hosting' @{health='check'}
 if (!$get.checked -or $get.method -cne 'GET' -or

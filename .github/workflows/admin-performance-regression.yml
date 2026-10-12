@@ -90,6 +90,8 @@ jobs:
           pwsh -NoProfile -NonInteractive -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("scripts/deploy-production-security-admin.ps1",[ref]$tokens,[ref]$errors) | Out-Null; if($errors.Count -ne 0){$errors | ForEach-Object { Write-Error $_ }; exit 1}'
           node --test tests/production-security-admin-release.test.mjs tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs
           pwsh -NoProfile -NonInteractive -File ./tests/production-security-hosting-line-endings.test.ps1
+          # Reproduce the operator deployment's inline PowerShell ScriptBlock mode.
+          pwsh -NoProfile -NonInteractive -Command '$source=Get-Content -LiteralPath "./tests/production-security-hosting-line-endings.test.ps1" -Raw -Encoding UTF8; & ([ScriptBlock]::Create($source))'
       - name: Verify canonical production Public security integration and live-browser regressions
         run: node --test tests/production-public-security-integration.test.mjs tests/public-turnstile-mobile-regression.test.mjs tests/public-turnstile-lifecycle-regression.test.mjs tests/public-messenger-conversation-lifecycle.test.mjs
       - name: Run shared-navigation and staging isolation tests
@@ -153,6 +155,8 @@ jobs:
           node --test tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs tests/admin-settings-startup-requests.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-shared-navigation-performance.test.mjs tests/production-security-admin-release.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./tests/production-security-hosting-line-endings.test.ps1
+          $inlineLineEndingTest = Get-Content -LiteralPath './tests/production-security-hosting-line-endings.test.ps1' -Raw -Encoding UTF8
+          & ([ScriptBlock]::Create($inlineLineEndingTest))
           & ./tests/production-google-oauth-token.test.ps1
           & ./tests/production-hosting-api-auth-scope.test.ps1
       - name: Verify Hosting API auth scope in Windows PowerShell 5.1
@@ -160,6 +164,8 @@ jobs:
         run: |
           & ./tests/production-hosting-api-auth-scope.test.ps1
           & ./tests/production-security-hosting-line-endings.test.ps1
+          $inlineLineEndingTest = Get-Content -LiteralPath './tests/production-security-hosting-line-endings.test.ps1' -Raw -Encoding UTF8
+          & ([ScriptBlock]::Create($inlineLineEndingTest))
 
   # Read-only Cloudflare metadata checks. This is NOT a deployment or a Wrangler retry.
   # Must have a separate approval and the staging deployment gate must remain OFF.

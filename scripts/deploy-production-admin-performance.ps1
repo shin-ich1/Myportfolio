@@ -52,6 +52,38 @@ function Git-Blob([byte[]]$bytes) {
   $sha=[Security.Cryptography.SHA1]::Create()
   try{return ([BitConverter]::ToString($sha.ComputeHash($all))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
 }
+# Read exact canonical Git blob bytes, avoiding Windows CRLF checkout normalization.
+# The allowlisted HEAD:path argument is never derived from untrusted input.
+function Get-ApprovedGitBlobBytes([string]$relativePath) {
+  if($relativePath -notin @('admin/js/settings.js','admin/js/dashboard.js','admin/js/home.js')) {
+    Stop-Lan 'Unapproved Git blob path.'
+  }
+  $gitExe=(Get-Command git.exe -ErrorAction Stop).Source
+  $psi=[Diagnostics.ProcessStartInfo]::new()
+  $psi.FileName=$gitExe
+  $psi.Arguments='cat-file blob HEAD:'+$relativePath
+  $psi.WorkingDirectory=(Get-Location).Path
+  $psi.UseShellExecute=$false
+  $psi.CreateNoWindow=$true
+  $psi.RedirectStandardOutput=$true
+  $psi.RedirectStandardError=$true
+  $process=[Diagnostics.Process]::Start($psi)
+  if($null -eq $process){Stop-Lan 'Git blob reader could not start.'}
+  $memory=[IO.MemoryStream]::new()
+  try{
+    # Never use a PowerShell pipeline for binary output: Windows PowerShell 5
+    # will decode/re-encode stdout and can silently alter CRLF or UTF-8.
+    $process.StandardOutput.BaseStream.CopyTo($memory)
+    $message=$process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    if($process.ExitCode -ne 0){Stop-Lan 'Canonical Git blob read failed; no deployment.'}
+    return $memory.ToArray()
+  }finally{
+    $memory.Dispose()
+    $process.Dispose()
+  }
+}
+
 function Require-SameLiveRelease([string]$expected) {
   if([string](Live-Release).version.name -cne $expected){Stop-Lan 'Concurrent Production deploy detected; no release.'}
 }
@@ -65,9 +97,13 @@ try {
     $sourceBlob=(& git rev-parse ('HEAD:'+$rel)).Trim()
     if($LASTEXITCODE -ne 0 -or $sourceBlob -cne $asset.NewBlob){Stop-Lan "Current Git source differs from approved file: $rel"}
     $sourcePath=Join-Path (Get-Location).Path ($rel.Replace('/',[IO.Path]::DirectorySeparatorChar))
-    $bytes=[IO.File]::ReadAllBytes($sourcePath)
-    if((Git-Blob $bytes) -cne $asset.NewBlob){Stop-Lan "Checkout bytes differ from approved Git blob: $rel"}
-    & node --check $sourcePath
+    # Local Git status and HEAD blob SHA above guard against modified files.
+    # Deploy exact canonical blob bytes rather than line-ending-converted checkout.
+    $bytes=Get-ApprovedGitBlobBytes $rel
+    if((Git-Blob $bytes) -cne $asset.NewBlob){Stop-Lan "Canonical Git blob bytes differ from approved source: $rel"}
+    $verifiedSource=Join-Path $work ($rel.Replace('/','-')+'.js')
+    [IO.File]::WriteAllBytes($verifiedSource,$bytes)
+    & node --check $verifiedSource
     if($LASTEXITCODE -ne 0){Stop-Lan "JavaScript syntax check failed: $rel"}
     $payloads[$asset.Path]=$bytes
   }

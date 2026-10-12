@@ -2565,7 +2565,24 @@ async function requireSecurityApprovedAdministrator(request,env,{trustLevels=nul
   // this exact lanSessionId to resolve to an active, unexpired backend session.
   const projectId=firestoreProjectId(env);
   const proof=await fetch(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/authorizedAdministrators/${encodeURIComponent(uid)}`,{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'}});
-  if(!proof.ok){ const status=proof.status===401?401:403; throw serviceError('Administrator security session could not be verified.',{status,code:status===401?'firebase-unauthenticated':'security-session-expired',source:'firebase'}); }
+  if(!proof.ok){
+    // A Firestore quota/service failure is NOT proof that the user's session
+    // has been revoked. Fail closed (no Admin data access) but do not mislabel
+    // provider outages as security-session-expired and forcibly sign the user out.
+    // Only the genuine unauthorized/permission-denied paths retain revocation
+    // semantics; every retry still requires fresh server authorization.
+    const failure=await proof.json().catch(()=>({}));
+    const providerCode=String(failure?.error?.status||'').toUpperCase();
+    const unavailable=proof.status===429||proof.status>=500||
+      ['RESOURCE_EXHAUSTED','UNAVAILABLE','DEADLINE_EXCEEDED'].includes(providerCode);
+    if(unavailable) throw serviceError('Administrator security verification is temporarily unavailable.',{
+      status:503,code:'security-authorization-unavailable',source:'firebase'
+    });
+    const status=proof.status===401?401:403;
+    throw serviceError('Administrator security session could not be verified.',{
+      status,code:status===401?'firebase-unauthenticated':'security-session-expired',source:'firebase'
+    });
+  }
   const record=await proof.json().catch(()=>({}));
   if(record?.fields?.active?.booleanValue!==true) throw serviceError('Administrator access is required.',{status:403,code:'firebase-permission-denied',source:'firebase'});
   // Firestore Rules are a second enforcement layer, not the Worker session owner.

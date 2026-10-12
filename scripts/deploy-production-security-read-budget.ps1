@@ -5,7 +5,7 @@ Set-StrictMode -Version Latest
 $site='rolando-portfolio-3f1a3'
 $api='https://firebasehosting.googleapis.com/v1beta1'
 # Fail closed if any Hosting release has occurred since the operator's reviewed baseline.
-$expectedLiveVersion='sites/rolando-portfolio-3f1a3/versions/2f18938799ecf17'
+$expectedLiveVersion='sites/rolando-portfolio-3f1a3/versions/2f189387399ecf17'
 $assets=@(
   @{ Path='/admin/js/settings-security.js'; OldBlob='225706fbec049326fa091d112c8983a8f144dfca'; NewBlob='d30d5f4d992098a79484c91e0ca6ccc1ef58bf59' }
 )

@@ -15,7 +15,7 @@ test('One-file Production release refuses source drift and preserves complete cu
   assert.match(script,/foreach\(\$p in \$existing\.Keys\)\{\$files\[\$p\]=\$existing\[\$p\]\}/);
   assert.match(script,/\$files\[\$target\]=\$hash/);
   assert.match(script,/\$draftFiles=Version-Files \$draft/);
-  assert.match(script,/\$release=Api POST \("\$api\/sites\/\$site\/releases\?versionName="\+\$encoded\)/);
+  assert.match(script,/\$release=Api POST \("\$api\/sites\/\$site\/channels\/live\/releases\?versionName="\+\$encoded\)/);
 });
 test('Production release gates explicit user approval and never calls other deployment paths',()=>{
   assert.match(script,/Read-Host 'Type DEPLOY-TELEMETRY-ONLY/);

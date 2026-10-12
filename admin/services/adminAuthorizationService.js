@@ -242,9 +242,10 @@ export async function verifyAdministrator(user, forceRefresh = false) {
   const snapshot = await readAllowlistRecord(verificationContext);
   const record = snapshot.exists() ? snapshot.data() : null;
   const securityApproved = token.claims?.lanSecurityVerified === true && String(token.claims?.lanSessionId || "").trim().length > 0;
-  const claimAuthorized = token.claims?.admin === true;
+  // A legacy Firebase admin claim is NOT authorization. The canonical
+  // server-backed allowlist must be active for every verified Admin session.
   const allowlistAuthorized = record?.active === true;
-  const authorized = securityApproved && (claimAuthorized || allowlistAuthorized);
+  const authorized = securityApproved && allowlistAuthorized;
   const verifiedAt = Date.now();
 
   if (!authorized) {

@@ -28,10 +28,8 @@ let currentEnrollment = null;
 let activeStepUpRequest = null;
 let enrollmentWatchTimer = null;
 let enrollmentCompletionInFlight = false;
-let securityAccessStateWatchTimer = null;
 let securityAccessStateRefreshInFlight = false;
 let recoveryRotationActivationPending = false;
-const SECURITY_ACCESS_STATE_SYNC_INTERVAL_MS = 3000;
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -161,49 +159,22 @@ async function refreshSecurityAccessState() {
   }
 }
 
-function stopSecurityAccessStateWatch() {
-  if (securityAccessStateWatchTimer) clearTimeout(securityAccessStateWatchTimer);
-  securityAccessStateWatchTimer = null;
-}
-
-function startSecurityAccessStateWatch({ immediate = false } = {}) {
-  stopSecurityAccessStateWatch();
-  if (!securityPanelIsLiveVisible()) return;
-  const run = async () => {
-    securityAccessStateWatchTimer = null;
-    await refreshSecurityAccessState();
-    if (securityPanelIsLiveVisible()) {
-      securityAccessStateWatchTimer = setTimeout(run, SECURITY_ACCESS_STATE_SYNC_INTERVAL_MS);
-    }
-  };
-  securityAccessStateWatchTimer = setTimeout(run, immediate ? 0 : SECURITY_ACCESS_STATE_SYNC_INTERVAL_MS);
-}
-
+// Reading the complete Sessions/Devices lists every few seconds consumed
+// thousands of billable Firestore reads. The server still checks the CURRENT
+// session on every protected request and enforces revocation immediately.
+// Refresh list UI only when the operator actually returns to Security & Access.
 window.addEventListener('focus', () => {
-  if (!securityPanelIsLiveVisible()) return;
-  void refreshSecurityAccessState();
-  startSecurityAccessStateWatch();
+  if (securityPanelIsLiveVisible()) void refreshSecurityAccessState();
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') {
-    stopSecurityAccessStateWatch();
-    return;
-  }
-  if (!securityPanelIsLiveVisible()) return;
-  void refreshSecurityAccessState();
-  startSecurityAccessStateWatch();
+  if (securityPanelIsLiveVisible()) void refreshSecurityAccessState();
 });
 
 document.addEventListener('lan:tabchange', event => {
-  if (event.detail?.key !== 'security') {
-    stopSecurityAccessStateWatch();
-    return;
-  }
-  startSecurityAccessStateWatch({ immediate: true });
+  if (event.detail?.key !== 'security') return;
+  void refreshSecurityAccessState();
 });
-
-window.addEventListener('pagehide', stopSecurityAccessStateWatch);
 
 function stopEnrollmentApprovalWatch() {
   if (enrollmentWatchTimer) clearTimeout(enrollmentWatchTimer);
@@ -764,6 +735,5 @@ const incomingEnrollmentId = new URLSearchParams(window.location.search).get('ap
 void (async () => {
   await refresh();
   if (incomingEnrollmentId) await initializeIncomingEnrollment(incomingEnrollmentId);
-  startSecurityAccessStateWatch();
 })();
 loadBranding();

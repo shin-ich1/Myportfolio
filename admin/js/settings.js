@@ -2827,6 +2827,16 @@ function startTelemetryRealtime() {
   }, CLOUDINARY_REFRESH_MS);
 }
 
+// The Control room alone owns expensive collection-wide live telemetry.
+// Leaving Control or hiding the browser releases the active subscriptions.
+function syncTelemetryRealtimeForRoom(room = document.body.dataset.settingsRoom || "general") {
+  if (room !== "general" || document.hidden) {
+    if (telemetryRealtimeUnsubscribers.length) stopTelemetryRealtime();
+    return;
+  }
+  if (!telemetryRealtimeUnsubscribers.length) startTelemetryRealtime();
+}
+
 function walkValues(value, visitor) { if (Array.isArray(value)) value.forEach((item) => walkValues(item, visitor)); else if (value && typeof value === "object") Object.values(value).forEach((item) => walkValues(item, visitor)); else visitor(value); }
 async function countAssets(modules = null) {
   const source = modules
@@ -3391,6 +3401,8 @@ function bind() {
   settingsRoomNav?.addEventListener("lan:tabchange", (event) => {
     const room = event.detail?.key || "general";
     document.body.dataset.settingsRoom = room;
+    syncTelemetryRealtimeForRoom(room);
+    void startSettingsRoomData(room);
     const panel = event.detail?.panel || settingsRoomPanels.find((candidate) => candidate.dataset.lanPanel === room);
     const reduceMotion = document.documentElement.dataset.reducedMotion === "true";
     if (panel && settingsRoomMotionEnabled && !reduceMotion) {
@@ -3541,6 +3553,7 @@ function bind() {
   $("dashboardVisualInput")?.addEventListener("change", async (event) => { const file = event.target.files?.[0]; if (file) await saveDashboardVisual(file); event.target.value = ""; });
   $("resetDashboardVisualButton")?.addEventListener("click", resetDashboardVisual);
   document.addEventListener("visibilitychange", () => {
+    syncTelemetryRealtimeForRoom();
     if (document.hidden || cloudinaryTelemetryState.pending) return;
     if (cloudinaryTelemetryState.retryAt > Date.now()) return;
     if (Date.now() - cloudinaryTelemetryState.updatedAt > CLOUDINARY_REFRESH_MS) fetchCloudinaryTelemetry([]);
@@ -3569,15 +3582,40 @@ function bind() {
   });
 }
 
+// Expensive Settings reads belong to the visible Control or Publish room.
+// A single in-flight/completed promise per operation prevents duplicate scans
+// when navigation, startup and repeated tab clicks happen together.
+const settingsRoomStartupTasks = new Map();
+async function startSettingsRoomData(room) {
+  const tasks = room === "general"
+    ? [["storage hub", renderStorageHub]]
+    : room === "portfolio"
+      ? [["initialization state", loadInitialization], ["module lifecycle", renderModuleLifecycleSummary]]
+      : [];
+  await Promise.all(tasks.map(([name, run]) => {
+    if (!settingsRoomStartupTasks.has(name)) {
+      const pending = Promise.resolve().then(run).catch((error) => {
+        const message = error?.message || String(error || "Settings data unavailable.");
+        console.error("Settings " + name + " load failed.", error);
+        state.startupErrors.push(name + ": " + message);
+        window.LANNotice?.({
+          title: "Settings data unavailable",
+          message: name + " could not load. Reopen Settings after service access is restored.",
+          tone: "warning"
+        });
+      });
+      settingsRoomStartupTasks.set(name, pending);
+    }
+    return settingsRoomStartupTasks.get(name);
+  }));
+}
+
 async function start() {
   bind(); bindTelemetryMarketInteractions(); applyPreferences(); loadGreetingPreference(); loadPortfolioPassNamePreference(); loadSidebarStatusPreference(); loadDashboardVisualPreference(); fillSystemInformation();
   initializePublicPortfolioQr();
 
   const startupTasks = [
-    ["initialization state", loadInitialization],
-    ["system health", () => refreshHealth({ preferCurrent: true })],
-    ["module lifecycle", renderModuleLifecycleSummary],
-    ["storage hub", renderStorageHub]
+    ["system health", () => refreshHealth({ preferCurrent: true })]
   ];
   const results = await Promise.allSettled(startupTasks.map(([, task]) => task()));
   const failures = results.flatMap((result, index) => {
@@ -3598,7 +3636,8 @@ async function start() {
     });
   }
 
-  startTelemetryRealtime();
+  syncTelemetryRealtimeForRoom();
+  void startSettingsRoomData(document.body.dataset.settingsRoom || "general");
   syncAppearancePreview();
   window.setInterval(updateHealthScanAge, 10000);
 }

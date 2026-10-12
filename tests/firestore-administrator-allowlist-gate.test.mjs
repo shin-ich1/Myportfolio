@@ -30,3 +30,72 @@ test('security session and device records remain backend-only', () => {
       collection + ' must be backend-only');
   }
 });
+
+
+const authorizationSource = readFileSync(
+  new URL('../admin/services/adminAuthorizationService.js', import.meta.url), 'utf8'
+);
+
+// Execute the canonical production verifier (rather than duplicating its policy).
+// Mock only Firebase's identity, allowlist document and capability probe.
+function productionVerifier({ active, exists = true, capabilityCalls }) {
+  const begin = authorizationSource.indexOf('export async function verifyAdministrator(');
+  const end = authorizationSource.indexOf('\nexport function getCurrentAuthorizedAdministrator()', begin);
+  assert.ok(begin >= 0 && end > begin, 'Canonical Admin verifier must be extractable');
+  const realImplementation = authorizationSource.slice(begin, end).replace(/^export /, '');
+  return new Function(
+    'readAllowlistRecord', 'readAdminFirestoreCapability', 'AdministratorAuthorizationError',
+    realImplementation + '\nreturn verifyAdministrator;'
+  )(
+    async () => ({ exists: () => exists, data: () => ({ active }) }),
+    async () => {
+      capabilityCalls.count++;
+      return { moduleRegistryCollectionsReadable: true, settingsDocumentPresent: true };
+    },
+    Error
+  );
+}
+
+test('Runtime Firebase authorization does not accept legacy admin claims without an active allowlist record', async () => {
+  for (const scenario of [
+    { active: false, exists: true, label: 'inactive administrator' },
+    { active: undefined, exists: false, label: 'missing administrator record' }
+  ]) {
+    const capabilityCalls = { count: 0 };
+    const verifyAdministrator = productionVerifier({ ...scenario, capabilityCalls });
+    const user = {
+      uid: 'local-emulator-admin',
+      getIdTokenResult: async () => ({
+        claims: { lanSecurityVerified: true, lanSessionId: 'valid-session', admin: true }
+      })
+    };
+    const result = await verifyAdministrator(user);
+    assert.equal(result.authorized, false, scenario.label);
+    assert.equal(result.firestoreProof, null, scenario.label);
+    assert.equal(capabilityCalls.count, 0, 'Never probe private CMS data for inactive/missing admin');
+  }
+});
+
+test('Runtime Firebase authorization requires BOTH a verified security session and active allowlist', async () => {
+  for (const claims of [
+    { lanSecurityVerified: false, lanSessionId: 'valid-session', admin: true },
+    { lanSecurityVerified: true, lanSessionId: '', admin: true },
+    { lanSecurityVerified: true, admin: true }
+  ]) {
+    const capabilityCalls = { count: 0 };
+    const verifyAdministrator = productionVerifier({ active: true, capabilityCalls });
+    const result = await verifyAdministrator({ uid: 'local-emulator-admin', getIdTokenResult: async () => ({ claims }) });
+    assert.equal(result.authorized, false);
+    assert.equal(capabilityCalls.count, 0);
+  }
+
+  const capabilityCalls = { count: 0 };
+  const verifyAdministrator = productionVerifier({ active: true, capabilityCalls });
+  const result = await verifyAdministrator({
+    uid: 'local-emulator-admin',
+    getIdTokenResult: async () => ({ claims: { lanSecurityVerified: true, lanSessionId: 'valid-session' } })
+  });
+  assert.equal(result.authorized, true, 'Active allowlist succeeds without a legacy admin claim');
+  assert.equal(result.firestoreProof.administratorRecordActive, true);
+  assert.equal(capabilityCalls.count, 1);
+});

@@ -16,8 +16,10 @@ test("Settings startup does not fetch its asset inventory separately from realti
   const start = between("async function start() {", 'window.addEventListener("pagehide", stopTelemetryRealtime');
   assert.doesNotMatch(start, /\["asset inventory", countAssets\]/,
     "Initial asset counts must come from the existing telemetry collection snapshots");
-  assert.match(start, /startTelemetryRealtime\(\)/,
-    "Keep the canonical realtime listeners, not a duplicate data owner");
+  assert.match(start, /syncTelemetryRealtimeForRoom\(\)/,
+    "Only the visible Control room may use the canonical realtime listener owner");
+  assert.doesNotMatch(start, /\n\s*startTelemetryRealtime\(\);\n/,
+    "Settings startup must not start collection-wide realtime reads unconditionally");
 });
 
 test("Settings asset counts reuse provided complete snapshots without a duplicate Firestore read", async () => {

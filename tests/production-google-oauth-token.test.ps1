@@ -3,7 +3,7 @@ Set-StrictMode -Version Latest
 
 # Execute the EXACT production token parser without touching Google Cloud.
 # All test values below are synthetic and are never valid credentials.
-$path=Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/deploy-production-admin-performance.ps1'
+$path=Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/deploy-production-security-admin.ps1'
 $source=Get-Content -LiteralPath $path -Raw -Encoding UTF8
 $begin=$source.IndexOf('function Resolve-GoogleCloudAccessToken(')
 $end=$source.IndexOf('function Require-SameLiveRelease(', $begin)

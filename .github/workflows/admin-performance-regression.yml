@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "admin/js/**"
+      - "admin/services/**"
       - "admin/pages/**"
       - "admin/dashboard.html"
       - "tests/**"
@@ -31,6 +32,7 @@ on:
       - "perf/admin-workspace-investigation-20261008"
     paths:
       - "admin/js/**"
+      - "admin/services/**"
       - "admin/pages/**"
       - "admin/dashboard.html"
       - "tests/**"
@@ -73,6 +75,7 @@ jobs:
           node --check admin/js/settings-security.js
           node --check admin/js/admin.js
           node --check admin/services/adminSecurityService.js
+          node --check admin/services/adminAuthorizationService.js
           node --check admin/js/admin-shell.js
           node --check admin/js/workspace-host.js
           node --check admin/js/admin-ui.js
@@ -152,7 +155,7 @@ jobs:
       - name: Run exact local operator tests under Windows
         shell: pwsh
         run: |
-          node --test tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs tests/admin-settings-startup-requests.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-shared-navigation-performance.test.mjs tests/production-security-admin-release.test.mjs
+          node --test tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs tests/admin-settings-startup-requests.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-shared-navigation-performance.test.mjs tests/production-security-admin-release.test.mjs tests/firestore-administrator-allowlist-gate.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./tests/production-security-hosting-line-endings.test.ps1
           $inlineLineEndingTest = Get-Content -LiteralPath './tests/production-security-hosting-line-endings.test.ps1' -Raw -Encoding UTF8

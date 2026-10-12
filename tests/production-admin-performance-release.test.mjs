@@ -39,3 +39,14 @@ test('Release is operator approved, tests source and cannot change Auth, Rules o
   assert.match(script,/node --test tests\/settings-telemetry-read-budget\.test\.mjs.*tests\/admin-home-startup-requests\.test\.mjs/);
   assert.doesNotMatch(script,/\bwrangler\s+deploy\b|\bfirebase\s+deploy\b|mfa\.state\s*=|accounts:update/i);
 });
+
+test('Windows CRLF working copies cannot alter the deployed canonical Git blob',()=>{
+  assert.match(script,/function Get-ApprovedGitBlobBytes\(/);
+  assert.match(script,/git\.exe/);
+  assert.match(script,/\.Arguments='cat-file blob HEAD:'\+\$relativePath/);
+  assert.match(script,/\.StandardOutput\.BaseStream\.CopyTo\(\$memory\)/);
+  assert.match(script,/\$bytes=Get-ApprovedGitBlobBytes \$rel/);
+  assert.match(script,/\$payloads\[\$asset\.Path\]=\$bytes/);
+  assert.match(script,/Git-Blob \$bytes/);
+  assert.doesNotMatch(script,/\$bytes=\[IO\.File\]::ReadAllBytes\(\$sourcePath\)/);
+});

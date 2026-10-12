@@ -3,7 +3,13 @@ Set-StrictMode -Version Latest
 
 # Exercise the exact release-script classifier using SYNTHETIC bytes only.
 # No Google/Firebase credentials or Production requests are made.
-$path=Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/deploy-production-security-admin.ps1'
+# The guarded release runs this test as an inline ScriptBlock, where
+# $PSScriptRoot is empty. Both standalone -File and inline execution use
+# the repository-root working directory required by the release script.
+$path=Join-Path (Get-Location).Path 'scripts/deploy-production-security-admin.ps1'
+if(-not (Test-Path -LiteralPath $path -PathType Leaf)){
+  throw 'STOP: Production security tests must run from the repository root.'
+}
 $source=Get-Content -LiteralPath $path -Raw -Encoding UTF8
 $start=$source.IndexOf('function Git-Blob(')
 $end=$source.IndexOf('# Read exact canonical Git blob bytes', $start)

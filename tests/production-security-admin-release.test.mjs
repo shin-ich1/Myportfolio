@@ -57,7 +57,7 @@ test('Already published performance/Telemetry files are read-only and byte-verif
     assert.ok(script.includes("Path='"+path+"'; Blob='"+sha+"'"));
     assert.ok(!script.includes("Path='"+path+"'; OldBlob="),'Already published source MUST not be uploaded again');
   }
-  assert.match(script,/Protected performance asset differs from approved version/);
+  assert.match(script,/Deployed performance asset differs from approved version/);
 });
 
 test('Live production source, complete manifest and serving config are preserved',()=>{

@@ -26,7 +26,11 @@ test('release scope is exactly the CI-validated single Admin Security UI owner',
 test('live release must equal previously verified Production version, and manifest must be retained',()=>{
   assert.match(script,/\$site='rolando-portfolio-3f1a3'/);
   assert.match(script,/\$expectedLiveVersion='sites\/rolando-portfolio-3f1a3\/versions\/2f18938799ecf17'/);
+  assert.match(script,/\$liveRelease=Live-Release/);
+  assert.match(script,/\$original=\[string\]\$liveRelease\.version\.name/);
   assert.match(script,/\$original -cne \$expectedLiveVersion/);
+  assert.match(script,/Production Hosting version mismatch; expected='/);
+  assert.match(script,/observed='/);
   assert.match(script,/Require-SameLiveRelease \$original/);
   assert.match(script,/\$version\.config/);
   assert.match(script,/\$draftFiles=Version-Files \$draft/);

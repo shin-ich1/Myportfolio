@@ -22,6 +22,7 @@ on:
       - "scripts/diagnose-staging-cloudflare-metadata.mjs"
       - "scripts/staging-targets.json"
       - "scripts/secure-firestore-backup.mjs"
+      - "scripts/deploy-production-security-admin.ps1"
       - "storage-bridge-url.js"
       - "package.json"
       - ".github/workflows/admin-performance-regression.yml"
@@ -48,6 +49,7 @@ on:
       - "scripts/diagnose-staging-cloudflare-metadata.mjs"
       - "scripts/staging-targets.json"
       - "scripts/secure-firestore-backup.mjs"
+      - "scripts/deploy-production-security-admin.ps1"
       - ".github/workflows/admin-performance-regression.yml"
 
 permissions:
@@ -85,8 +87,8 @@ jobs:
       - name: Validate scoped Production Hosting deploy script (syntax and read-only tests)
         shell: bash
         run: |
-          pwsh -NoProfile -NonInteractive -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("scripts/deploy-production-admin-performance.ps1",[ref]$tokens,[ref]$errors) | Out-Null; if($errors.Count -ne 0){$errors | ForEach-Object { Write-Error $_ }; exit 1}'
-          node --test tests/production-admin-performance-release.test.mjs tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs
+          pwsh -NoProfile -NonInteractive -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("scripts/deploy-production-security-admin.ps1",[ref]$tokens,[ref]$errors) | Out-Null; if($errors.Count -ne 0){$errors | ForEach-Object { Write-Error $_ }; exit 1}'
+          node --test tests/production-security-admin-release.test.mjs tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs
       - name: Verify canonical production Public security integration and live-browser regressions
         run: node --test tests/production-public-security-integration.test.mjs tests/public-turnstile-mobile-regression.test.mjs tests/public-turnstile-lifecycle-regression.test.mjs tests/public-messenger-conversation-lifecycle.test.mjs
       - name: Run shared-navigation and staging isolation tests
@@ -142,12 +144,12 @@ jobs:
         run: |
           $errors = $null
           $tokens = $null
-          [System.Management.Automation.Language.Parser]::ParseFile("scripts/deploy-production-admin-performance.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          [System.Management.Automation.Language.Parser]::ParseFile("scripts/deploy-production-security-admin.ps1", [ref]$tokens, [ref]$errors) | Out-Null
           if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
       - name: Run exact local operator tests under Windows
         shell: pwsh
         run: |
-          node --test tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs tests/admin-settings-startup-requests.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-shared-navigation-performance.test.mjs tests/production-admin-performance-release.test.mjs
+          node --test tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs tests/admin-settings-startup-requests.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-shared-navigation-performance.test.mjs tests/production-security-admin-release.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./tests/production-google-oauth-token.test.ps1
           & ./tests/production-hosting-api-auth-scope.test.ps1

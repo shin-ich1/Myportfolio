@@ -149,6 +149,8 @@ jobs:
         run: |
           node --test tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs tests/admin-settings-startup-requests.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-shared-navigation-performance.test.mjs tests/production-admin-performance-release.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./tests/production-google-oauth-token.test.ps1
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   # Read-only Cloudflare metadata checks. This is NOT a deployment or a Wrangler retry.
   # Must have a separate approval and the staging deployment gate must remain OFF.

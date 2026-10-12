@@ -1,13 +1,16 @@
-# Scoped LΛN Production Firebase Hosting release. ONLY /admin/js/settings.js changes.
+# Scoped LΛN Production Firebase Hosting release. three approved Admin JS files only.
 # Never touches Cloudflare Worker, Firestore Rules, Firebase Auth/MFA, Recovery or Public assets.
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $site='rolando-portfolio-3f1a3'
 $api='https://firebasehosting.googleapis.com/v1beta1'
-$target='/admin/js/settings.js'
-$oldBlob='717083f0d1504464ea4e275a9da4dd8f706ce179'
-$newBlob='e3aca64c4662ea99457b44855b035ffb0b20a305'
-$work=Join-Path ([IO.Path]::GetTempPath()) ('lan-one-file-'+[guid]::NewGuid().ToString('N'))
+$assets=@(
+  @{ Path='/admin/js/settings.js'; OldBlob='717083f0d1504464ea4e275a9da4dd8f706ce179'; NewBlob='e3aca64c4662ea99457b44855b035ffb0b20a305' },
+  @{ Path='/admin/js/dashboard.js'; OldBlob='e5dc478bdace7833686c387c8c4f6023f5156d28'; NewBlob='72983ce53fa9888cd77cd4c50ee1376a980ad750' },
+  @{ Path='/admin/js/home.js'; OldBlob='9b088be12133c1871f39bd46ce2db6664285d1b3'; NewBlob='398d6a7ee4db0c44e604f79cc6498c9798756440' }
+)
+if($assets.Count -ne 3){Stop-Lan 'Approved Admin file count changed.'}
+$work=Join-Path ([IO.Path]::GetTempPath()) ('lan-three-file-'+[guid]::NewGuid().ToString('N'))
 $auth=$null
 $token=$null
 
@@ -55,17 +58,22 @@ function Require-SameLiveRelease([string]$expected) {
 
 New-Item -ItemType Directory -Path $work -Force | Out-Null
 try {
-  $sourceBlob=(& git rev-parse 'HEAD:admin/js/settings.js').Trim()
-  if($LASTEXITCODE -ne 0 -or $sourceBlob -cne $newBlob){Stop-Lan 'Current branch is not pinned to approved Telemetry Settings source.'}
   if(@(& git status --porcelain --untracked-files=no).Count -gt 0){Stop-Lan 'Tracked local source has changes.'}
-  $sourcePath=Join-Path (Get-Location).Path 'admin/js/settings.js'
-  $candidate=[IO.File]::ReadAllBytes($sourcePath)
-  if((Git-Blob $candidate) -cne $newBlob){Stop-Lan 'Checked-out source bytes do not match reviewed Git content.'}
-  & node --check $sourcePath
-  if($LASTEXITCODE -ne 0){Stop-Lan 'Settings JavaScript syntax check failed.'}
-  & node --test tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs tests/admin-settings-startup-requests.test.mjs
-  if($LASTEXITCODE -ne 0){Stop-Lan 'Telemetry regression tests failed.'}
-  Write-Host 'PASS: Pinned Telemetry source and local regression tests.' -ForegroundColor Green
+  $payloads=@{}
+  foreach($asset in $assets) {
+    $rel=$asset.Path.TrimStart('/')
+    $sourceBlob=(& git rev-parse ('HEAD:'+$rel)).Trim()
+    if($LASTEXITCODE -ne 0 -or $sourceBlob -cne $asset.NewBlob){Stop-Lan "Current Git source differs from approved file: $rel"}
+    $sourcePath=Join-Path (Get-Location).Path ($rel.Replace('/',[IO.Path]::DirectorySeparatorChar))
+    $bytes=[IO.File]::ReadAllBytes($sourcePath)
+    if((Git-Blob $bytes) -cne $asset.NewBlob){Stop-Lan "Checkout bytes differ from approved Git blob: $rel"}
+    & node --check $sourcePath
+    if($LASTEXITCODE -ne 0){Stop-Lan "JavaScript syntax check failed: $rel"}
+    $payloads[$asset.Path]=$bytes
+  }
+  & node --test tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs tests/admin-settings-startup-requests.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-shared-navigation-performance.test.mjs
+  if($LASTEXITCODE -ne 0){Stop-Lan 'Admin page-performance tests failed.'}
+  Write-Host 'PASS: Three pinned Admin files and page-loading tests.' -ForegroundColor Green
 
   $gcloud=Get-Command gcloud.cmd -ErrorAction Stop
   $token=(& $gcloud.Source auth print-access-token 2>$null|Select-Object -First 1).Trim()
@@ -76,30 +84,33 @@ try {
   $version=Api GET "$api/$original"
   if([string]$version.status -cne 'FINALIZED' -or !$version.config){Stop-Lan 'Live Hosting serving config could not be preserved.'}
   $existing=Version-Files $original
-  if($existing.Count -lt 30 -or !$existing.ContainsKey($target) -or !$existing.ContainsKey('/index.html') -or !$existing.ContainsKey('/admin/index.html')){Stop-Lan 'Live Hosting manifest incomplete.'}
-
-  $oldFile=Join-Path $work 'settings-live.js'
-  Invoke-WebRequest -Uri ("https://$site.web.app$target?preflight="+[guid]::NewGuid().ToString('N')) -OutFile $oldFile -UseBasicParsing -TimeoutSec 40|Out-Null
-  $actualOld=Git-Blob ([IO.File]::ReadAllBytes($oldFile))
-  if($actualOld -cne $oldBlob){
-    if($actualOld -ceq $newBlob){Stop-Lan 'Approved Telemetry code is already live; no redeploy.'}
-    Stop-Lan 'Production Settings is not the audited live version; do not overwrite it.'
+  if($existing.Count -lt 30 -or !$existing.ContainsKey('/index.html') -or !$existing.ContainsKey('/admin/index.html')){Stop-Lan 'Live Hosting manifest incomplete.'}
+  foreach($asset in $assets){if(!$existing.ContainsKey($asset.Path)){Stop-Lan "Live Admin asset missing: $($asset.Path)"}}
+  $fileHashes=@{}; $compressedFiles=@{}
+  foreach($asset in $assets){
+    $livePath=Join-Path $work ($asset.Path.TrimStart('/').Replace('/','-')+'.live')
+    Invoke-WebRequest -Uri ("https://$site.web.app$($asset.Path)?preflight="+[guid]::NewGuid().ToString('N')) -OutFile $livePath -UseBasicParsing -TimeoutSec 40 | Out-Null
+    $actual=Git-Blob ([IO.File]::ReadAllBytes($livePath))
+    if($actual -cne $asset.OldBlob){
+      if($actual -ceq $asset.NewBlob){Stop-Lan "Asset already live: $($asset.Path); refuse mixed deployment."}
+      Stop-Lan "Production differs from reviewed baseline: $($asset.Path)"
+    }
+    $zip=Join-Path $work ($asset.Path.TrimStart('/').Replace('/','-')+'.gz')
+    $stream=[IO.File]::Create($zip)
+    try{
+      $gzip=[IO.Compression.GZipStream]::new($stream,[IO.Compression.CompressionLevel]::Optimal,$true)
+      try{$gzip.Write($payloads[$asset.Path],0,$payloads[$asset.Path].Length)}finally{$gzip.Dispose()}
+    }finally{$stream.Dispose()}
+    $hash=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+    if($hash -ceq $existing[$asset.Path]){Stop-Lan "Already identical Hosting asset: $($asset.Path)"}
+    $fileHashes[$asset.Path]=$hash
+    $compressedFiles[$hash]=$zip
   }
-
-  # Firebase Hosting REST requires SHA256 of GZIP-compressed JS bytes.
-  $zip=Join-Path $work 'settings.gz'
-  $stream=[IO.File]::Create($zip)
-  try {
-    $gzip=[IO.Compression.GZipStream]::new($stream,[IO.Compression.CompressionLevel]::Optimal,$true)
-    try{$gzip.Write($candidate,0,$candidate.Length)}finally{$gzip.Dispose()}
-  }finally{$stream.Dispose()}
-  $hash=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-  if($hash -ceq $existing[$target]){Stop-Lan 'No change required.'}
-  Write-Host "PASS: $($existing.Count) current Hosting paths and exact server serving config inspected." -ForegroundColor Green
-  Write-Host 'SCOPE: /admin/js/settings.js ONLY. Worker, MFA, Recovery, Rules and Public UI unchanged.' -ForegroundColor Yellow
+  Write-Host "PASS: $($existing.Count) current Hosting paths/config and approved old Admin sources inspected." -ForegroundColor Green
+  Write-Host 'SCOPE: three Admin JS files (Settings, Dashboard, Home); Worker, MFA, Recovery, Rules, Public unchanged.' -ForegroundColor Yellow
   Require-SameLiveRelease $original
-  $confirm=Read-Host 'Type DEPLOY-TELEMETRY-ONLY to publish this ONE file (Enter cancels)'
-  if($confirm -cne 'DEPLOY-TELEMETRY-ONLY'){Stop-Lan 'Deployment not authorized.'}
+  $confirm=Read-Host 'Type DEPLOY-ADMIN-PERFORMANCE to publish THREE approved files (Enter cancels)'
+  if($confirm -cne 'DEPLOY-ADMIN-PERFORMANCE'){Stop-Lan 'Deployment not authorized.'}
   Require-SameLiveRelease $original
 
   $created=Api POST "$api/sites/$site/versions" @{config=$version.config}
@@ -107,7 +118,7 @@ try {
   if($draft -notmatch '^sites/rolando-portfolio-3f1a3/versions/[A-Za-z0-9_-]+$'){Stop-Lan 'Invalid draft version name.'}
   $files=@{}
   foreach($p in $existing.Keys){$files[$p]=$existing[$p]}
-  $files[$target]=$hash
+  foreach($p in $fileHashes.Keys){$files[$p]=$fileHashes[$p]}
   $paths=@($files.Keys|Sort-Object)
   $required=@();$uploadUrl=''
   for($i=0;$i -lt $paths.Count;$i+=500){
@@ -117,10 +128,14 @@ try {
     if($populated.PSObject.Properties.Name -contains 'uploadRequiredHashes'){$required+=@($populated.uploadRequiredHashes|Where-Object {$_})}
     if($populated.PSObject.Properties.Name -contains 'uploadUrl'){$uploadUrl=[string]$populated.uploadUrl}
   }
-  if($required.Count -gt 1 -or ($required.Count -eq 1 -and $required[0] -cne $hash)){Stop-Lan 'Unexpected uploaded assets; draft NOT released.'}
-  if($required.Count -eq 1){
+  $needed=@($required | Sort-Object -Unique)
+  foreach($item in $needed){if(!$compressedFiles.ContainsKey($item)){Stop-Lan 'Unapproved file upload requested; draft NOT released.'}}
+  if($needed.Count -gt $assets.Count){Stop-Lan 'Unexpected asset count; draft NOT released.'}
+  if($needed.Count -gt 0){
     if($uploadUrl -notmatch '^https://upload-firebasehosting\.googleapis\.com/upload/sites/rolando-portfolio-3f1a3/versions/[A-Za-z0-9_-]+/files$'){Stop-Lan 'Unexpected Firebase upload location.'}
-    Invoke-RestMethod -Uri ($uploadUrl+'/'+$hash) -Method POST -Headers $auth -ContentType 'application/octet-stream' -InFile $zip -TimeoutSec 90 | Out-Null
+    foreach($item in $needed){
+      Invoke-RestMethod -Uri ($uploadUrl+'/'+$item) -Method POST -Headers $auth -ContentType 'application/octet-stream' -InFile $compressedFiles[$item] -TimeoutSec 90 | Out-Null
+    }
   }
   $draftFiles=Version-Files $draft
   if($draftFiles.Count -ne $files.Count){Stop-Lan 'Draft asset count mismatch; NOT released.'}
@@ -133,10 +148,10 @@ try {
   $release=Api POST ("$api/sites/$site/channels/live/releases?versionName="+$encoded)
   if([string]$release.version.name -cne $draft){Stop-Lan 'Release acknowledgement not confirmed. Check Hosting console before retrying.'}
   Write-Host 'PRODUCTION DEPLOY CONFIRMED: Firebase Hosting.' -ForegroundColor Green
-  Write-Host "ONE UPDATED FILE: $target" -ForegroundColor Green
+  foreach($asset in $assets){Write-Host "UPDATED ADMIN FILE: $($asset.Path)" -ForegroundColor Green}
   Write-Host "ORIGINAL VERSION: $original"
   Write-Host "NEW VERSION: $draft"
-  Write-Host 'Next: same trusted Chrome; verify Admin Settings, login and live reads. Quota may still need reset.' -ForegroundColor Cyan
+  Write-Host 'Next: same trusted Chrome; verify Home, Dashboard, Settings, login and live reads. Quota may still need reset.' -ForegroundColor Cyan
 } finally {
   $auth=$null;$token=$null
   if(Test-Path -LiteralPath $work){Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue}

@@ -125,6 +125,31 @@ jobs:
           echo "Production Worker source/config compiled locally. NO CLOUDFLARE DEPLOYMENT OCCURRED."
 
 
+  # Run the exact operator-side test suite with Windows checkout line endings.
+  # No credentials or Production deploy permissions are available to this job.
+  windows-admin-preflight:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out source with Windows CRLF behavior
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Parse guarded Hosting script in PowerShell
+        shell: pwsh
+        run: |
+          $errors = $null
+          $tokens = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("scripts/deploy-production-admin-performance.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+      - name: Run exact local operator tests under Windows
+        shell: pwsh
+        run: |
+          node --test tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs tests/admin-settings-startup-requests.test.mjs tests/admin-home-startup-requests.test.mjs tests/admin-shared-navigation-performance.test.mjs tests/production-admin-performance-release.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
   # Read-only Cloudflare metadata checks. This is NOT a deployment or a Wrangler retry.
   # Must have a separate approval and the staging deployment gate must remain OFF.
   staging-metadata-diagnostic:

@@ -16,9 +16,16 @@ $token=$null
 
 function Stop-Lan([string]$message) { throw "STOP (not deployed): $message" }
 function Api([string]$method,[string]$url,[object]$body=$null) {
-  if ($null -eq $body) { return Invoke-RestMethod -Uri $url -Headers $script:auth -Method $method -TimeoutSec 40 }
+  # The release script executes in a temporary child ScriptBlock scope. Use
+  # its locally populated credentials, NEVER the parent session's $script:auth.
+  # Refuse all calls until the local Google OAuth token has been validated.
+  if($null -eq $auth -or !$auth.ContainsKey('Authorization') -or
+      [string]::IsNullOrWhiteSpace([string]$auth.Authorization)){
+    Stop-Lan 'Production API request attempted without authorized local headers.'
+  }
+  if ($null -eq $body) { return Invoke-RestMethod -Uri $url -Headers $auth -Method $method -TimeoutSec 40 }
   $json=ConvertTo-Json -InputObject $body -Compress -Depth 90
-  return Invoke-RestMethod -Uri $url -Headers $script:auth -Method $method -ContentType 'application/json' -Body $json -TimeoutSec 40
+  return Invoke-RestMethod -Uri $url -Headers $auth -Method $method -ContentType 'application/json' -Body $json -TimeoutSec 40
 }
 function Live-Release {
   $r=Api GET "$api/sites/$site/channels/live/releases?pageSize=1"

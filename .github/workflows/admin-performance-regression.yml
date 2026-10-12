@@ -85,8 +85,8 @@ jobs:
       - name: Validate scoped Production Hosting deploy script (syntax and read-only tests)
         shell: bash
         run: |
-          pwsh -NoProfile -NonInteractive -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("scripts/deploy-production-telemetry-only.ps1",[ref]$tokens,[ref]$errors) | Out-Null; if($errors.Count -ne 0){$errors | ForEach-Object { Write-Error $_ }; exit 1}'
-          node --test tests/production-telemetry-one-file-release.test.mjs tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs
+          pwsh -NoProfile -NonInteractive -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("scripts/deploy-production-admin-performance.ps1",[ref]$tokens,[ref]$errors) | Out-Null; if($errors.Count -ne 0){$errors | ForEach-Object { Write-Error $_ }; exit 1}'
+          node --test tests/production-admin-performance-release.test.mjs tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs
       - name: Verify canonical production Public security integration and live-browser regressions
         run: node --test tests/production-public-security-integration.test.mjs tests/public-turnstile-mobile-regression.test.mjs tests/public-turnstile-lifecycle-regression.test.mjs tests/public-messenger-conversation-lifecycle.test.mjs
       - name: Run shared-navigation and staging isolation tests

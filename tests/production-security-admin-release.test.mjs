@@ -64,7 +64,10 @@ test('Live production source, complete manifest and serving config are preserved
   for(const pattern of [
     /\$actual -cne \$asset\.OldBlob/,
     /\$sourceBlob -cne \$asset\.NewBlob/,
-    /Git-Blob \(\[IO\.File\]::ReadAllBytes\(\$livePath\)\)/,
+    /\$liveBytes=\[IO\.File\]::ReadAllBytes\(\$livePath\)/,
+    /\$actual=Git-Blob \$liveBytes/,
+    /Assert-ReviewedLiveAdminBaseline \$liveBytes \$asset\.OldBlob \$asset\.Path/,
+    /\$actual -ceq \$asset\.NewBlob/,
     /\$fileHashes\[\$asset\.Path\]=\$hash/,
     /\$draftFiles=Version-Files \$draft/,
     /Require-SameLiveRelease \$original/,
@@ -85,4 +88,15 @@ test('Release requires explicit operator approval and cannot change Public, Work
   assert.match(script,/\$bytes=Get-ApprovedGitBlobBytes \$rel/);
   assert.doesNotMatch(script,/Select-Object -First 1\)\.Trim\(\)/);
   assert.match(script,/X-Goog-User-Project/);
+});
+
+test('CRLF normalization is allowed only for exact reviewed bytes and never bypasses production scope',()=>{
+  assert.match(script,/function Assert-ReviewedLiveAdminBaseline\(/);
+  assert.match(script,/\[Text\.UTF8Encoding\]::new\(\$false,\$true\)/);
+  assert.match(script,/\$source\.Replace\("`r`n","`n"\)/);
+  assert.match(script,/\(Git-Blob \$normalized\) -cne \$expected/);
+  assert.match(script,/\$baseline -cne 'strict-crlf'/);
+  assert.match(script,/production-security-hosting-line-endings\.test\.ps1/);
+  assert.match(script,/Production differs from reviewed baseline/);
+  assert.doesNotMatch(script,/\$asset\.OldBlob\s*=\s*\$actual|OldBlob='46089b44/);
 });

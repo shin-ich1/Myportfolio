@@ -39,7 +39,7 @@ test('Settings room, visibility and startup share only one telemetry gate', () =
     'Settings nav must drive subscriptions by selected room');
   assert.match(settings, /document\.addEventListener\("visibilitychange", \(\) => \{\s*syncTelemetryRealtimeForRoom\(\)/,
     'Background tab must release collection listeners');
-  assert.match(settings, /\n\s*syncTelemetryRealtimeForRoom\(\);\n\s*syncAppearancePreview\(\);/,
+  assert.match(settings, /\n\s*syncTelemetryRealtimeForRoom\(\);\n\s*void startSettingsRoomData\(document\.body\.dataset\.settingsRoom \|\| "general"\);\n\s*syncAppearancePreview\(\);/,
     'Settings startup must use canonical gate instead of unconditional listeners');
   assert.doesNotMatch(settings, /\n\s*startTelemetryRealtime\(\);\n\s*syncAppearancePreview\(\);/,
     'Do not start costly telemetry on any Settings page by default');

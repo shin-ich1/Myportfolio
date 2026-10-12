@@ -189,8 +189,11 @@ try {
      @($mfaConfig.mfa.providerConfigs|Where-Object { $null -ne $_.totpProviderConfig -and $_.state -eq 'ENABLED' }).Count -ne 1){
     Stop-Lan 'Production TOTP MFA configuration is not as approved.'
   }
-  $original=[string](Live-Release).version.name
-  if($original -cne $expectedLiveVersion){Stop-Lan 'Production Hosting version changed since the reviewed successful Admin release; no deployment.'}
+  $liveRelease=Live-Release
+  $original=[string]$liveRelease.version.name
+  if($original -cne $expectedLiveVersion){
+    Stop-Lan ("Production Hosting version mismatch; expected='{0}'; observed='{1}'; no deployment." -f $expectedLiveVersion,$original)
+  }
   $version=Api GET "$api/$original"
   if([string]$version.status -cne 'FINALIZED' -or !$version.config){Stop-Lan 'Live Hosting serving config could not be preserved.'}
   $existing=Version-Files $original

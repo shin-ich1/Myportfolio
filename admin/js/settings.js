@@ -3402,6 +3402,7 @@ function bind() {
     const room = event.detail?.key || "general";
     document.body.dataset.settingsRoom = room;
     syncTelemetryRealtimeForRoom(room);
+    void startSettingsRoomData(room);
     const panel = event.detail?.panel || settingsRoomPanels.find((candidate) => candidate.dataset.lanPanel === room);
     const reduceMotion = document.documentElement.dataset.reducedMotion === "true";
     if (panel && settingsRoomMotionEnabled && !reduceMotion) {
@@ -3581,15 +3582,40 @@ function bind() {
   });
 }
 
+// Expensive Settings reads belong to the visible Control or Publish room.
+// A single in-flight/completed promise per operation prevents duplicate scans
+// when navigation, startup and repeated tab clicks happen together.
+const settingsRoomStartupTasks = new Map();
+async function startSettingsRoomData(room) {
+  const tasks = room === "general"
+    ? [["storage hub", renderStorageHub]]
+    : room === "portfolio"
+      ? [["initialization state", loadInitialization], ["module lifecycle", renderModuleLifecycleSummary]]
+      : [];
+  await Promise.all(tasks.map(([name, run]) => {
+    if (!settingsRoomStartupTasks.has(name)) {
+      const pending = Promise.resolve().then(run).catch((error) => {
+        const message = error?.message || String(error || "Settings data unavailable.");
+        console.error("Settings " + name + " load failed.", error);
+        state.startupErrors.push(name + ": " + message);
+        window.LANNotice?.({
+          title: "Settings data unavailable",
+          message: name + " could not load. Reopen Settings after service access is restored.",
+          tone: "warning"
+        });
+      });
+      settingsRoomStartupTasks.set(name, pending);
+    }
+    return settingsRoomStartupTasks.get(name);
+  }));
+}
+
 async function start() {
   bind(); bindTelemetryMarketInteractions(); applyPreferences(); loadGreetingPreference(); loadPortfolioPassNamePreference(); loadSidebarStatusPreference(); loadDashboardVisualPreference(); fillSystemInformation();
   initializePublicPortfolioQr();
 
   const startupTasks = [
-    ["initialization state", loadInitialization],
-    ["system health", () => refreshHealth({ preferCurrent: true })],
-    ["module lifecycle", renderModuleLifecycleSummary],
-    ["storage hub", renderStorageHub]
+    ["system health", () => refreshHealth({ preferCurrent: true })]
   ];
   const results = await Promise.allSettled(startupTasks.map(([, task]) => task()));
   const failures = results.flatMap((result, index) => {
@@ -3611,6 +3637,7 @@ async function start() {
   }
 
   syncTelemetryRealtimeForRoom();
+  void startSettingsRoomData(document.body.dataset.settingsRoom || "general");
   syncAppearancePreview();
   window.setInterval(updateHealthScanAge, 10000);
 }

@@ -20,8 +20,10 @@ function Api([string]$method,[string]$url,[object]$body=$null) {
   # its locally populated credentials, NEVER the parent session's $script:auth.
   # Refuse all calls until the local Google OAuth token has been validated.
   if($null -eq $auth -or !$auth.ContainsKey('Authorization') -or
-      [string]::IsNullOrWhiteSpace([string]$auth.Authorization)){
-    Stop-Lan 'Production API request attempted without authorized local headers.'
+      [string]::IsNullOrWhiteSpace([string]$auth.Authorization) -or
+      !$auth.ContainsKey('X-Goog-User-Project') -or
+      [string]$auth['X-Goog-User-Project'] -cne $site){
+    Stop-Lan 'Production API request attempted without authorized local headers and exact quota project.'
   }
   if ($null -eq $body) { return Invoke-RestMethod -Uri $url -Headers $auth -Method $method -TimeoutSec 40 }
   $json=ConvertTo-Json -InputObject $body -Compress -Depth 90

@@ -72,6 +72,22 @@ function Git-Blob([byte[]]$bytes) {
   $sha=[Security.Cryptography.SHA1]::Create()
   try{return ([BitConverter]::ToString($sha.ComputeHash($all))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
 }
+function Assert-ReviewedLiveAdminBaseline([byte[]]$bytes,[string]$expected,[string]$path) {
+  if ((Git-Blob $bytes) -ceq $expected) { return 'exact' }
+  # Hosting can contain a Windows CRLF representation of the *exact* reviewed
+  # LF baseline. Any changed code, mixed newline, or malformed UTF-8 must STOP.
+  $strictUtf8=[Text.UTF8Encoding]::new($false,$true)
+  try { $source=$strictUtf8.GetString($bytes) }
+  catch { Stop-Lan "Production differs from reviewed baseline: $path" }
+  if (!$source.Contains("`r`n") -or [regex]::IsMatch($source,'(?<!\r)\n|\r(?!\n)')) {
+    Stop-Lan "Production differs from reviewed baseline: $path"
+  }
+  $normalized=$strictUtf8.GetBytes($source.Replace("`r`n","`n"))
+  if ((Git-Blob $normalized) -cne $expected) {
+    Stop-Lan "Production differs from reviewed baseline: $path"
+  }
+  return 'strict-crlf'
+}
 # Read exact canonical Git blob bytes, avoiding Windows CRLF checkout normalization.
 # The allowlisted HEAD:path argument is never derived from untrusted input.
 function Get-ApprovedGitBlobBytes([string]$relativePath) {
@@ -140,6 +156,8 @@ try {
   }
   & node --test tests/security-recovery-ui-handoff.test.mjs tests/security-totp-reenrollment.test.mjs tests/admin-workspace-security-gate.test.mjs tests/admin-pending-navigation-lifecycle.test.mjs tests/admin-shared-navigation-performance.test.mjs tests/settings-telemetry-read-budget.test.mjs tests/settings-lazy-room-initialization.test.mjs
   if($LASTEXITCODE -ne 0){Stop-Lan 'Security Admin and performance regression tests failed.'}
+  $lineEndingTest=Get-Content -LiteralPath '.\tests\production-security-hosting-line-endings.test.ps1' -Raw -Encoding UTF8
+  & ([ScriptBlock]::Create($lineEndingTest))
   Write-Host 'PASS: Seven pinned Security Admin files and regression tests.' -ForegroundColor Green
 
   # Consume the entire native gcloud stdout; Select-Object -First 1 can
@@ -187,10 +205,13 @@ try {
   foreach($asset in $assets){
     $livePath=Join-Path $work ($asset.Path.TrimStart('/').Replace('/','-')+'.live')
     Invoke-WebRequest -Uri ("https://$site.web.app$($asset.Path)?preflight="+[guid]::NewGuid().ToString('N')) -OutFile $livePath -UseBasicParsing -TimeoutSec 40 | Out-Null
-    $actual=Git-Blob ([IO.File]::ReadAllBytes($livePath))
+    $liveBytes=[IO.File]::ReadAllBytes($livePath)
+    $actual=Git-Blob $liveBytes
     if($actual -cne $asset.OldBlob){
       if($actual -ceq $asset.NewBlob){Stop-Lan "Asset already live: $($asset.Path); refuse mixed deployment."}
-      Stop-Lan "Production differs from reviewed baseline: $($asset.Path)"
+      $baseline=Assert-ReviewedLiveAdminBaseline $liveBytes $asset.OldBlob $asset.Path
+      if($baseline -cne 'strict-crlf'){Stop-Lan "Production differs from reviewed baseline: $($asset.Path)"}
+      Write-Host "PASS: Strictly reviewed CRLF baseline: $($asset.Path)" -ForegroundColor Green
     }
     $zip=Join-Path $work ($asset.Path.TrimStart('/').Replace('/','-')+'.gz')
     $stream=[IO.File]::Create($zip)

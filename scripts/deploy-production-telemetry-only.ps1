@@ -18,7 +18,7 @@ function Api([string]$method,[string]$url,[object]$body=$null) {
   return Invoke-RestMethod -Uri $url -Headers $script:auth -Method $method -ContentType 'application/json' -Body $json -TimeoutSec 40
 }
 function Live-Release {
-  $r=Api GET "$api/sites/$site/releases?pageSize=1"
+  $r=Api GET "$api/sites/$site/channels/live/releases?pageSize=1"
   if (!$r.releases -or @($r.releases).Count -ne 1) { Stop-Lan 'Missing latest Production Hosting release.' }
   return $r.releases[0]
 }
@@ -130,7 +130,7 @@ try {
   if([string]$final.status -cne 'FINALIZED'){Stop-Lan 'Draft not finalized; NOT released.'}
   Require-SameLiveRelease $original
   $encoded=[uri]::EscapeDataString($draft)
-  $release=Api POST ("$api/sites/$site/releases?versionName="+$encoded)
+  $release=Api POST ("$api/sites/$site/channels/live/releases?versionName="+$encoded)
   if([string]$release.version.name -cne $draft){Stop-Lan 'Release acknowledgement not confirmed. Check Hosting console before retrying.'}
   Write-Host 'PRODUCTION DEPLOY CONFIRMED: Firebase Hosting.' -ForegroundColor Green
   Write-Host "ONE UPDATED FILE: $target" -ForegroundColor Green

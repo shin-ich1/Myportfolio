@@ -133,7 +133,15 @@ try {
   $authLines=@(& $gcloud.Source auth print-access-token --quiet 2>$null)
   $gcloudExit=$LASTEXITCODE
   $token=Resolve-GoogleCloudAccessToken $authLines $gcloudExit
-  $auth=@{Authorization="Bearer $token";Accept='application/json';'Cache-Control'='no-cache'}
+  # Google OAuth user credentials must explicitly attribute API quota to
+  # the authorized Production project for Firebase Hosting REST.
+  # This is a request-scoped header; no global credential, IAM or billing change.
+  $auth=@{
+    Authorization="Bearer $token"
+    'X-Goog-User-Project'=$site
+    Accept='application/json'
+    'Cache-Control'='no-cache'
+  }
   $original=[string](Live-Release).version.name
   if($original -notmatch '^sites/rolando-portfolio-3f1a3/versions/[A-Za-z0-9_-]+$'){Stop-Lan 'Wrong Production Hosting site/version.'}
   $version=Api GET "$api/$original"

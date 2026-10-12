@@ -2827,6 +2827,16 @@ function startTelemetryRealtime() {
   }, CLOUDINARY_REFRESH_MS);
 }
 
+// The Control room alone owns expensive collection-wide live telemetry.
+// Leaving Control or hiding the browser releases the active subscriptions.
+function syncTelemetryRealtimeForRoom(room = document.body.dataset.settingsRoom || "general") {
+  if (room !== "general" || document.hidden) {
+    if (telemetryRealtimeUnsubscribers.length) stopTelemetryRealtime();
+    return;
+  }
+  if (!telemetryRealtimeUnsubscribers.length) startTelemetryRealtime();
+}
+
 function walkValues(value, visitor) { if (Array.isArray(value)) value.forEach((item) => walkValues(item, visitor)); else if (value && typeof value === "object") Object.values(value).forEach((item) => walkValues(item, visitor)); else visitor(value); }
 async function countAssets(modules = null) {
   const source = modules
@@ -3391,6 +3401,7 @@ function bind() {
   settingsRoomNav?.addEventListener("lan:tabchange", (event) => {
     const room = event.detail?.key || "general";
     document.body.dataset.settingsRoom = room;
+    syncTelemetryRealtimeForRoom(room);
     const panel = event.detail?.panel || settingsRoomPanels.find((candidate) => candidate.dataset.lanPanel === room);
     const reduceMotion = document.documentElement.dataset.reducedMotion === "true";
     if (panel && settingsRoomMotionEnabled && !reduceMotion) {
@@ -3541,6 +3552,7 @@ function bind() {
   $("dashboardVisualInput")?.addEventListener("change", async (event) => { const file = event.target.files?.[0]; if (file) await saveDashboardVisual(file); event.target.value = ""; });
   $("resetDashboardVisualButton")?.addEventListener("click", resetDashboardVisual);
   document.addEventListener("visibilitychange", () => {
+    syncTelemetryRealtimeForRoom();
     if (document.hidden || cloudinaryTelemetryState.pending) return;
     if (cloudinaryTelemetryState.retryAt > Date.now()) return;
     if (Date.now() - cloudinaryTelemetryState.updatedAt > CLOUDINARY_REFRESH_MS) fetchCloudinaryTelemetry([]);
@@ -3598,7 +3610,7 @@ async function start() {
     });
   }
 
-  startTelemetryRealtime();
+  syncTelemetryRealtimeForRoom();
   syncAppearancePreview();
   window.setInterval(updateHealthScanAge, 10000);
 }

@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 // Regression: viewing Security, Vault, or Diagnostics must not start
 // collection-wide Firestore telemetry. Only an active, visible Control
 // room may own those live subscriptions. Keep chart behavior unchanged.
-const settings = readFileSync(new URL('../admin/js/settings.js', import.meta.url), 'utf8');
+const settings = readFileSync(new URL('../admin/js/settings.js', import.meta.url), 'utf8').replace(/\r\n?/g, '\n');
 const functionSource = settings.match(/function syncTelemetryRealtimeForRoom\([^\n]*\) \{[\s\S]*?\n\}/)?.[0];
 test('Control-only telemetry subscription lifecycle is canonical and idempotent', () => {
   assert.ok(functionSource, 'Missing the canonical tab/visibility telemetry gate');

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
 const script = readFileSync(new URL('../scripts/deploy-production-public-quota-one-file.ps1', import.meta.url), 'utf8');
-const app = readFileSync(new URL('../app.js', import.meta.url));
+const app = Buffer.from(readFileSync(new URL('../app.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n'), 'utf8');
 const sha = createHash('sha1').update(Buffer.from('blob ' + app.length + '\0')).update(app).digest('hex');
 
 test('Production release is pinned to exactly one audited Public app.js file', () => {

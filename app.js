@@ -748,23 +748,7 @@ async function loadPublicCollection(name) {
   return snapshot.docs.map((item) => ({ id: item.id, ...(item.data() || {}) }));
 }
 
-async function loadPublicCapabilities(projects = [], capabilitySources = []) {
-  const skillIds = new Set();
-  const toolIds = new Set();
-
-  projects.forEach((project) => {
-    looseList(project.skillIds).forEach((id) => skillIds.add(id));
-    projectToolIds(project).forEach((id) => toolIds.add(id));
-    projectPublicTagRefs(project).forEach((ref) => (ref.type === "skill" ? skillIds : toolIds).add(ref.id));
-    const source = linkedSourceForProject(project);
-    looseList(source?.skillIds).forEach((id) => skillIds.add(id));
-    looseList(source?.toolIds).forEach((id) => toolIds.add(id));
-  });
-  capabilitySources.forEach((source) => {
-    looseList(source?.skillIds).forEach((id) => skillIds.add(id));
-    looseList(source?.toolIds).forEach((id) => toolIds.add(id));
-  });
-
+async function loadPublicCapabilities() {
   publicSkillsById = new Map();
   publicToolsById = new Map();
   const capabilityCollection = firebase.collection(firebase.db, "skills");
@@ -784,23 +768,10 @@ async function loadPublicCapabilities(projects = [], capabilitySources = []) {
     });
   });
 
-  const missing = [
-    ...[...skillIds].filter((id) => !publicSkillsById.has(id)).map((id) => ({ id, type: "skill" })),
-    ...[...toolIds].filter((id) => !publicToolsById.has(id)).map((id) => ({ id, type: "tool" }))
-  ];
-  const results = await Promise.allSettled(missing.map(async (reference) => {
-    const snapshot = await firebase.getDoc(firebase.doc(firebase.db, "skills", reference.id));
-    if (!snapshot.exists()) return null;
-    const data = snapshot.data() || {};
-    if (data.active === false || data.visible === false) return null;
-    const storedType = cleanText(data.recordType || data.capabilityType).toLowerCase();
-    if (storedType && storedType !== reference.type) return null;
-    return { type: reference.type, record: { id: snapshot.id, ...data, name: cleanText(data.name), icon: cleanText(data.icon), category: cleanText(data.category) } };
-  }));
-  results.forEach((result) => {
-    if (result.status !== "fulfilled" || !result.value?.record?.id || !result.value?.record?.name) return;
-    (result.value.type === "tool" ? publicToolsById : publicSkillsById).set(result.value.record.id, result.value.record);
-  });
+  // Public Firestore access is limited to published/visible and legacy-active
+  // capability records. A linked ID missing from both query sets is not
+  // publicly readable; per-ID getDoc fallbacks only add denied or wasted reads
+  // and can amplify cold-start costs across visitors.
 }
 
 async function initFirebase() {
@@ -914,7 +885,7 @@ async function loadPublicPortfolioData() {
 
   const projects = (loaded.get("projects") || []).filter(isPublicProjectRecord)
     .sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));
-  await loadPublicCapabilities(projects, [...rawPublicExperiences, ...rawPublicPhotoProjects, ...featureEntries]);
+  await loadPublicCapabilities();
   publicExperiences = rawPublicExperiences.map(normalizeExperience)
     .sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));
   publicPhotoProjects = rawPublicPhotoProjects.map(normalizePhotoProject)

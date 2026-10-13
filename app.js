@@ -784,11 +784,23 @@ async function loadPublicCapabilities(projects = [], capabilitySources = []) {
     });
   });
 
-  // Published+visible and legacy-active results are the only capability
-  // documents permitted by Public Firestore Rules. A linked ID missing from
-  // both sets is deleted, unpublished, or inaccessible. Do not issue an
-  // extra Firestore getDoc for each unresolved reference: it cannot safely
-  // restore a public record and can multiply reads on every visitor startup.
+  const missing = [
+    ...[...skillIds].filter((id) => !publicSkillsById.has(id)).map((id) => ({ id, type: "skill" })),
+    ...[...toolIds].filter((id) => !publicToolsById.has(id)).map((id) => ({ id, type: "tool" }))
+  ];
+  const results = await Promise.allSettled(missing.map(async (reference) => {
+    const snapshot = await firebase.getDoc(firebase.doc(firebase.db, "skills", reference.id));
+    if (!snapshot.exists()) return null;
+    const data = snapshot.data() || {};
+    if (data.active === false || data.visible === false) return null;
+    const storedType = cleanText(data.recordType || data.capabilityType).toLowerCase();
+    if (storedType && storedType !== reference.type) return null;
+    return { type: reference.type, record: { id: snapshot.id, ...data, name: cleanText(data.name), icon: cleanText(data.icon), category: cleanText(data.category) } };
+  }));
+  results.forEach((result) => {
+    if (result.status !== "fulfilled" || !result.value?.record?.id || !result.value?.record?.name) return;
+    (result.value.type === "tool" ? publicToolsById : publicSkillsById).set(result.value.record.id, result.value.record);
+  });
 }
 
 async function initFirebase() {

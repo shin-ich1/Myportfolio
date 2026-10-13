@@ -25,6 +25,11 @@ const withoutPublicOwners = text => {
   return result;
 };
 const withoutCapabilityOwner = text => withoutFunction(text, "async function loadPublicCapabilities(", "\nasync function initFirebase(", "Public capability data loader");
+const withoutCapabilityConsumer = text => {
+  const pattern = /^  await loadPublicCapabilities\([^;\n]*\);$/gm;
+  assert.equal((text.match(pattern) || []).length, 1, "Exactly one Public capability loader call");
+  return text.replace(pattern, "  [AUDITED PUBLIC CAPABILITY CALL]");
+};
 const withoutThreadOwner = text => withoutFunction(text, "export function subscribePrivateVisitorThread(", "\nexport async function sendPrivateVisitorMessage(", "visitor Firestore subscriber");
 const withoutTurnstileSlot = text => {
   assert.equal((text.match(/\.public-message-turnstile-slot\{/g) || []).length, 1);
@@ -38,8 +43,8 @@ test("Public remains frozen outside exact reviewed capability loader and existin
   // the immutable pre-Security baseline byte-for-byte after masking owners.
   assert.equal(git("hash-object", "app.js"), "9eb4a44ac585747e7c6c78f1c6f4d9030a051f39");
   assert.equal(
-    withoutCapabilityOwner(withoutPublicOwners(source("app.js"))),
-    withoutCapabilityOwner(withoutPublicOwners(original("app.js")))
+    withoutCapabilityConsumer(withoutCapabilityOwner(withoutPublicOwners(source("app.js")))),
+    withoutCapabilityConsumer(withoutCapabilityOwner(withoutPublicOwners(original("app.js"))))
   );
 });
 test("Existing Turnstile CSS slot is the sole change to audited Public styles", () => {

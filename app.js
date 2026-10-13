@@ -784,23 +784,10 @@ async function loadPublicCapabilities(projects = [], capabilitySources = []) {
     });
   });
 
-  const missing = [
-    ...[...skillIds].filter((id) => !publicSkillsById.has(id)).map((id) => ({ id, type: "skill" })),
-    ...[...toolIds].filter((id) => !publicToolsById.has(id)).map((id) => ({ id, type: "tool" }))
-  ];
-  const results = await Promise.allSettled(missing.map(async (reference) => {
-    const snapshot = await firebase.getDoc(firebase.doc(firebase.db, "skills", reference.id));
-    if (!snapshot.exists()) return null;
-    const data = snapshot.data() || {};
-    if (data.active === false || data.visible === false) return null;
-    const storedType = cleanText(data.recordType || data.capabilityType).toLowerCase();
-    if (storedType && storedType !== reference.type) return null;
-    return { type: reference.type, record: { id: snapshot.id, ...data, name: cleanText(data.name), icon: cleanText(data.icon), category: cleanText(data.category) } };
-  }));
-  results.forEach((result) => {
-    if (result.status !== "fulfilled" || !result.value?.record?.id || !result.value?.record?.name) return;
-    (result.value.type === "tool" ? publicToolsById : publicSkillsById).set(result.value.record.id, result.value.record);
-  });
+  // Public Firestore access is limited to published/visible and legacy-active
+  // capability records. A linked ID missing from both query sets is not
+  // publicly readable; per-ID getDoc fallbacks only add denied or wasted reads
+  // and can amplify cold-start costs across visitors.
 }
 
 async function initFirebase() {

@@ -1,0 +1,25 @@
+name: Public capability quota — live baseline regression
+on:
+  push:
+    branches:
+      - release/public-capability-quota-live-baseline-20261013
+  pull_request:
+    branches:
+      - main
+permissions:
+  contents: read
+jobs:
+  public-quota:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check Public script syntax
+        run: node --check app.js
+      - name: Verify frozen live Public baseline and quota regression
+        run: node --test tests/public-quota-live-baseline-freeze.test.mjs tests/public-capability-read-budget.test.mjs

@@ -24,16 +24,23 @@ const withoutPublicOwners = text => {
   result = withoutFunction(result, "async function openPublicMessageComposer() {", "\nasync function submitPublicMessage(", "visitor composer");
   return result;
 };
+const withoutCapabilityOwner = text => withoutFunction(text, "async function loadPublicCapabilities(", "\nasync function initFirebase(", "Public capability data loader");
 const withoutThreadOwner = text => withoutFunction(text, "export function subscribePrivateVisitorThread(", "\nexport async function sendPrivateVisitorMessage(", "visitor Firestore subscriber");
 const withoutTurnstileSlot = text => {
   assert.equal((text.match(/\.public-message-turnstile-slot\{/g) || []).length, 1);
   return text.replace(/\.public-message-turnstile-slot\{[^}]*\}/, "[AUDITED EXISTING TURNSTILE CSS SLOT]");
 };
 
-test("Audited Public app is frozen outside two canonical message owners and obsolete import", () => {
+test("Public remains frozen outside exact reviewed capability loader and existing message owners", () => {
   assert.equal(git("rev-parse", main + ":app.js"), "f156424e6adf216da6660648dc634319e340aa4a");
-  assert.equal(git("hash-object", "app.js"), "127feef273a51d450bf0d280b0d98bc648cd2bbf");
-  assert.equal(withoutPublicOwners(source("app.js")), withoutPublicOwners(original("app.js")));
+  // Coordinated performance dependency: this exact candidate replaces the
+  // previously pinned Public source. All unrelated Public code still matches
+  // the immutable pre-Security baseline byte-for-byte after masking owners.
+  assert.equal(git("hash-object", "app.js"), "9eb4a44ac585747e7c6c78f1c6f4d9030a051f39");
+  assert.equal(
+    withoutCapabilityOwner(withoutPublicOwners(source("app.js"))),
+    withoutCapabilityOwner(withoutPublicOwners(original("app.js")))
+  );
 });
 test("Existing Turnstile CSS slot is the sole change to audited Public styles", () => {
   assert.equal(git("rev-parse", main + ":styles.css"), "ec2f4078616f7435a5c9cc1a646fa44eb9db5f4c");

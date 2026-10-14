@@ -244,8 +244,9 @@ async function privatePrompt(label) {
 }
 async function cli() {
   const [command, option, filename, ...extra] = process.argv.slice(2);
-  if (extra.length || !['backup','verify'].includes(command) ||
-      option !== (command === 'backup' ? '--output' : '--input')) throw Error('Usage: backup --output ABS_PATH | verify --input ABS_PATH');
+  const viaWrangler = command === 'backup' && extra.length === 1 && extra[0] === '--wrangler';
+  if ((!viaWrangler && extra.length) || !['backup','verify'].includes(command) ||
+      option !== (command === 'backup' ? '--output' : '--input')) throw Error('Usage: backup --output ABS_PATH [--wrangler] | verify --input ABS_PATH');
   const namespaces = await canonicalNamespaces();
   const passphrase = await privatePrompt('Private KV backup passphrase (hidden, 16+ chars): ');
   if (command === 'verify') {
@@ -256,7 +257,9 @@ async function cli() {
   const second = await privatePrompt('Repeat private passphrase (hidden): ');
   if (passphrase !== second) throw Error('Passphrases do not match.');
   keyFor(passphrase, randomBytes(16));
-  const reader = await cloudflareReader(process.env.LAN_CLOUDFLARE_ACCOUNT_ID, process.env.CLOUDFLARE_API_TOKEN);
+  const reader = viaWrangler
+    ? await (await import('./secure-cloudflare-kv-wrangler-reader.mjs')).wranglerReader()
+    : await cloudflareReader(process.env.LAN_CLOUDFLARE_ACCOUNT_ID, process.env.CLOUDFLARE_API_TOKEN);
   const result = await makeVault(filename, passphrase, namespaces, reader.readKeys, reader.readValue);
   console.log('PASS: read-only Cloudflare KV backup written and integrity verified. Counts: ' + JSON.stringify(result.counts));
   console.log('Keep encrypted archive outside GitHub and passphrase separately. Source KV was not changed.');
@@ -280,6 +283,11 @@ export function safeBackupFailureCode(error) {
   if (message.includes('Backup path must be absolute') ||
       message.includes('Encrypted backup must be outside')) return 'UNSAFE_BACKUP_PATH';
   if (message.includes('interactive terminal')) return 'INTERACTIVE_TERMINAL_REQUIRED';
+  if (message === 'WRANGLER_INSTALL_NOT_FOUND') return 'WRANGLER_PINNED_INSTALL_MISSING';
+  if (message === 'WRANGLER_REMOTE_KV_READ_FAILED') return 'WRANGLER_REMOTE_KV_READ_FAILED';
+  if (message === 'WRANGLER_KV_LIST_FORMAT_INVALID') return 'WRANGLER_KV_LIST_FORMAT_INVALID';
+  if (message === 'WRANGLER_KV_VALUE_INVALID') return 'WRANGLER_KV_VALUE_INVALID';
+
   return 'OTHER_LOCAL_OR_NETWORK_ERROR';
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

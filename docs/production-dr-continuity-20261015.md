@@ -51,6 +51,19 @@ if ($LASTEXITCODE -ne 0) { throw "Verify HOLD (do not rerun)" }
 
 Enter your own private 16+ character backup passphrase at the local hidden prompts. It is **not** your Admin/Cloudflare password. Wrangler reads exact canonical remote namespaces with `kv key list` and `kv key get` (all read-only) through its existing OAuth login; stdout binary values are consumed in memory, never printed to the terminal or stored plaintext. As before, all data are saved only in the private authenticated encrypted vault. The vault reports only counts and integrity PASS/HOLD. **This procedure is prepared and CI-checked, but not yet a completed live backup.**
 
+## Isolated encrypted KV reconstruction — no cloud writes
+
+The owner already completed and verified the real encrypted snapshot: **STORAGE_OAUTH 10** and **PORTFOLIO_MESSAGES 5** records. Do not back up again.
+
+After pulling this reviewed source into the existing `LAN-KV-Backup-Runner` worktree, the canonical backup tool can reconstruct each encrypted binary value, metadata and expiration **into bounded process memory only**, authenticate the archive and manifest, compare every restored count and wipe the temporary bytes. It does not connect to Cloudflare, Firebase or a server, write plaintext, or import stale OAuth/push records. This is a **rehydration proof**, not a live KV namespace restoration or an Auth/MFA test.
+
+```powershell
+$file = "$HOME\LAN-Private-Backups\cloudflare-kv-20261015.lankv"
+node .\scripts\secure-cloudflare-kv-backup.mjs rehearse --input $file
+```
+
+Enter the same original, private 16+ character vault passphrase. Console output contains only PASS/HOLD and namespace counts. Never send the archive, passphrase or OAuth values to the repository, CI or chat.
+
 ## Auth/MFA restoration decision — isolated only
 
 If Firebase Auth still exists, Admin locked out: use the previously issued **offline Master Recovery Key** in the existing server-validated emergency process and fresh TOTP/trusted-device setup. Staging already tested this path; never spend the active Production key to rehearse.

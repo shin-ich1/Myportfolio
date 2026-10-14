@@ -27,6 +27,20 @@ jobs:
           if ($source -notmatch "lan-portfolio-staging" -or $source -notmatch "ConfirmStagingWrite") { throw "Staging project and operator guard required." }
           if ($source -match "rolando-portfolio-3f1a3|lan-cloudinary-telemetry|/security/recovery/start") { throw "Forbidden Production target or recovery endpoint." }
           Write-Host "PASS: staging drill syntax and exact staging-only scope; no cloud calls."
+      - name: Lint disposable Cloudflare PITR rehearsal without deployment
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("scripts/staging-cloudflare-pitr-drill.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+          node --check tests/cloudflare-isolated-pitr-drill-worker.mjs
+          $active = Get-Content "tests/cloudflare-isolated-pitr-drill-wrangler.jsonc" -Raw | ConvertFrom-Json
+          $retired = Get-Content "tests/cloudflare-isolated-pitr-drill-cleanup.jsonc" -Raw | ConvertFrom-Json
+          if ($active.name -ne 'lan-dr-pitr-test-20261015' -or $retired.name -ne $active.name) { throw "Wrong isolated Worker identity." }
+          if ($active.durable_objects.bindings.Count -ne 1 -or $active.durable_objects.bindings[0].class_name -ne 'LanDisposablePitrDrill') { throw "Unexpected Durable Object binding." }
+          if ($retired.durable_objects.bindings.Count -ne 0 -or $retired.exports.LanDisposablePitrDrill.state -ne 'deleted') { throw "Cleanup must retire isolated class only." }
+          Write-Host "PASS: isolated PITR fixture, PowerShell syntax and tombstone policy. NO DEPLOY."
       - name: Verify frozen source contracts (no production calls)
         shell: bash
         run: |

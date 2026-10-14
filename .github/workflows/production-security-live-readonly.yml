@@ -69,6 +69,27 @@ jobs:
             failures++;
             console.error('FAIL Worker health: ' + error.message);
           }
+          // Public, non-mutating negative probes: never print response bodies.
+          // A token-free client must not access Admin Security state.
+          const noAuthRoutes = ['/security/access-state', '/security/devices', '/security/sessions'];
+          for (const path of noAuthRoutes) {
+            try {
+              const response = await fetch(new URL(path, worker).href, {
+                method: 'GET',
+                signal: AbortSignal.timeout(deadline),
+                headers: { 'Accept': 'application/json', 'Origin': publicSite }
+              });
+              const denied = response.status === 401 || response.status === 403;
+              console.log((denied ? 'PASS ' : 'FAIL ') + 'Anonymous Security GET ' + path + ': HTTP ' + response.status);
+              if (!denied) failures++;
+              // Do not read or log any response body even if the backend is misconfigured.
+              await response.body?.cancel();
+            } catch (error) {
+              failures++;
+              console.error('FAIL Anonymous Security GET ' + path + ': ' + error.message);
+            }
+          }
+          console.log('NOTE: These probes verify live anonymous endpoint denials, NOT authenticated session policy or deployed Firebase Rules.');
           console.log('NOTE: Firebase Rules release and Cloudflare deployed Worker source are NOT attested by public endpoints.');
           if (failures) {
             console.error('HOLD: ' + failures + ' live read-only check(s) failed. No Production writes performed.');

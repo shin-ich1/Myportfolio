@@ -15,7 +15,7 @@ const CONTENT_ROOTS = new Set([
 const validSegment = segment => typeof segment === 'string' && segment !== '.' &&
   segment !== '..' && !/^__.*__$/.test(segment) &&
   Buffer.byteLength(segment, 'utf8') > 0 && Buffer.byteLength(segment, 'utf8') <= 1500 &&
-  !/[\\u0000-\\u001F\\u007F]/u.test(segment);
+  !/[\u0000-\u001F\u007F]/u.test(segment);
 const LIMIT = 100000;
 
 export function createSafeRecoveryScan(knownRootCollections) {

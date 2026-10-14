@@ -16,6 +16,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Validate STAGING-only restore script (syntax + target guard)
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("scripts/staging-firestore-restore-drill.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+          $source = Get-Content "scripts/staging-firestore-restore-drill.ps1" -Raw
+          if ($source -notmatch "lan-portfolio-staging" -or $source -notmatch "ConfirmStagingWrite") { throw "Staging project and operator guard required." }
+          if ($source -match "rolando-portfolio-3f1a3|lan-cloudinary-telemetry|/security/recovery/start") { throw "Forbidden Production target or recovery endpoint." }
+          Write-Host "PASS: staging drill syntax and exact staging-only scope; no cloud calls."
       - name: Verify frozen source contracts (no production calls)
         shell: bash
         run: |

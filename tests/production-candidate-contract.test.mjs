@@ -17,18 +17,18 @@ function gitBlobSha(path){
 test('Frozen Public structural sources and exact-reviewed message security assets are pinned',()=>{
   const frozen={
     'index.html':'ba6b29cd5d2a84286850022f9f7ef075df5a73a5',
-    'app.js':'9eb4a44ac585747e7c6c78f1c6f4d9030a051f39',
-    'styles.css':'0b051406a79279b6801ef71adeefa88dcaa46cba', // reviewed single Turnstile slot CSS change
+    'app.js':'6971fde459ea2b59fc4868cae37bade0232e8765',
+    'styles.css':'ec2f4078616f7435a5c9cc1a646fa44eb9db5f4c', // exact current Production freeze
     'public-adaptive.js':'62ec14a5cde2655ce199f5e00085db884b9bcead',
     'public-layout-contract.js':'4c21875d832b06cafad0bebc0ee09b467cbd4ca8',
     'public-section-eligibility.js':'4304cc5a2c2c4d2b6b93a0fd8e49d15044dbe748'
   };
-  // app.js pins the exact coordinated quota candidate (one Public capability
-  // loader + its sole caller), alongside the audited Messenger changes.
-  // Public layout and all other code must still match the frozen original
-  // as checked by tests/production-public-security-integration.test.mjs.
-  // styles.css retains the deployed PR13 bytes.
-  assert.equal(gitBlobSha('message-service.js'),'fbbe71500e856d0c553edf689bc2c293fbbc5079',
+  // The exact live Public source (attested via Production HTTPS) is frozen:
+  // approved bounded Public capability loader and its sole caller, but NO
+  // unapproved Messenger/Turnstile candidate modifications.
+  // tests/production-frozen-public-regression.test.mjs audits the one owner,
+  // its caller, and unmodified rest-of-Public structure against main.
+  assert.equal(gitBlobSha('message-service.js'),'764a353722a63067b0335f80c17c09fbbfc00a06',
     'Only the audited Firestore visitor subscription may change');
   for(const [path,sha] of Object.entries(frozen)){
     assert.ok(sha,'Missing audited production blob hash for '+path);

@@ -49,7 +49,7 @@ node .\scripts\secure-cloudflare-kv-backup.mjs verify --input $file
 if ($LASTEXITCODE -ne 0) { throw "Verify HOLD (do not rerun)" }
 ```
 
-Enter your own private 16+ character backup passphrase at the local hidden prompts. It is **not** your Admin/Cloudflare password. Wrangler reads exact canonical remote namespaces with `kv key list` and `kv key get` (all read-only) through its existing OAuth login; stdout binary values are consumed in memory, never printed to the terminal or stored plaintext. As before, all data are saved only in the private authenticated encrypted vault. The vault reports only counts and integrity PASS/HOLD. **This procedure is prepared and CI-checked, but not yet a completed live backup.**
+Enter your own private 16+ character backup passphrase at the local hidden prompts. It is **not** your Admin/Cloudflare password. Wrangler reads exact canonical remote namespaces with `kv key list` and `kv key get` (all read-only) through its existing OAuth login; stdout binary values are consumed in memory, never printed to the terminal or stored plaintext. As before, all data are saved only in the private authenticated encrypted vault. The vault reports only counts and integrity PASS/HOLD. **The owner completed the live read-only encrypted snapshot and independent verification on 2026-10-15; the two namespaces contained 10 and 5 records. Do **not** rerun this backup procedure as part of routine release sign-off.**
 
 ## Isolated encrypted KV reconstruction — no cloud writes
 
@@ -72,12 +72,77 @@ If Firebase Auth project/identity provider is lost: privileged owner-controlled 
 
 If Cloudflare Worker/KV/DO is lost: restore reviewed code, exact bindings and necessary owner-controlled secrets in an isolated environment, verify KV cryptographic archive and OAuth/message semantics, create fresh coordinator security challenge state, and require fresh user step-up rather than re-enabling spent challenges or expired sessions.
 
+## Fail-closed Firestore forward-repair rehearsal (new)
+
+The Firestore archive includes `authorizedAdministrators`, old trusted devices, sessions,
+security recovery hashes, challenges, step-ups and other security records. **Never replay these
+into a recovered project.** The canonical restore policy is
+`scripts/security-dr-restore-policy.mjs`; the existing encrypted Firestore verifier owns
+its only consumer.
+
+After syncing the reviewed source, if the private Firestore backup remains available,
+run this **offline, read-only** command on the private machine:
+
+```powershell
+node .\scripts\secure-firestore-backup.mjs rehearse --input "ABSOLUTE_PRIVATE_FIRESTORE_BACKUP_PATH.lanfbak"
+```
+
+Use the existing **Firestore** backup passphrase (24+ characters), not the separate KV
+passphrase. Nothing is uploaded. The validator authenticates the entire archive and
+classifies every document. Only reviewed portfolio content can become **restore
+candidates**; `authorizedAdministrators`, all `adminSecurity*` roots, private messages,
+settings and migrations are quarantined. This command makes **zero remote/local data
+writes**, displays counts but no record contents, and **does not restore anything**.
+Missing records, malformed paths, duplicate documents and authentication failures
+fail closed. Old sessions and trusted devices must never come back from a snapshot.
+The content candidates still require reviewed isolated target restoration later.
+
+## Isolated complete-infrastructure rebuild — not yet certified
+
+**A full certificate requires an actual isolated environment**, not a synthetic test:
+
+1. Create a separate disposable Firebase project and Identity Platform test Auth
+   tenant/project with TOTP MFA enabled; never reuse the Production Firebase UID,
+   enrollment secret or Recovery Key. Rebuild a fresh, nonprivileged test identity
+   with a new password and enroll *new* TOTP on an authenticator; verify wrong code,
+   temporary login, trusted enrollment and logout/login behavior.
+2. Restore **only reviewed content candidates** into isolated Firestore. Keep
+   `authorizedAdministrators` and every historical `adminSecurity*` record excluded.
+   Owner-controlled IAM then provisions the **new** authorized UID through the
+   audited `authorize-admin.mjs` flow. This is the only Admin authorization
+   mechanism, not an allow-all rule or frontend bypass.
+3. Recreate an isolated Worker with an **isolated SECURITY_COORDINATOR SQLite
+   Durable Object**, its own KV namespace IDs and isolated secret inventory;
+   never attach any production KV/DO binding or automatically copy credentials.
+   Verify staging Worker `FIREBASE_PROJECT_ID`, service-account secret names,
+   `SECURITY_RECOVERY_PEPPER`, push/VAPID config and Google OAuth/Cloudinary
+   integration requirements from owner-held private manager. Secret values must
+   never enter GitHub, logs, archive summaries or chat.
+4. Confirm that all old session/device identifiers and previously issued Firebase
+   credentials fail **both** Worker and Firestore access. Even if a historical
+   archive contains `active:true`, it is never imported. Re-enroll trusted devices
+   only after fresh TOTP; issue and privately store a **new** Master Recovery Key.
+5. The old KV encrypted archive supports authenticated in-memory rehydration, but
+   OAuth refresh tokens and push subscriptions may be expired or invalid after
+   disaster. Do **not** replay OAuth or push endpoints into an isolated project
+   without a privacy and scope review; test new OAuth consent/reauthorization.
+6. Record separate operator evidence for the actual new Auth+TOTP, authorized
+   Firestore permission denial, Worker route/session revocation, fresh DO challenge
+   rejection, KV integration, bounded restore time, and cleanup. Only then mark
+   **full-stack DR certified**. Cloudflare DO PITR from old live state is not a
+   safe substitute; past challenges must remain spent.
+
+No current connector has been authorized to create isolated Firebase Auth projects,
+configure Cloudflare secrets or perform an MFA QR challenge for the owner. These
+steps cannot be claimed PASS by source tests or simulated HTTP responses. A
+production-wide reset must never be used to accelerate the rehearsal.
+
 ## Remaining DR acceptance criteria
 
 - [x] Live Admin/TOTP/trust and live same-token server-denial.
 - [x] Encrypted Firestore snapshot and synthetic staging restore.
 - [x] Isolated Cloudflare SQLite DO PITR and cleanup.
-- [ ] Owner has privately generated and separately verified the two-KV encrypted archive.
+- [x] Owner privately generated and separately verified the two-KV encrypted archive (10 and 5 records).
 - [ ] Isolated full Auth/MFA + KV + credentials rebuild, with no revoked session resurrection.
 - [ ] Full-stack fail-closed recovery plan authorized for a real incident.
 

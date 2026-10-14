@@ -4,6 +4,7 @@ import {
   beginStepUpVerification,
   completeStepUpVerification,
   createDeviceEnrollmentChallenge,
+  discardPendingDeviceEnrollment,
   getDeviceEnrollmentStatus,
   approveDeviceEnrollment,
   completeDeviceEnrollment,
@@ -15,6 +16,7 @@ import {
   changeAdministratorPassword,
   resetAuthenticatorEnrollment,
   generateRecoveryKit,
+  activatePreparedRecoveryKit,
   listSecurityActivity,
   getSecurityEmailBranding,
   saveSecurityEmailBranding
@@ -27,9 +29,8 @@ let currentEnrollment = null;
 let activeStepUpRequest = null;
 let enrollmentWatchTimer = null;
 let enrollmentCompletionInFlight = false;
-let securityAccessStateWatchTimer = null;
 let securityAccessStateRefreshInFlight = false;
-const SECURITY_ACCESS_STATE_SYNC_INTERVAL_MS = 3000;
+let recoveryRotationActivationPending = false;
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -159,49 +160,22 @@ async function refreshSecurityAccessState() {
   }
 }
 
-function stopSecurityAccessStateWatch() {
-  if (securityAccessStateWatchTimer) clearTimeout(securityAccessStateWatchTimer);
-  securityAccessStateWatchTimer = null;
-}
-
-function startSecurityAccessStateWatch({ immediate = false } = {}) {
-  stopSecurityAccessStateWatch();
-  if (!securityPanelIsLiveVisible()) return;
-  const run = async () => {
-    securityAccessStateWatchTimer = null;
-    await refreshSecurityAccessState();
-    if (securityPanelIsLiveVisible()) {
-      securityAccessStateWatchTimer = setTimeout(run, SECURITY_ACCESS_STATE_SYNC_INTERVAL_MS);
-    }
-  };
-  securityAccessStateWatchTimer = setTimeout(run, immediate ? 0 : SECURITY_ACCESS_STATE_SYNC_INTERVAL_MS);
-}
-
+// Reading the complete Sessions/Devices lists every few seconds consumed
+// thousands of billable Firestore reads. The server still checks the CURRENT
+// session on every protected request and enforces revocation immediately.
+// Refresh list UI only when the operator actually returns to Security & Access.
 window.addEventListener('focus', () => {
-  if (!securityPanelIsLiveVisible()) return;
-  void refreshSecurityAccessState();
-  startSecurityAccessStateWatch();
+  if (securityPanelIsLiveVisible()) void refreshSecurityAccessState();
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') {
-    stopSecurityAccessStateWatch();
-    return;
-  }
-  if (!securityPanelIsLiveVisible()) return;
-  void refreshSecurityAccessState();
-  startSecurityAccessStateWatch();
+  if (securityPanelIsLiveVisible()) void refreshSecurityAccessState();
 });
 
 document.addEventListener('lan:tabchange', event => {
-  if (event.detail?.key !== 'security') {
-    stopSecurityAccessStateWatch();
-    return;
-  }
-  startSecurityAccessStateWatch({ immediate: true });
+  if (event.detail?.key !== 'security') return;
+  void refreshSecurityAccessState();
 });
-
-window.addEventListener('pagehide', stopSecurityAccessStateWatch);
 
 function stopEnrollmentApprovalWatch() {
   if (enrollmentWatchTimer) clearTimeout(enrollmentWatchTimer);
@@ -241,6 +215,7 @@ function startEnrollmentApprovalWatch(challengeId, expiresAt) {
     if (!currentEnrollment || currentEnrollment.approvalOnly || currentEnrollment.challengeId !== challengeId) return;
     if (expiresAt && Date.parse(expiresAt) <= Date.now()) {
       $('trustedDeviceStatus').textContent = 'Enrollment challenge expired. Start Trust This Device again.';
+      void discardPendingDeviceEnrollment(challengeId).catch(()=>{});
       return;
     }
     try {
@@ -254,6 +229,7 @@ function startEnrollmentApprovalWatch(challengeId, expiresAt) {
       const code = String(error?.code || '');
       if (code === 'security-enrollment-invalid' || code === 'security-enrollment-expired') {
         $('trustedDeviceStatus').textContent = error.message;
+        void discardPendingDeviceEnrollment(challengeId).catch(()=>{});
         return;
       }
       enrollmentWatchTimer = setTimeout(poll, 1800);
@@ -582,7 +558,10 @@ $('approveTrustedDeviceButton')?.addEventListener('click', async () => {
 
 $('closeTrustedDeviceEnrollmentButton')?.addEventListener('click', () => {
   const wasApprovalOnly = currentEnrollment?.approvalOnly === true;
+  const abandonedChallenge = !wasApprovalOnly && !enrollmentCompletionInFlight
+    ? currentEnrollment?.challengeId : '';
   stopEnrollmentApprovalWatch();
+  if (abandonedChallenge) void discardPendingDeviceEnrollment(abandonedChallenge).catch(()=>{});
   $('trustedDeviceEnrollment').hidden = true;
   currentEnrollment = null;
   if (wasApprovalOnly) clearEnrollmentApprovalRoute();
@@ -649,16 +628,58 @@ $('revokeTemporarySessionsButton')?.addEventListener('click', async () => {
 });
 
 $('generateRecoveryKitButton')?.addEventListener('click', async () => {
+  if(recoveryRotationActivationPending)return;
+  const launch=$('generateRecoveryKitButton');
+  if(launch)launch.disabled=true;
   try {
     await stepUp('generate or rotate the Recovery Kit');
     const kit = await generateRecoveryKit();
+    if(kit?.state!=='kit-prepared' || !kit.rotationId || !kit.preparedKitId ||
+       !kit.masterKey || !Array.isArray(kit.backupCodes) || kit.backupCodes.length!==8) {
+      throw Error('Security Gateway did not prepare a complete Recovery Kit.');
+    }
     const output = $('recoveryKitOutput');
-    output.hidden = false;
-    output.innerHTML = `<strong>Save this now. It will not be shown again.</strong><div class="settings-recovery-key-card"><div class="settings-recovery-key-head"><span>Master Recovery Key</span><button class="editor-secondary-button button-compact" id="copyRecoveryMasterKeyButton" type="button">Copy key</button></div><pre class="settings-recovery-key-value" data-recovery-master-key>${esc(kit.masterKey)}</pre><small id="recoveryCopyStatus" aria-live="polite">Store this key offline. Only its secure server-side hash is retained.</small></div><p>One-time backup codes</p><pre>${esc((kit.backupCodes || []).join('\n'))}</pre>`;
-    await refresh();
-  } catch (error) {
-    if (error?.code !== 'security/cancelled') window.alert(error.message);
+    recoveryRotationActivationPending=true;
+    output.hidden=false;
+    output.innerHTML = `<strong>Save this NEW Recovery Kit offline before activation.</strong><div class="settings-recovery-key-card"><div class="settings-recovery-key-head"><span>Master Recovery Key</span><button class="editor-secondary-button button-compact" id="copyRecoveryMasterKeyButton" type="button">Copy key</button></div><pre class="settings-recovery-key-value" data-recovery-master-key>${esc(kit.masterKey)}</pre><small id="recoveryCopyStatus" aria-live="polite">The current Recovery Key is still active until you confirm this saved kit.</small></div><p>New one-time backup codes</p><pre>${esc(kit.backupCodes.join('\n'))}</pre><label><input type="checkbox" id="recoveryRotationSavedConfirmation"> I saved the new key and all backup codes offline.</label><button type="button" id="activateRecoveryKitButton" class="editor-secondary-button" disabled>Activate saved Recovery Kit</button><p id="recoveryActivationStatus" role="status" aria-live="polite">Your saved kit is not active yet. Keep this window open until confirmation.</p>`;
+    const saved=output.querySelector('#recoveryRotationSavedConfirmation');
+    const activationButton=output.querySelector('#activateRecoveryKitButton');
+    const status=output.querySelector('#recoveryActivationStatus');
+    saved.addEventListener('change',()=>{
+      activationButton.disabled=!saved.checked;
+    });
+    activationButton.addEventListener('click',async()=>{
+      if(!saved.checked)return;
+      activationButton.disabled=true;
+      if(status)status.textContent='Activating the new Recovery Kit…';
+      try{
+        const result=await activatePreparedRecoveryKit(kit.rotationId,kit.preparedKitId);
+        if(result?.state!=='recovery-kit-active')
+          throw Error('Security Gateway has not confirmed Recovery Kit activation.');
+        // A saved offline copy is required. Clear plaintext after server
+        // confirmation; no frontend storage or duplicate key owner.
+        recoveryRotationActivationPending=false;
+        output.replaceChildren();
+        const message=document.createElement('p');
+        message.textContent='Recovery Kit activated. Its secret material is no longer displayed. Keep your saved offline copy.';
+        output.append(message);
+        if(launch)launch.disabled=false;
+        await refresh();
+      }catch(error){
+        if(status)status.textContent='Activation was not confirmed. Keep your saved kit and retry activation; do not generate another key.';
+        activationButton.disabled=!saved.checked;
+        window.alert(error?.message||'Recovery Kit activation could not be confirmed.');
+      }
+    });
+  }catch(error){
+    if(!recoveryRotationActivationPending && launch)launch.disabled=false;
+    if(error?.code!=='security/cancelled')window.alert(error?.message||'Recovery Kit preparation failed.');
   }
+});
+window.addEventListener('beforeunload',event=>{
+  if(!recoveryRotationActivationPending)return;
+  event.preventDefault();
+  event.returnValue='';
 });
 
 $('recoveryKitOutput')?.addEventListener('click', async event => {
@@ -703,6 +724,7 @@ $('securityEmailBrandingForm')?.addEventListener('submit', async event => {
   event.preventDefault();
   const status = $('securityEmailBrandingStatus');
   try {
+    await stepUp('save security email branding');
     await saveSecurityEmailBranding({
       senderName: $('securityEmailSenderName').value,
       logoUrl: $('securityEmailLogoUrl').value,
@@ -719,6 +741,5 @@ const incomingEnrollmentId = new URLSearchParams(window.location.search).get('ap
 void (async () => {
   await refresh();
   if (incomingEnrollmentId) await initializeIncomingEnrollment(incomingEnrollmentId);
-  startSecurityAccessStateWatch();
 })();
 loadBranding();

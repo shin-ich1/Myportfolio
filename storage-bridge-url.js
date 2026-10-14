@@ -29,6 +29,11 @@ function isLocalPortfolioRuntime(locationRef = runtimeLocation()) {
  * Public to disagree about where the Worker lives.
  */
 export function configuredStorageBridgeUrl({ locationRef = runtimeLocation(), storage = runtimeStorage() } = {}) {
+  // A generated staging build must never use a persisted production URL override.
+  // The canonical bridge owner enforces this without changing production behavior.
+  if (telemetryBridgeConfig.enforceConfiguredBridge === true) {
+    return text(telemetryBridgeConfig.productionUrl);
+  }
   let override = '';
   try { override = text(storage?.getItem?.(STORAGE_BRIDGE_OVERRIDE_KEY)); } catch {}
   if (override) return override;

@@ -1,0 +1,105 @@
+name: Guarded Security release source ZIP (NO DEPLOY)
+on:
+  push:
+    branches:
+      - release/production-frozen-public-security-20261014
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate STAGING-only restore script (syntax + target guard)
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("scripts/staging-firestore-restore-drill.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+          $source = Get-Content "scripts/staging-firestore-restore-drill.ps1" -Raw
+          if ($source -notmatch "lan-portfolio-staging" -or $source -notmatch "ConfirmStagingWrite") { throw "Staging project and operator guard required." }
+          if ($source -match "rolando-portfolio-3f1a3|lan-cloudinary-telemetry|/security/recovery/start") { throw "Forbidden Production target or recovery endpoint." }
+          Write-Host "PASS: staging drill syntax and exact staging-only scope; no cloud calls."
+      - name: Lint disposable Cloudflare PITR rehearsal without deployment
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("scripts/staging-cloudflare-pitr-drill.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+          node --check tests/cloudflare-isolated-pitr-drill-worker.mjs
+          $active = Get-Content "tests/cloudflare-isolated-pitr-drill-wrangler.jsonc" -Raw | ConvertFrom-Json
+          $retired = Get-Content "tests/cloudflare-isolated-pitr-drill-cleanup.jsonc" -Raw | ConvertFrom-Json
+          if ($active.name -ne 'lan-dr-pitr-test-20261015' -or $retired.name -ne $active.name) { throw "Wrong isolated Worker identity." }
+          if ($active.durable_objects.bindings.Count -ne 1 -or $active.durable_objects.bindings[0].class_name -ne 'LanDisposablePitrDrill') { throw "Unexpected Durable Object binding." }
+          if ($retired.durable_objects.bindings.Count -ne 0 -or $retired.exports.LanDisposablePitrDrill.state -ne 'deleted') { throw "Cleanup must retire isolated class only." }
+          $runner = Get-Content "scripts/staging-cloudflare-pitr-drill.ps1" -Raw
+          if ($runner -notmatch '--secrets-file\s+\$ephemeralSecrets') { throw "Must atomically bind disposable secret with code." }
+          if ($runner -match '\$token\s*\|\s*&\s*\$wrangler\s+secret\s+put') { throw "PowerShell stdin secret pipe is forbidden for PITR fixture." }
+          if ($runner -notmatch 'Remove-Item\s+\$temp\s+-Recurse\s+-Force') { throw "Ephemeral secret file cleanup required." }
+          $fixture = Get-Content "tests/cloudflare-isolated-pitr-drill-worker.mjs" -Raw
+          if ($fixture -notmatch "/drill/ready" -or $runner -notmatch "authenticated-version-readiness") {
+            throw "A protected non-mutating readiness probe must precede PITR."
+          }
+          if ($runner.IndexOf("authenticated-version-readiness") -gt $runner.IndexOf("baseline-and-mutate")) {
+            throw "Must verify exact token before writing disposable DO state."
+          }
+          Write-Host "PASS: isolated PITR fixture, PowerShell syntax, disposable secret binding and tombstone policy. NO DEPLOY."
+      - name: Verify frozen source contracts (no production calls)
+        shell: bash
+        run: |
+          set -euo pipefail
+          check() {
+            local path="$1" expected="$2" actual
+            actual="$(git rev-parse "HEAD:$path")"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::Source contract mismatch for $path"
+              exit 1
+            fi
+            printf 'PASS reviewed source: %s\n' "$path"
+          }
+          check firestore.rules 2b67f1322118e51b848f49fca24b986559c34a64
+          check telemetry-worker/src/index.js 38cca6ba99dfc50ac1b8c9dcd4f5f8efbf0984d0
+          check app.js 6971fde459ea2b59fc4868cae37bade0232e8765
+          check styles.css ec2f4078616f7435a5c9cc1a646fa44eb9db5f4c
+          check message-service.js 764a353722a63067b0335f80c17c09fbbfc00a06
+          check index.html ba6b29cd5d2a84286850022f9f7ef075df5a73a5
+          check admin/services/adminSecurityService.js 311ed5ed3849182b4782a3785c075ed020322c38
+      - name: Assemble exact tracked Git release candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/lan-source"
+          git archive --format=tar HEAD | tar -xf - -C "$RUNNER_TEMP/lan-source"
+          mkdir -p "$RUNNER_TEMP/bundle"
+          cd "$RUNNER_TEMP/lan-source"
+          cat > RELEASE-CANDIDATE-STATUS.txt <<'EOF'
+          LΛN Portfolio CMS - Security release source candidate
+          Source: GitHub guarded branch release/production-frozen-public-security-20261014
+          NO PRODUCTION DEPLOY PERFORMED BY THIS WORKFLOW.
+          Existing production Worker/Rules/Admin/Public source has been independently attested.
+          This is source-only: no Firebase Auth, Firestore data, Worker secrets, DO/KV data
+          or encrypted backups are included.
+          IMPORTANT: Full release sign-off remains HOLD for authenticated revoked-session
+          live denial and complete Firebase Auth/MFA plus Cloudflare DO/KV disaster recovery.
+          Do not bulk deploy this source over the frozen Public site or rollback pre-DO Worker.
+          Consult docs/production-backup-rollback-cutover.md before any scoped release.
+          EOF
+          printf 'SOURCE_COMMIT=%s\n' "$GITHUB_SHA" > RELEASE-SOURCE-COMMIT.txt
+          zip -q -r "$RUNNER_TEMP/bundle/LAN-Security-Release-Candidate.zip" .
+          sha256sum "$RUNNER_TEMP/bundle/LAN-Security-Release-Candidate.zip" > "$RUNNER_TEMP/bundle/LAN-Security-Release-Candidate.sha256"
+          echo "Source ZIP assembled from exact tracked commit $GITHUB_SHA"
+      - name: Upload ZIP and digest (no deployment)
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAN-Security-Release-Candidate
+          path: ${{ runner.temp }}/bundle/
+          if-no-files-found: error
+          retention-days: 30

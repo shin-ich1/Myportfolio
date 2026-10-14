@@ -1393,21 +1393,52 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
     });
   }
 
-  async function hydrateAdminAvatar() {
-    // Give auth-guard time to publish its ready promise, then read the canonical
-    // Home portrait. If Firestore is unavailable, the bundled Hero portrait is
-    // a safe visual fallback; initials remain the final fallback.
-    try {
-      for (let index = 0; index < 40 && !window.__LAN_ADMIN_READY__; index += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      if (window.__LAN_ADMIN_READY__) await window.__LAN_ADMIN_READY__;
-      const { loadHome } = await import("../services/homeService.js");
-      const home = await loadHome();
-      applyAdminAvatar(home?.portrait || "/assets/images/hero.png");
-    } catch (error) {
+  const ADMIN_AVATAR_FALLBACK = "/assets/images/hero.png";
+
+  async function readAdminAvatarSource() {
+    // Only the persistent shell owns the canonical Home portrait read.
+    for (let index = 0; index < 40 && !window.__LAN_ADMIN_READY__; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    if (window.__LAN_ADMIN_READY__) await window.__LAN_ADMIN_READY__;
+    const { loadHome } = await import("../services/homeService.js");
+    const home = await loadHome();
+    return home?.portrait || ADMIN_AVATAR_FALLBACK;
+  }
+
+  let shellAvatarSourcePromise = null;
+  if (isPersistentShell) {
+    shellAvatarSourcePromise = readAdminAvatarSource().catch((error) => {
       console.warn("Admin avatar could not read the saved Hero portrait.", error);
-      applyAdminAvatar("/assets/images/hero.png");
+      return ADMIN_AVATAR_FALLBACK;
+    });
+    window.LANAdminAvatarSource = () => shellAvatarSourcePromise;
+    // The Home editor already owns the save. Update the persistent shell only
+    // after that save succeeds; never re-fetch the same record per iframe.
+    window.addEventListener("lan:admin-home-portrait-saved", (event) => {
+      const source = resolveShellMediaUrl(event.detail?.portrait) || ADMIN_AVATAR_FALLBACK;
+      shellAvatarSourcePromise = Promise.resolve(source);
+      applyAdminAvatar(source);
+    });
+  }
+
+  async function hydrateAdminAvatar() {
+    try {
+      const sourcePromise = isPersistentWorkspace
+        ? window.parent?.LANAdminAvatarSource?.()
+        : isPersistentShell
+          ? shellAvatarSourcePromise
+          : readAdminAvatarSource();
+      if (!sourcePromise || typeof sourcePromise.then !== "function") {
+        throw new Error("Persistent shell avatar source is unavailable.");
+      }
+      const source = await sourcePromise;
+      // A newer Home save wins over an older Home read still in flight.
+      if (isPersistentShell && shellAvatarSourcePromise !== sourcePromise) return;
+      applyAdminAvatar(source);
+    } catch (error) {
+      console.warn("Admin avatar hydration failed:", error);
+      applyAdminAvatar(ADMIN_AVATAR_FALLBACK);
     }
   }
 
@@ -2080,6 +2111,9 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
   const ICONIFY_BRAND_PREFIXES = "logos,simple-icons,devicon,skill-icons,cib,vscode-icons";
   const ICONIFY_SKILL_PREFIXES = "ph,tabler,material-symbols,mdi";
   const AUTO_ICON_CACHE_KEY = "lan:auto-brand-icons:v6";
+  // Missing icons are retried after a short interval instead of being searched
+  // again by every newly loaded Admin workspace document.
+  const AUTO_ICON_MISS_RETRY_MS = 15 * 60 * 1000;
   const autoIconMemory = new Map();
   let autoIconDiskCache = null;
 
@@ -2217,13 +2251,24 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
     if (!cacheKey) return "";
 
     if (autoIconMemory.has(cacheKey)) {
-      const cachedMemory = await autoIconMemory.get(cacheKey);
-      if (cachedMemory) return cachedMemory;
-      autoIconMemory.delete(cacheKey);
+      const remembered = autoIconMemory.get(cacheKey);
+      if (remembered && typeof remembered === "object" && "retryAfter" in remembered) {
+        if (Number(remembered.retryAfter) > Date.now()) return "";
+        autoIconMemory.delete(cacheKey);
+      } else {
+        const cachedMemory = await remembered;
+        if (cachedMemory) return cachedMemory;
+        autoIconMemory.delete(cacheKey);
+      }
     }
 
     const disk = readAutoIconCache();
-    const diskValue = String(disk[cacheKey] || "").trim();
+    const diskEntry = disk[cacheKey];
+    if (diskEntry && typeof diskEntry === "object" && Number(diskEntry.retryAfter) > Date.now()) {
+      autoIconMemory.set(cacheKey, diskEntry);
+      return "";
+    }
+    const diskValue = typeof diskEntry === "string" ? diskEntry.trim() : "";
     if (diskValue) {
       autoIconMemory.set(cacheKey, diskValue);
       return diskValue;
@@ -2269,8 +2314,13 @@ import { installRecordCardBudgetRuntime, scheduleRecordCardBudget } from "./admi
 
     autoIconMemory.set(cacheKey, request);
     const resolved = await request;
-    if (resolved) autoIconMemory.set(cacheKey, resolved);
-    else autoIconMemory.delete(cacheKey);
+    if (resolved) {
+      autoIconMemory.set(cacheKey, resolved);
+    } else {
+      const miss = { retryAfter: Date.now() + AUTO_ICON_MISS_RETRY_MS };
+      autoIconMemory.set(cacheKey, miss);
+      writeAutoIconCache(cacheKey, miss);
+    }
     return resolved;
   }
 

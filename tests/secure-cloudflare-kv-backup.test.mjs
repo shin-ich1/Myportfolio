@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { canonicalNamespaces, makeVault, inspectVault, cloudflareReader } from '../scripts/secure-cloudflare-kv-backup.mjs';
+import { canonicalNamespaces, makeVault, inspectVault, cloudflareReader, safeBackupFailureCode } from '../scripts/secure-cloudflare-kv-backup.mjs';
 
 test('canonical config lists exactly two nonsecurity KV bindings', async () => {
   const bindings = await canonicalNamespaces();
@@ -62,4 +62,13 @@ test('Cloudflare reader uses GET-only, cursor pagination, and preserves raw bina
     assert.deepEqual(await reader.readValue(id,'my/key'),Buffer.from([0,255,7]));
     assert.deepEqual(verbs,['GET','GET','GET']);
   }finally{globalThis.fetch=old;}
+});
+
+test('safe diagnostics identify local problems and HTTP statuses without printing provider data', () => {
+  assert.equal(safeBackupFailureCode(Error('Passphrases do not match.')), 'PASSPHRASE_CONFIRMATION_MISMATCH');
+  assert.equal(safeBackupFailureCode(Error('A private passphrase of at least 16 characters is required.')), 'PASSPHRASE_TOO_SHORT');
+  assert.equal(safeBackupFailureCode(Error('Cloudflare KV READ failed: HTTP 403 (no data printed).')), 'CLOUDFLARE_KV_READ_HTTP_403');
+  assert.equal(safeBackupFailureCode(Error('Cloudflare KV READ failed: HTTP 401 (no data printed).')), 'CLOUDFLARE_KV_READ_HTTP_401');
+  assert.equal(safeBackupFailureCode(Object.assign(Error('secret-value-must-not-appear'),{code:'EEXIST'})), 'LOCAL_ARCHIVE_ALREADY_EXISTS');
+  assert.equal(safeBackupFailureCode(Error('SECRET MUST NEVER DISPLAY HERE')), 'OTHER_LOCAL_OR_NETWORK_ERROR');
 });

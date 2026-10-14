@@ -261,6 +261,31 @@ async function cli() {
   console.log('PASS: read-only Cloudflare KV backup written and integrity verified. Counts: ' + JSON.stringify(result.counts));
   console.log('Keep encrypted archive outside GitHub and passphrase separately. Source KV was not changed.');
 }
+// Publish ONLY stable, non-sensitive diagnostic categories. Never print raw
+// provider responses, URLs with query strings, process env, passphrases,
+// archive contents, key names, metadata, values, or arbitrary Error.messages.
+export function safeBackupFailureCode(error) {
+  const message = String(error?.message || '');
+  const http = message.match(/^Cloudflare KV READ failed: HTTP (\d{3}) /);
+  if (http) return 'CLOUDFLARE_KV_READ_HTTP_' + http[1];
+  if (message === 'Passphrases do not match.') return 'PASSPHRASE_CONFIRMATION_MISMATCH';
+  if (message.includes('private passphrase of at least 16 characters')) return 'PASSPHRASE_TOO_SHORT';
+  if (message.includes('Cloudflare account ID/token environment not configured')) return 'CLOUDFLARE_ACCOUNT_OR_TOKEN_MISSING';
+  if (message.includes('Encrypted KV backup integrity verification failed')) return 'ARCHIVE_INTEGRITY_OR_PASSPHRASE_INVALID';
+  if (message.includes('KV inventory') || message.includes('KV pagination') ||
+      message.includes('KV value missing')) return 'CLOUDFLARE_KV_INCOMPLETE_READ';
+  if (error?.code === 'EEXIST') return 'LOCAL_ARCHIVE_ALREADY_EXISTS';
+  if (error?.code === 'ENOENT') return 'LOCAL_DIRECTORY_OR_FILE_MISSING';
+  if (error?.code === 'EACCES' || error?.code === 'EPERM') return 'LOCAL_FILE_PERMISSION_DENIED';
+  if (message.includes('Backup path must be absolute') ||
+      message.includes('Encrypted backup must be outside')) return 'UNSAFE_BACKUP_PATH';
+  if (message.includes('interactive terminal')) return 'INTERACTIVE_TERMINAL_REQUIRED';
+  return 'OTHER_LOCAL_OR_NETWORK_ERROR';
+}
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  cli().catch(() => { console.error('HOLD: Cloudflare KV backup/verification failed. No Cloudflare mutations. Check local input, permissions and archive storage.'); process.exitCode = 1; });
+  cli().catch(error => {
+    console.error('HOLD: ' + safeBackupFailureCode(error) + '. Cloudflare KV was not modified.');
+    console.error('Never share backup passwords, API tokens, file contents or OAuth values.');
+    process.exitCode = 1;
+  });
 }

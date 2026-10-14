@@ -266,7 +266,7 @@ async function cli() {
 // archive contents, key names, metadata, values, or arbitrary Error.messages.
 export function safeBackupFailureCode(error) {
   const message = String(error?.message || '');
-  const http = message.match(/^Cloudflare KV READ failed: HTTP (\\d{3}) /);
+  const http = message.match(/^Cloudflare KV READ failed: HTTP (\d{3}) /);
   if (http) return 'CLOUDFLARE_KV_READ_HTTP_' + http[1];
   if (message === 'Passphrases do not match.') return 'PASSPHRASE_CONFIRMATION_MISMATCH';
   if (message.includes('private passphrase of at least 16 characters')) return 'PASSPHRASE_TOO_SHORT';

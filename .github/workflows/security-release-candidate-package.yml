@@ -44,6 +44,13 @@ jobs:
           if ($runner -notmatch '--secrets-file\s+\$ephemeralSecrets') { throw "Must atomically bind disposable secret with code." }
           if ($runner -match '\$token\s*\|\s*&\s*\$wrangler\s+secret\s+put') { throw "PowerShell stdin secret pipe is forbidden for PITR fixture." }
           if ($runner -notmatch 'Remove-Item\s+\$temp\s+-Recurse\s+-Force') { throw "Ephemeral secret file cleanup required." }
+          $fixture = Get-Content "tests/cloudflare-isolated-pitr-drill-worker.mjs" -Raw
+          if ($fixture -notmatch "/drill/ready" -or $runner -notmatch "authenticated-version-readiness") {
+            throw "A protected non-mutating readiness probe must precede PITR."
+          }
+          if ($runner.IndexOf("authenticated-version-readiness") -gt $runner.IndexOf("baseline-and-mutate")) {
+            throw "Must verify exact token before writing disposable DO state."
+          }
           Write-Host "PASS: isolated PITR fixture, PowerShell syntax, disposable secret binding and tombstone policy. NO DEPLOY."
       - name: Verify frozen source contracts (no production calls)
         shell: bash

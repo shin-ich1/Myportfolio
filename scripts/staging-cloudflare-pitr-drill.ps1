@@ -56,6 +56,29 @@ try {
   }
   $baseUri='https://'+$urlMatch.Groups['worker'].Value+'.'+$urlMatch.Groups['subdomain'].Value+'.workers.dev'
   Write-Host "Deployed test-only Worker at $baseUri"
+  $uri="$baseUri/drill"
+  $stage='pre-secret-route'
+  # The fixture always returns 401 without PITR_TEST_TOKEN.
+  # This isolates first-deploy routing from any subsequent secret update.
+  $initialRouteStatus=0
+  for ($routeAttempt=1;$routeAttempt -le 12;$routeAttempt++) {
+    try {
+      $response=Invoke-WebRequest -Uri $uri -Method POST -Body '{}' -ContentType 'application/json' -TimeoutSec 12 -UseBasicParsing
+      $initialRouteStatus=[int]$response.StatusCode
+    } catch {
+      $initialRouteStatus=0
+      if ($_.Exception.Response) { $initialRouteStatus=[int]$_.Exception.Response.StatusCode }
+    }
+    if ($initialRouteStatus -eq 401) { break }
+    if ($initialRouteStatus -ne 404 -and $initialRouteStatus -ne 503) {
+      throw "Unexpected first-deploy route status: HTTP $initialRouteStatus."
+    }
+    if ($routeAttempt -lt 12) { Start-Sleep -Seconds 2 }
+  }
+  if ($initialRouteStatus -ne 401) {
+    throw "INITIAL_DEPLOY_ROUTE_404: Worker deployed but direct workers.dev route returned HTTP $initialRouteStatus BEFORE any secret update. Check per-script workers.dev enabled flag; not a PITR failure."
+  }
+  Write-Host 'PASS: first-deploy Workers.dev route serves isolated test Worker (401 before secret).'
   $stage='temporary-auth'
   $rng=[System.Security.Cryptography.RandomNumberGenerator]::Create()
   $bytes=New-Object byte[] 32
@@ -63,7 +86,6 @@ try {
   $token=[Convert]::ToBase64String($bytes)
   $token | & $wrangler secret put PITR_TEST_TOKEN --config $liveCfg | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Test-only Worker secret setup failed.' }
-  $uri="$baseUri/drill"
   $headers=@{ Authorization="Bearer $token" }
   function Invoke-Drill([string]$action,[string]$bookmark='') {
     $body=@{action=$action;bookmark=$bookmark}|ConvertTo-Json -Compress

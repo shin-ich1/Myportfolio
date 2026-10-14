@@ -12,7 +12,10 @@ const CONTENT_ROOTS = new Set([
   'education', 'skills', 'certificates', 'resumes',
   'portfolioSections', 'portfolioSectionEntries'
 ]);
-const VALID_SEGMENT = /^[A-Za-z0-9_-]{1,1500}$/;
+const validSegment = segment => typeof segment === 'string' && segment !== '.' &&
+  segment !== '..' && !/^__.*__$/.test(segment) &&
+  Buffer.byteLength(segment, 'utf8') > 0 && Buffer.byteLength(segment, 'utf8') <= 1500 &&
+  !/[\u0000-\u001F\u007F]/u.test(segment);
 const LIMIT = 100000;
 
 export function createSafeRecoveryScan(knownRootCollections) {
@@ -36,7 +39,7 @@ export function createSafeRecoveryScan(knownRootCollections) {
       const permittedShape = segments.length === 2 ||
         (segments.length === 4 && segments[0] === 'privateMessageThreads' &&
           segments[2] === 'messages');
-      if (!permittedShape || segments.some(segment => !VALID_SEGMENT.test(segment)) ||
+      if (!permittedShape || segments.some(segment => !validSegment(segment)) ||
           !allowedRoots.has(segments[0])) throw Error('Unreviewed DR archive document path.');
       if (seen.has(resource) || seen.size >= LIMIT) throw Error('Repeated or oversized DR archive inventory.');
       seen.add(resource);
@@ -61,7 +64,7 @@ export function createSafeRecoveryScan(knownRootCollections) {
       // Numbers only: never release names, paths, document fields, or secrets.
       return Object.freeze({
         ...counts, authenticated: true,
-        noOldSecurityStateReactivated: true,
+        historicalSecurityStateExcludedFromCandidates: true,
         freshIdentityAndMfaRequired: true,
         writeOperations: 0
       });

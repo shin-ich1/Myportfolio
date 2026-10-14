@@ -181,7 +181,7 @@ test('authenticated Firestore catastrophe rehearsal quarantines all old Admin st
     quarantinedSecurityAndPrivate:3,
     missingTombstones:0,
     authenticated:true,
-    noOldSecurityStateReactivated:true,
+    historicalSecurityStateExcludedFromCandidates:true,
     freshIdentityAndMfaRequired:true,
     writeOperations:0
   });
@@ -204,7 +204,7 @@ test('forward recovery fails closed on unsafe root paths, repeated docs and stal
   assert.ok(security.length>=10,'Must include every canonical security collection');
   const scan=createSafeRecoveryScan(ROOT_COLLECTIONS);
   for(const root of security)scan.accept(doc(root+'/synthetic-old-uid'));
-  scan.accept(doc('portfolio/content-1'));
+  scan.accept(doc('portfolio/résumé.2026'));
   scan.accept(doc('privateMessageThreads/thread1/messages/msg1'));
   scan.accept(doc('contactMessages/sensitive1'));
   scan.accept(doc('portfolio/uncreated',true));
@@ -212,7 +212,7 @@ test('forward recovery fails closed on unsafe root paths, repeated docs and stal
   assert.equal(status.quarantinedSecurityAndPrivate,security.length+2);
   assert.equal(status.portfolioContentCandidates,1);
   assert.equal(status.missingTombstones,1);
-  assert.equal(status.noOldSecurityStateReactivated,true);
+  assert.equal(status.historicalSecurityStateExcludedFromCandidates,true);
   assert.equal(status.writeOperations,0);
   assert.throws(()=>scan.accept(doc('adminSecuritySessions/synthetic-old-uid')),/Repeated/);
   assert.throws(()=>createSafeRecoveryScan([]),/inventory/);

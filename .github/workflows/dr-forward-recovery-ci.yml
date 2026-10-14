@@ -34,7 +34,7 @@ jobs:
           const policy=readFileSync('scripts/security-dr-restore-policy.mjs','utf8');
           const backup=readFileSync('scripts/secure-firestore-backup.mjs','utf8');
           assert.match(policy,/freshIdentityAndMfaRequired:\s*true/);
-          assert.match(policy,/noOldSecurityStateReactivated:\s*true/);
+          assert.match(policy,/historicalSecurityStateExcludedFromCandidates:\s*true/);
           assert.match(policy,/writeOperations:\s*0/);
           assert.match(backup,/decipher\.final\(\)/);
           assert.match(backup,/recoveryScan\.finish\(true, actual\)/);

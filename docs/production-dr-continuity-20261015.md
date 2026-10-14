@@ -30,6 +30,27 @@ Run only in an interactive local Node.js 22+ PowerShell terminal. A Cloudflare t
 
 This is not a perfectly consistent snapshot if KV changes during enumeration. Missing keys and integrity failures cause HOLD; successful local authentication does not guarantee stale OAuth tokens will work after a restore. No automatic RESTORE operation exists, by design.
 
+## Preferred operator path: existing Wrangler OAuth; no new Cloudflare API token
+
+The owner confirmed `WRANGLER KV READ: PASS` with the authenticated pinned local Wrangler while freshly created Cloudflare API tokens returned HTTP 401 for Workers KV. **Do not roll/rotate tokens again.** Run from the detached `LAN-KV-Backup-Runner` worktree synced to main. The owner already has Wrangler installed in the adjacent `Myportfolio-Security-Latest/telemetry-worker/node_modules` directory. The encrypted backup owner will discover that pinned executable automatically.
+
+```powershell
+git fetch origin main
+if ($LASTEXITCODE -ne 0) { throw "Fetch failed" }
+git switch --detach FETCH_HEAD
+if ($LASTEXITCODE -ne 0) { throw "Update failed" }
+
+Remove-Item Env:\CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force "$HOME\LAN-Private-Backups" | Out-Null
+$file = "$HOME\LAN-Private-Backups\cloudflare-kv-20261015.lankv"
+node .\scripts\secure-cloudflare-kv-backup.mjs backup --output $file --wrangler
+if ($LASTEXITCODE -ne 0) { throw "Backup HOLD (do not rerun)" }
+node .\scripts\secure-cloudflare-kv-backup.mjs verify --input $file
+if ($LASTEXITCODE -ne 0) { throw "Verify HOLD (do not rerun)" }
+```
+
+Enter your own private 16+ character backup passphrase at the local hidden prompts. It is **not** your Admin/Cloudflare password. Wrangler reads exact canonical remote namespaces with `kv key list` and `kv key get` (all read-only) through its existing OAuth login; stdout binary values are consumed in memory, never printed to the terminal or stored plaintext. As before, all data are saved only in the private authenticated encrypted vault. The vault reports only counts and integrity PASS/HOLD. **This procedure is prepared and CI-checked, but not yet a completed live backup.**
+
 ## Auth/MFA restoration decision — isolated only
 
 If Firebase Auth still exists, Admin locked out: use the previously issued **offline Master Recovery Key** in the existing server-validated emergency process and fresh TOTP/trusted-device setup. Staging already tested this path; never spend the active Production key to rehearse.

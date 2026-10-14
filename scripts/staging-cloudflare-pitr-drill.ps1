@@ -84,8 +84,26 @@ try {
   $bytes=New-Object byte[] 32
   $rng.GetBytes($bytes); $rng.Dispose()
   $token=[Convert]::ToBase64String($bytes)
-  $token | & $wrangler secret put PITR_TEST_TOKEN --config $liveCfg | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw 'Test-only Worker secret setup failed.' }
+  # Use Wrangler's supported --secrets-file path, NOT a PowerShell pipeline.
+  # Windows PowerShell's native-command stdin encoding/line endings can alter
+  # the exact value consumed by "secret put" compared with our HTTP header.
+  # This ephemeral test-only token is written only inside the random OS temp
+  # directory and wiped with it in finally; never printed or sent to GitHub.
+  $ephemeralSecrets=Join-Path $temp 'disposable-drill-secrets.json'
+  $jsonSecrets=@{ PITR_TEST_TOKEN=$token } | ConvertTo-Json -Compress
+  [IO.File]::WriteAllText($ephemeralSecrets,$jsonSecrets,$utf8)
+  Remove-Variable jsonSecrets -ErrorAction SilentlyContinue
+  # Code + secret atomically join the same isolated Worker deployment.
+  & $wrangler deploy --config $liveCfg --secrets-file $ephemeralSecrets | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Test-only Worker redeploy with ephemeral secret failed.' }
+  $stage='secret-binding-metadata'
+  # Metadata check lists NAMES only, never secret values.
+  $listedSecrets=@(& $wrangler secret list --config $liveCfg 2>&1 | ForEach-Object { [string]$_ })
+  if ($LASTEXITCODE -ne 0 -or ($listedSecrets -join ' ') -notmatch 'PITR_TEST_TOKEN') {
+    throw 'Disposable Worker secret NAME not found after deployment.'
+  }
+  Write-Host 'PASS: isolated Worker secret name present; secret value never logged.'
+  Remove-Variable listedSecrets -ErrorAction SilentlyContinue
   $headers=@{ Authorization="Bearer $token" }
   function Invoke-Drill([string]$action,[string]$bookmark='') {
     $body=@{action=$action;bookmark=$bookmark}|ConvertTo-Json -Compress

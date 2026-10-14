@@ -40,7 +40,11 @@ jobs:
           if ($active.name -ne 'lan-dr-pitr-test-20261015' -or $retired.name -ne $active.name) { throw "Wrong isolated Worker identity." }
           if ($active.durable_objects.bindings.Count -ne 1 -or $active.durable_objects.bindings[0].class_name -ne 'LanDisposablePitrDrill') { throw "Unexpected Durable Object binding." }
           if ($retired.durable_objects.bindings.Count -ne 0 -or $retired.exports.LanDisposablePitrDrill.state -ne 'deleted') { throw "Cleanup must retire isolated class only." }
-          Write-Host "PASS: isolated PITR fixture, PowerShell syntax and tombstone policy. NO DEPLOY."
+          $runner = Get-Content "scripts/staging-cloudflare-pitr-drill.ps1" -Raw
+          if ($runner -notmatch '--secrets-file\s+\$ephemeralSecrets') { throw "Must atomically bind disposable secret with code." }
+          if ($runner -match '\$token\s*\|\s*&\s*\$wrangler\s+secret\s+put') { throw "PowerShell stdin secret pipe is forbidden for PITR fixture." }
+          if ($runner -notmatch 'Remove-Item\s+\$temp\s+-Recurse\s+-Force') { throw "Ephemeral secret file cleanup required." }
+          Write-Host "PASS: isolated PITR fixture, PowerShell syntax, disposable secret binding and tombstone policy. NO DEPLOY."
       - name: Verify frozen source contracts (no production calls)
         shell: bash
         run: |

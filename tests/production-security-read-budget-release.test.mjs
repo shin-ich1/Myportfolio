@@ -5,22 +5,48 @@ import {readFileSync} from 'node:fs';
 
 const script=readFileSync(new URL('../scripts/deploy-production-security-read-budget.ps1',import.meta.url),'utf8');
 const ui=readFileSync(new URL('../admin/js/settings-security.js',import.meta.url),'utf8');
+const successor=readFileSync(new URL('../scripts/deploy-production-trust-device-key-fix.ps1',import.meta.url),'utf8');
+const HISTORICAL_UI_BLOB='d30d5f4d992098a79484c91e0ca6ccc1ef58bf59';
+const CURRENT_UI_BLOB='eae5c866f1c6a26fe6d19473013bf3b19e524f17';
 const canonical=Buffer.from(ui.replace(/\r\n/g,'\n'));
 const actualBlob=createHash('sha1').update(Buffer.from('blob '+canonical.length+'\0')).update(canonical).digest('hex');
 
-test('release scope is exactly the CI-validated single Admin Security UI owner',()=>{
-  assert.equal(actualBlob,'d30d5f4d992098a79484c91e0ca6ccc1ef58bf59');
+test('historical single-file UI release remains pinned while current canonical owner is newer',()=>{
+  // Guard BOTH identities. Re-pinning a previously approved deployment to the
+  // latest source would silently change its original scope and invalidate its rollback gate.
+  assert.equal(actualBlob,CURRENT_UI_BLOB);
   const block=script.match(/\$assets=@\(\s*([\s\S]*?)\n\)/);
   assert.ok(block);
   const files=[...block[1].matchAll(/Path='([^']+)'; OldBlob='([0-9a-f]{40})'; NewBlob='([0-9a-f]{40})'/g)];
   assert.deepEqual(files.map(v=>v.slice(1)),[[
     '/admin/js/settings-security.js',
     '225706fbec049326fa091d112c8983a8f144dfca',
-    actualBlob
+    HISTORICAL_UI_BLOB
   ]]);
   assert.equal((block[1].match(/Path=/g)||[]).length,1);
   assert.match(script,/\$assets.Count -ne 1/);
   assert.match(script,/\$relativePath -cne 'admin\/js\/settings-security\.js'/);
+  assert.notEqual(actualBlob,HISTORICAL_UI_BLOB,'the historical release must not be mistaken for current source');
+});
+
+test('successor release pins BOTH published Security owners and keeps legacy release immutable',()=>{
+  const assets=successor.match(/\$assets=@\(\s*([\s\S]*?)\n\)/);
+  assert.ok(assets,'successor release needs an explicit allowlist');
+  const changes=[...assets[1].matchAll(/Path='([^']+)'; OldBlob='([a-f0-9]{40})'; NewBlob='([a-f0-9]{40})'/g)].map(x=>x.slice(1));
+  assert.deepEqual(changes,[
+    ['/admin/services/adminSecurityService.js','fc6c5700dc7286228265c58b38df16f58111f612','311ed5ed3849182b4782a3785c075ed020322c38'],
+    ['/admin/js/settings-security.js',HISTORICAL_UI_BLOB,CURRENT_UI_BLOB]
+  ]);
+  assert.equal((assets[1].match(/Path=/g)||[]).length,2);
+  assert.match(successor,/\$assets.Count -ne 2/);
+  assert.match(successor,/Read-Host 'Type DEPLOY-TRUST-FIX/);
+  assert.match(successor,/\$confirm -cne 'DEPLOY-TRUST-FIX'/);
+  assert.match(successor,/Require-SameLiveRelease \$original/);
+  assert.match(successor,/\$health\.securityCoordinatorConfigured/);
+  assert.match(successor,/\$mfaConfig\.mfa\.state/);
+  assert.match(successor,/Assert-ReviewedLiveAdminBaseline \$liveBytes \$asset\.OldBlob \$asset\.Path/);
+  assert.match(successor,/\$draftFiles\[\$p\] -cne \$files\[\$p\]/);
+  assert.doesNotMatch(successor,/\bwrangler\s+deploy\b|\bfirebase\s+deploy\b/i);
 });
 
 test('live release must equal previously verified Production version, and manifest must be retained',()=>{

@@ -1,0 +1,132 @@
+name: Production Security LIVE read-only attestation
+on:
+  push:
+    branches:
+      - fix/security-trusted-device-key-preservation-20261014
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify live Worker health and exact two published Security files
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import crypto from 'node:crypto';
+          const publicSite = 'https://rolando-portfolio-3f1a3.web.app';
+          const worker = 'https://lan-cloudinary-telemetry.lagmayr2.workers.dev/health';
+          const checks = [
+            ['/admin/services/adminSecurityService.js', '311ed5ed3849182b4782a3785c075ed020322c38'],
+            ['/admin/js/settings-security.js', 'eae5c866f1c6a26fe6d19473013bf3b19e524f17']
+          ];
+          const protectedAdmin = [
+            ['/admin/index.html', 'ec6fc8fa15531cf59df6e9cbf90d17bfc69c16da'],
+            ['/admin/js/admin-shell.js', 'e5e3a689ae382630c4d12ebfe76395e2e4482a69'],
+            ['/admin/js/admin-ui.js', '28679d7c3739213f5d4186b3469feb00621a3571'],
+            ['/admin/js/admin.js', '7f1b9efc280c913a8b4c93b7e59897e1c8bcb0a2'],
+            ['/admin/js/workspace-host.js', '5b4beef65b37099b1e485740a9e0d838cb4d4861'],
+            ['/admin/services/adminAuthorizationService.js', 'f690cc65cbf685d82e4bdcc771e15a35f5069ea5'],
+            ['/admin/js/settings.js', 'e3aca64c4662ea99457b44855b035ffb0b20a305'],
+            ['/admin/js/dashboard.js', '72983ce53fa9888cd77cd4c50ee1376a980ad750'],
+            ['/admin/js/home.js', '398d6a7ee4db0c44e604f79cc6498c9798756440']
+          ];
+          // Published Public is frozen. Print hashes ONLY, do not assume the
+          // unmerged Security branch matches Public and never overwrite it.
+          const frozenPublic = ['/app.js', '/styles.css', '/message-service.js', '/index.html'];
+          const deadline = 20000;
+          async function get(url) {
+            const response = await fetch(url, {
+              signal: AbortSignal.timeout(deadline),
+              headers: { 'Accept': '*/*', 'Cache-Control': 'no-cache' }
+            });
+            if (!response.ok) throw Error('Read-only GET failed: HTTP ' + response.status + ' for ' + new URL(url).pathname);
+            return Buffer.from(await response.arrayBuffer());
+          }
+          const blob = bytes => crypto.createHash('sha1')
+            .update(Buffer.from('blob ' + bytes.length + '\0'))
+            .update(bytes).digest('hex');
+          let failures = 0;
+          for (const [path, expected] of checks) {
+            try {
+              const bytes = await get(publicSite + path + '?production_readonly=' + Date.now());
+              const actual = blob(bytes);
+              const ok = actual === expected;
+              console.log((ok ? 'PASS ' : 'FAIL ') + 'LIVE ' + path + ' Git blob: ' + actual);
+              if (!ok) failures++;
+            } catch (error) {
+              failures++;
+              console.error('FAIL LIVE ' + path + ': ' + error.message);
+            }
+          }
+          for (const [path, expected] of protectedAdmin) {
+            try {
+              const actual = blob(await get(publicSite + path + '?read_only=' + Date.now()));
+              const ok = actual === expected;
+              console.log((ok ? 'PASS ' : 'FAIL ') + 'Protected Admin ' + path + ' Git blob: ' + actual);
+              if (!ok) failures++;
+            } catch (error) {
+              failures++;
+              console.error('FAIL Protected Admin ' + path + ': ' + error.message);
+            }
+          }
+          for (const path of frozenPublic) {
+            try {
+              const actual = blob(await get(publicSite + path + '?read_only=' + Date.now()));
+              console.log('FREEZE Public ' + path + ' live Git blob: ' + actual);
+            } catch (error) {
+              failures++;
+              console.error('FAIL Frozen Public reachable ' + path + ': ' + error.message);
+            }
+          }
+          try {
+            const health = JSON.parse((await get(worker)).toString('utf8'));
+            const keys = [
+              'ok',
+              'firebaseConfigured',
+              'securityCoordinatorConfigured',
+              'cloudinaryConfigured',
+              'storageOAuthConfigured',
+              'googleDriveOAuthConfigured'
+            ];
+            for (const key of keys) {
+              const ok = health[key] === true;
+              console.log((ok ? 'PASS ' : 'FAIL ') + 'Worker health flag: ' + key);
+              if (!ok) failures++;
+            }
+            console.log('NOTE: Worker health flags attest configuration only, NOT privileged runtime calls or deployed source hash.');
+          } catch (error) {
+            failures++;
+            console.error('FAIL Worker health: ' + error.message);
+          }
+          // Public, non-mutating negative probes: never print response bodies.
+          // A token-free client must not access Admin Security state.
+          const noAuthRoutes = ['/security/access-state', '/security/devices', '/security/sessions'];
+          for (const path of noAuthRoutes) {
+            try {
+              const response = await fetch(new URL(path, worker).href, {
+                method: 'GET',
+                signal: AbortSignal.timeout(deadline),
+                headers: { 'Accept': 'application/json', 'Origin': publicSite }
+              });
+              const denied = response.status === 401 || response.status === 403;
+              console.log((denied ? 'PASS ' : 'FAIL ') + 'Anonymous Security GET ' + path + ': HTTP ' + response.status);
+              if (!denied) failures++;
+              // Do not read or log any response body even if the backend is misconfigured.
+              await response.body?.cancel();
+            } catch (error) {
+              failures++;
+              console.error('FAIL Anonymous Security GET ' + path + ': ' + error.message);
+            }
+          }
+          console.log('NOTE: These probes verify live anonymous endpoint denials, NOT authenticated session policy or deployed Firebase Rules.');
+          console.log('NOTE: Firebase Rules release and Cloudflare deployed Worker source are NOT attested by public endpoints.');
+          if (failures) {
+            console.error('HOLD: ' + failures + ' live read-only check(s) failed. No Production writes performed.');
+            process.exitCode = 1;
+          } else console.log('PASS: live read-only HTTP checks. No Production writes performed.');
+          NODE

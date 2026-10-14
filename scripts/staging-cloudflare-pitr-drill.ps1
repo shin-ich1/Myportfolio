@@ -45,9 +45,17 @@ try {
   Write-Host 'PASS: test-only Worker dry-run; no CMS bindings.'
   $stage='deploy'
   Write-Host "Deploying new disposable Worker $name"
-  & $wrangler deploy --config $liveCfg | Out-Null
+  # Use Wrangler's actual deployed URL; avoid guessing the account's workers.dev subdomain.
+  $deployOutput=@(& $wrangler deploy --config $liveCfg 2>&1 | ForEach-Object { [string]$_ })
   if ($LASTEXITCODE -ne 0) { throw 'Isolated deploy failed; check test Worker name.' }
   $deployed=$true
+  $deployText=$deployOutput -join [Environment]::NewLine
+  $urlMatch=[regex]::Match($deployText,'https://(?<worker>[a-z0-9-]+)\.(?<subdomain>[a-z0-9-]+)\.workers\.dev(?:/|\s|$)','IgnoreCase')
+  if (-not $urlMatch.Success -or $urlMatch.Groups['worker'].Value -cne $name) {
+    throw 'Wrangler did not confirm the exact disposable workers.dev URL; refusing to guess endpoint.'
+  }
+  $baseUri='https://'+$urlMatch.Groups['worker'].Value+'.'+$urlMatch.Groups['subdomain'].Value+'.workers.dev'
+  Write-Host "Deployed test-only Worker at $baseUri"
   $stage='temporary-auth'
   $rng=[System.Security.Cryptography.RandomNumberGenerator]::Create()
   $bytes=New-Object byte[] 32
@@ -55,7 +63,7 @@ try {
   $token=[Convert]::ToBase64String($bytes)
   $token | & $wrangler secret put PITR_TEST_TOKEN --config $liveCfg | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Test-only Worker secret setup failed.' }
-  $uri="https://$name.lagmayr2.workers.dev/drill"
+  $uri="$baseUri/drill"
   $headers=@{ Authorization="Bearer $token" }
   function Invoke-Drill([string]$action,[string]$bookmark='') {
     $body=@{action=$action;bookmark=$bookmark}|ConvertTo-Json -Compress
@@ -63,10 +71,24 @@ try {
   }
   $stage='anonymous-denial'
   $denied=$false
-  try { $null=Invoke-RestMethod -Uri $uri -Method POST -Body '{}' -ContentType 'application/json' -TimeoutSec 20 } catch {
-    if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 401) { $denied=$true } else { throw }
+  $lastHttpStatus=0
+  # Wait for propagation of the isolated route and its ephemeral secret.
+  # Do not treat a transient 404 as passing the authentication test.
+  for ($attempt=1;$attempt -le 20;$attempt++) {
+    try {
+      $null=Invoke-RestMethod -Uri $uri -Method POST -Body '{}' -ContentType 'application/json' -TimeoutSec 15
+      throw 'Unauthenticated request unexpectedly succeeded.'
+    } catch {
+      $lastHttpStatus=0
+      if ($_.Exception.Response) { $lastHttpStatus=[int]$_.Exception.Response.StatusCode }
+      if ($lastHttpStatus -eq 401) { $denied=$true;break }
+      if ($lastHttpStatus -ne 404 -and $lastHttpStatus -ne 503) {
+        throw "Unexpected isolated Worker auth HTTP $lastHttpStatus."
+      }
+    }
+    if ($attempt -lt 20) { Start-Sleep -Seconds 3 }
   }
-  if (-not $denied) { throw 'Unauthenticated request not rejected.' }
+  if (-not $denied) { throw "Isolated Worker never served its auth gate; last HTTP $lastHttpStatus." }
   Write-Host 'PASS: disposable Worker denied anonymous request (401).'
   $stage='baseline-and-mutate'
   $before=Invoke-Drill 'baseline'

@@ -1,0 +1,30 @@
+name: Isolated DR source preflight (NO DEPLOY / NO CREDENTIALS)
+on:
+  pull_request:
+    paths:
+      - 'scripts/dr-isolation-preflight.mjs'
+      - 'tests/dr-isolation-preflight.test.mjs'
+      - 'docs/dr-owner-handoff-20261015.md'
+      - '.github/workflows/dr-isolation-readiness.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check scripts/dr-isolation-preflight.mjs
+          node --check tests/dr-isolation-preflight.test.mjs
+      - name: Deny cross-environment bindings and misleading certification
+        run: node --test tests/dr-isolation-preflight.test.mjs tests/secure-firestore-backup.test.mjs tests/secure-cloudflare-kv-backup.test.mjs
+      - name: Nonmutating handoff proof (NO CLOUD OPERATIONS)
+        run: node scripts/dr-isolation-preflight.mjs

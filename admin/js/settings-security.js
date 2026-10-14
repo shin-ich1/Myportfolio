@@ -4,6 +4,7 @@ import {
   beginStepUpVerification,
   completeStepUpVerification,
   createDeviceEnrollmentChallenge,
+  discardPendingDeviceEnrollment,
   getDeviceEnrollmentStatus,
   approveDeviceEnrollment,
   completeDeviceEnrollment,
@@ -214,6 +215,7 @@ function startEnrollmentApprovalWatch(challengeId, expiresAt) {
     if (!currentEnrollment || currentEnrollment.approvalOnly || currentEnrollment.challengeId !== challengeId) return;
     if (expiresAt && Date.parse(expiresAt) <= Date.now()) {
       $('trustedDeviceStatus').textContent = 'Enrollment challenge expired. Start Trust This Device again.';
+      void discardPendingDeviceEnrollment(challengeId).catch(()=>{});
       return;
     }
     try {
@@ -227,6 +229,7 @@ function startEnrollmentApprovalWatch(challengeId, expiresAt) {
       const code = String(error?.code || '');
       if (code === 'security-enrollment-invalid' || code === 'security-enrollment-expired') {
         $('trustedDeviceStatus').textContent = error.message;
+        void discardPendingDeviceEnrollment(challengeId).catch(()=>{});
         return;
       }
       enrollmentWatchTimer = setTimeout(poll, 1800);
@@ -555,7 +558,10 @@ $('approveTrustedDeviceButton')?.addEventListener('click', async () => {
 
 $('closeTrustedDeviceEnrollmentButton')?.addEventListener('click', () => {
   const wasApprovalOnly = currentEnrollment?.approvalOnly === true;
+  const abandonedChallenge = !wasApprovalOnly && !enrollmentCompletionInFlight
+    ? currentEnrollment?.challengeId : '';
   stopEnrollmentApprovalWatch();
+  if (abandonedChallenge) void discardPendingDeviceEnrollment(abandonedChallenge).catch(()=>{});
   $('trustedDeviceEnrollment').hidden = true;
   currentEnrollment = null;
   if (wasApprovalOnly) clearEnrollmentApprovalRoute();

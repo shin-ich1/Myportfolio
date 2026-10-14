@@ -37,6 +37,11 @@ export default {
     if (!env.PITR_TEST_TOKEN || !same(request.headers.get('Authorization'), 'Bearer ' + env.PITR_TEST_TOKEN)) {
       return new Response('Unauthorized', { status: 401 });
     }
+    // Non-mutating readiness probe: tests the exact deployed secret-bearing
+    // Worker version before any Durable Object state is touched.
+    if (request.method === 'POST' && new URL(request.url).pathname === '/drill/ready') {
+      return answer({ ready: true });
+    }
     if (request.method !== 'POST' || new URL(request.url).pathname !== '/drill') {
       return new Response('Not Found', { status: 404 });
     }

@@ -160,15 +160,9 @@ export function subscribePrivateVisitorThread(threadId, onChange, onError) {
   if (!id) return () => {};
   let latestThread = null;
   let latestMessages = [];
-  let initialThreadReceived = false;
-  // The messages listener can fire first. Absence of an initial thread
-  // snapshot is not evidence of deletion, so it must never revoke UI access.
-  const emit = () => {
-    if (initialThreadReceived) onChange?.({ thread: latestThread, messages: latestMessages });
-  };
+  const emit = () => onChange?.({ thread: latestThread, messages: latestMessages });
   const stopThread = onSnapshot(threadRef(id), (snapshot) => {
     latestThread = snapshot.exists() ? normalizePrivateThread(snapshot) : null;
-    initialThreadReceived = true;
     emit();
   }, onError);
   const stopMessages = onSnapshot(query(messagesRef(id), orderBy("createdAt", "asc")), (snapshot) => {

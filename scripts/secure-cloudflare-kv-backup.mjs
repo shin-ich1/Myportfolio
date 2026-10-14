@@ -120,7 +120,7 @@ async function readExact(fh, bytes, offset) {
   }
   return b;
 }
-export async function inspectVault(input, passphrase, expectedNamespaces) {
+export async function inspectVault(input, passphrase, expectedNamespaces, consumeRecord = null) {
   const path = backupLocation(input);
   const fh = await open(path, 'r');
   let dataStart, fileSize, header, decipher;
@@ -162,6 +162,9 @@ export async function inspectVault(input, passphrase, expectedNamespaces) {
     digest.update(Buffer.from(line + '\n'));
     counts[entry.binding]++;
     if (++total > MAX_RECORDS * expectedNamespaces.length) throw Error('Too many KV records.');
+    // Callback may only mutate an isolated in-memory map. Authentication
+    // is not complete until GCM finalization and manifest verification.
+    if (consumeRecord) consumeRecord(entry);
   }
   function processChunk(chunk) {
     pending += utf8.write(chunk);
@@ -183,6 +186,50 @@ export async function inspectVault(input, passphrase, expectedNamespaces) {
     throw Error('Encrypted KV backup integrity verification failed (wrong passphrase, changed source, or corrupt/incomplete file).');
   }
 }
+/**
+ * Isolated IN-MEMORY ONLY KV disaster-recovery rehydration rehearsal.
+ * Never writes plaintext files or contacts Cloudflare. A hard 64 MiB
+ * reconstruction ceiling fails closed instead of spilling private data.
+ */
+export async function rehearseVault(input, passphrase, expectedNamespaces) {
+  const rebuilt = new Map(expectedNamespaces.map(ns => [ns.binding, new Map()]));
+  let accumulated = 0;
+  try {
+    const result = await inspectVault(input, passphrase, expectedNamespaces, entry => {
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(entry.valueBase64) ||
+          entry.valueBase64.length % 4 !== 0) {
+        throw Error('Noncanonical KV value encoding.');
+      }
+      const value = Buffer.from(entry.valueBase64, 'base64');
+      if (value.toString('base64') !== entry.valueBase64 || value.length > MAX_VALUE_BYTES) {
+        throw Error('KV byte value cannot be reconstructed.');
+      }
+      if (entry.metadata !== null && (typeof entry.metadata !== 'object' || Array.isArray(entry.metadata)) ||
+          entry.expiration !== null && (!Number.isInteger(entry.expiration) || entry.expiration < 0)) {
+        throw Error('Invalid restored KV metadata or expiration.');
+      }
+      accumulated += value.length;
+      if (accumulated > 64 * 1024 * 1024) throw Error('Bounded in-memory rebuild exceeded.');
+      rebuilt.get(entry.binding).set(entry.name, {
+        value, expiration: entry.expiration, metadata: entry.metadata
+      });
+    });
+    for (const ns of expectedNamespaces) {
+      if (rebuilt.get(ns.binding).size !== result.counts[ns.binding]) {
+        throw Error('Reconstructed KV key counts do not match.');
+      }
+    }
+    return { verified: true, memoryOnly: true, counts: result.counts };
+  } finally {
+    // Scrub reconstructed private bytes regardless of successful authentication.
+    for (const records of rebuilt.values()) {
+      for (const record of records.values()) record.value.fill(0);
+      records.clear();
+    }
+    rebuilt.clear();
+  }
+}
+
 export async function cloudflareReader(accountId, token) {
   if (!/^[0-9a-f]{32}$/i.test(accountId || '') || !token) throw Error('Read-only Cloudflare account ID/token environment not configured.');
   const base = 'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/storage/kv/namespaces/';
@@ -245,13 +292,18 @@ async function privatePrompt(label) {
 async function cli() {
   const [command, option, filename, ...extra] = process.argv.slice(2);
   const viaWrangler = command === 'backup' && extra.length === 1 && extra[0] === '--wrangler';
-  if ((!viaWrangler && extra.length) || !['backup','verify'].includes(command) ||
-      option !== (command === 'backup' ? '--output' : '--input')) throw Error('Usage: backup --output ABS_PATH [--wrangler] | verify --input ABS_PATH');
+  if ((!viaWrangler && extra.length) || !['backup','verify','rehearse'].includes(command) ||
+      option !== (command === 'backup' ? '--output' : '--input')) throw Error('Usage: backup --output ABS_PATH [--wrangler] | verify --input ABS_PATH | rehearse --input ABS_PATH');
   const namespaces = await canonicalNamespaces();
   const passphrase = await privatePrompt('Private KV backup passphrase (hidden, 16+ chars): ');
   if (command === 'verify') {
     const status = await inspectVault(filename, passphrase, namespaces);
     console.log('PASS: encrypted Cloudflare KV snapshot integrity. Counts: ' + JSON.stringify(status.counts));
+    return;
+  }
+  if (command === 'rehearse') {
+    const result = await rehearseVault(filename, passphrase, namespaces);
+    console.log('PASS: authenticated encrypted KV values reconstructed in memory only; zero Cloudflare writes. Counts: ' + JSON.stringify(result.counts));
     return;
   }
   const second = await privatePrompt('Repeat private passphrase (hidden): ');

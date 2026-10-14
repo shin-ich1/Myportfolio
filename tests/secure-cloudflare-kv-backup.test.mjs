@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { canonicalNamespaces, makeVault, inspectVault, cloudflareReader, safeBackupFailureCode } from '../scripts/secure-cloudflare-kv-backup.mjs';
+import { canonicalNamespaces, makeVault, inspectVault, rehearseVault, cloudflareReader, safeBackupFailureCode } from '../scripts/secure-cloudflare-kv-backup.mjs';
 
 test('canonical config lists exactly two nonsecurity KV bindings', async () => {
   const bindings = await canonicalNamespaces();
@@ -71,4 +71,23 @@ test('safe diagnostics identify local problems and HTTP statuses without printin
   assert.equal(safeBackupFailureCode(Error('Cloudflare KV READ failed: HTTP 401 (no data printed).')), 'CLOUDFLARE_KV_READ_HTTP_401');
   assert.equal(safeBackupFailureCode(Object.assign(Error('secret-value-must-not-appear'),{code:'EEXIST'})), 'LOCAL_ARCHIVE_ALREADY_EXISTS');
   assert.equal(safeBackupFailureCode(Error('SECRET MUST NEVER DISPLAY HERE')), 'OTHER_LOCAL_OR_NETWORK_ERROR');
+});
+
+
+test('in-memory-only authenticated KV recovery rebuilds metadata/binary records and rejects corrupt archive',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'lan-kv-rehearse-'));
+  const ns=[{binding:'STORAGE_OAUTH',id:'a'.repeat(32)},{binding:'PORTFOLIO_MESSAGES',id:'b'.repeat(32)}];
+  const secrets=new Map([[ns[0].id,Buffer.from([0,10,255,29,0])],[ns[1].id,Buffer.from('synthetic-only-test')]])
+  const keyData=new Map([[ns[0].id,[{name:'test-a',expiration:1900000000,metadata:{v:1}}]],[ns[1].id,[{name:'test-b'}]]]);
+  const file=join(dir,'snapshot.lankv'),bad=join(dir,'damaged.lankv');
+  const password='synthetic-memory-test-passphrase-2026';
+  try {
+    await makeVault(file,password,ns,async id=>keyData.get(id),async id=>secrets.get(id));
+    const status=await rehearseVault(file,password,ns);
+    assert.deepEqual(status,{verified:true,memoryOnly:true,counts:{STORAGE_OAUTH:1,PORTFOLIO_MESSAGES:1}});
+    await assert.rejects(()=>rehearseVault(file,'wrong-password-string',ns),/integrity|passphrase/);
+    const bytes=await readFile(file);bytes[bytes.length-1]^=1;await writeFile(bad,bytes);
+    await assert.rejects(()=>rehearseVault(bad,password,ns),/integrity/);
+    assert.deepEqual(await readFile(file),Buffer.from(await readFile(file)));
+  }finally {await rm(dir,{recursive:true,force:true});}
 });

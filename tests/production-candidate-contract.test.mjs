@@ -104,3 +104,14 @@ test('staging deployment workflow cannot execute on main or on candidate pull re
   assert.match(yaml,/project_id: lan-portfolio-staging/);
   assert.doesNotMatch(yaml,/project_id:\s*rolando-portfolio-3f1a3/);
 });
+
+test('read-only Production Rules attestation captures native gcloud exit before token validation',()=>{
+  const script=source('scripts/attest-production-security-backend-readonly.ps1');
+  assert.match(script,/\$tokenLines\s*=\s*@\(&\s*\$gcloud\.Source\s+auth\s+print-access-token\s+2>\$null\)/);
+  assert.match(script,/\$tokenExit\s*=\s*\$LASTEXITCODE/);
+  assert.match(script,/\$tokenExit\s+-ne\s+0\s+-or\s+\$accessToken\s+-notmatch/);
+  assert.doesNotMatch(script,/auth print-access-token[^\r\n]*\|\s*Select-Object/,
+    'Select-Object -First 1 prematurely terminates gcloud output, producing exit -1 on Windows');
+  assert.match(script,/\$expectedRulesBlob\s*=\s*'2b67f1322118e51b848f49fca24b986559c34a64'/);
+  assert.match(script,/PASS: deployed Firestore Rules EXACT reviewed source hash/);
+});

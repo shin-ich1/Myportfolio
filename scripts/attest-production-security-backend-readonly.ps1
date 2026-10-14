@@ -38,8 +38,11 @@ try {
 
   $gcloud = Get-Command 'gcloud.cmd' -ErrorAction SilentlyContinue
   if ($null -eq $gcloud) { Stop-Release 'gcloud.cmd is required for authorized READ-ONLY Firebase Rules inspection.' }
-  $accessToken = [string](& $gcloud.Source auth print-access-token 2>$null | Select-Object -First 1)
-  if ($LASTEXITCODE -ne 0 -or $accessToken -notmatch '^[A-Za-z0-9_.-]{20,}$') {
+  # Avoid early pipeline termination from Select-Object -First 1 on Windows.
+  $tokenLines = @(& $gcloud.Source auth print-access-token 2>$null)
+  $tokenExit = $LASTEXITCODE
+  $accessToken = if ($tokenLines.Count -eq 1) { ([string]$tokenLines[0]).Trim() } else { '' }
+  if ($tokenExit -ne 0 -or $accessToken -notmatch '^[A-Za-z0-9_.-]{20,}$') {
     Stop-Release 'Google Cloud authorization is unavailable.'
   }
   $headers = @{Authorization = "Bearer $accessToken"; Accept = 'application/json'; 'X-Goog-User-Project' = $project}

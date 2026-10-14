@@ -130,6 +130,31 @@ try {
   }
   if (-not $denied) { throw "Isolated Worker never served its auth gate; last HTTP $lastHttpStatus." }
   Write-Host 'PASS: disposable Worker denied anonymous request (401).'
+  $stage='authenticated-version-readiness'
+  # Anonymous 401 cannot distinguish old/no-secret version from new version.
+  # The disposable /drill/ready endpoint requires the exact ephemeral token
+  # and does not touch Durable Object state. Do not test PITR until it works.
+  $authenticatedReady=$false
+  $lastReadyStatus=0
+  for($readyAttempt=1;$readyAttempt -le 15;$readyAttempt++){
+    try {
+      $readyReply=Invoke-RestMethod -Uri "$baseUri/drill/ready" -Method POST -Headers $headers -Body '{}' -ContentType 'application/json' -TimeoutSec 12
+      if ($readyReply.ready -ne $true) { throw 'Authorized readiness response was unexpected.' }
+      $authenticatedReady=$true
+      break
+    } catch {
+      $lastReadyStatus=0
+      if ($_.Exception.Response) { $lastReadyStatus=[int]$_.Exception.Response.StatusCode }
+      if ($lastReadyStatus -notin @(401,404,503)) {
+        throw "Unexpected authorized test-only readiness status: HTTP $lastReadyStatus."
+      }
+    }
+    if($readyAttempt -lt 15){ Start-Sleep -Seconds 2 }
+  }
+  if(-not $authenticatedReady){
+    throw "Disposable Worker never confirmed the exact bearer token after update; last HTTP $lastReadyStatus. DO PITR was NOT attempted."
+  }
+  Write-Host 'PASS: exact temporary bearer accepted by the newly deployed Worker; no DO state changed.'
   $stage='baseline-and-mutate'
   $before=Invoke-Drill 'baseline'
   if ($before.marker -cne 'before' -or [string]::IsNullOrEmpty($before.bookmark)) { throw 'No baseline bookmark.' }

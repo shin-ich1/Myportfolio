@@ -167,6 +167,18 @@ jobs:
           if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
           [System.Management.Automation.Language.Parser]::ParseFile("scripts/deploy-production-security-read-budget.ps1", [ref]$tokens, [ref]$errors) | Out-Null
           if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+      - name: Parse authenticated READ-ONLY backend attestation in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("scripts/attest-production-security-backend-readonly.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+          $rules = @(& git rev-parse --verify 'HEAD:firestore.rules')
+          if ($LASTEXITCODE -ne 0 -or $rules.Count -ne 1 -or $rules[0].Trim() -cne '2b67f1322118e51b848f49fca24b986559c34a64') {
+            throw 'Security Rules candidate blob mismatch during read-only preflight.'
+          }
+          Write-Host 'PASS: Production read-only attestation script parses in Windows PowerShell 5.1.'
       - name: Run exact local operator tests under Windows
         shell: pwsh
         run: |

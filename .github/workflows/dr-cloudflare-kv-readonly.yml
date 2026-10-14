@@ -1,0 +1,39 @@
+name: Cloudflare KV encrypted DR regression (NO DEPLOY)
+on:
+  pull_request:
+    paths:
+      - 'scripts/secure-cloudflare-kv-backup.mjs'
+      - 'tests/secure-cloudflare-kv-backup.test.mjs'
+      - 'docs/production-dr-continuity-20261015.md'
+      - '.github/workflows/dr-cloudflare-kv-readonly.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  vault-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check syntax and ensure remote KV calls are GET-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/secure-cloudflare-kv-backup.mjs
+          node --check tests/secure-cloudflare-kv-backup.test.mjs
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const s=readFileSync('scripts/secure-cloudflare-kv-backup.mjs','utf8');
+          if (!s.includes("method: 'GET'") || /method:\s*['"](PUT|POST|PATCH|DELETE)['"]/.test(s)) throw Error('Cloudflare KV mutating HTTP method introduced');
+          if (!s.includes('getAuthTag()') || !s.includes('setAuthTag(tag)')) throw Error('Authenticated encrypted backups required');
+          if (!s.includes('link(tmp, dest)')) throw Error('Backup must not overwrite archive');
+          if (!s.includes('cloudflareReader(process.env.LAN_CLOUDFLARE_ACCOUNT_ID, process.env.CLOUDFLARE_API_TOKEN)')) throw Error('KV token must come from local operator environment');
+          console.log('PASS: canonical KV GET-only, encrypted, no-overwrite, local-token contract. NO CLOUD CALLS.');
+          NODE
+      - name: Verify synthetic private encryption and Cloudflare GET-only pagination
+        run: node --test tests/secure-cloudflare-kv-backup.test.mjs

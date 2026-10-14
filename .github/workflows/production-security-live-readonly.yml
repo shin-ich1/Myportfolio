@@ -16,8 +16,8 @@ jobs:
       - name: Verify live Worker health and exact two published Security files
         shell: bash
         run: |
-          node <<'NODE'
-          const crypto = require('node:crypto');
+          node --input-type=module <<'NODE'
+          import crypto from 'node:crypto';
           const publicSite = 'https://rolando-portfolio-3f1a3.web.app';
           const worker = 'https://lan-cloudinary-telemetry.lagmayr2.workers.dev/health';
           const checks = [

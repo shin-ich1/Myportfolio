@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - fix/security-trusted-device-key-preservation-20261014
+      - release/production-frozen-public-security-20261014
   workflow_dispatch:
 
 permissions:
@@ -37,7 +38,12 @@ jobs:
           ];
           // Published Public is frozen. Print hashes ONLY, do not assume the
           // unmerged Security branch matches Public and never overwrite it.
-          const frozenPublic = ['/app.js', '/styles.css', '/message-service.js', '/index.html'];
+          const frozenPublic = [
+            ['/app.js', '6971fde459ea2b59fc4868cae37bade0232e8765'],
+            ['/styles.css', 'ec2f4078616f7435a5c9cc1a646fa44eb9db5f4c'],
+            ['/message-service.js', '764a353722a63067b0335f80c17c09fbbfc00a06'],
+            ['/index.html', 'ba6b29cd5d2a84286850022f9f7ef075df5a73a5']
+          ];
           const deadline = 20000;
           async function get(url) {
             const response = await fetch(url, {
@@ -74,13 +80,15 @@ jobs:
               console.error('FAIL Protected Admin ' + path + ': ' + error.message);
             }
           }
-          for (const path of frozenPublic) {
+          for (const [path, expected] of frozenPublic) {
             try {
               const actual = blob(await get(publicSite + path + '?read_only=' + Date.now()));
-              console.log('FREEZE Public ' + path + ' live Git blob: ' + actual);
+              const ok = actual === expected;
+              console.log((ok ? 'PASS ' : 'FAIL ') + 'Frozen Public ' + path + ' live Git blob: ' + actual);
+              if (!ok) failures++;
             } catch (error) {
               failures++;
-              console.error('FAIL Frozen Public reachable ' + path + ': ' + error.message);
+              console.error('FAIL Frozen Public ' + path + ': ' + error.message);
             }
           }
           try {

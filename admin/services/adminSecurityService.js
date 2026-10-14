@@ -5,6 +5,7 @@ const SESSION_KEY = 'lan-admin-security-session';
 const DEVICE_DB = 'lan-admin-security';
 const DEVICE_STORE = 'device-identity';
 const DEVICE_RECORD = 'current';
+const DEVICE_PENDING_RECORD = 'pending';
 let volatileSession = null;
 let stepUpProof = null;
 let lastLoginEmail = '';
@@ -47,23 +48,54 @@ function openDeviceDb(){
     request.onsuccess=()=>resolve(request.result); request.onerror=()=>reject(request.error);
   });
 }
-async function deviceRecord(mode='readonly', mutator=null){
+// The IndexedDB transaction (not merely the individual request) must commit
+// before a device credential can be treated as durable.
+async function deviceRecordRequest(mode, key, value){
   const db=await openDeviceDb();
-  try { return await new Promise((resolve,reject)=>{ const tx=db.transaction(DEVICE_STORE,mode); const store=tx.objectStore(DEVICE_STORE); if(mode==='readonly'){ const q=store.get(DEVICE_RECORD); q.onsuccess=()=>resolve(q.result||null); q.onerror=()=>reject(q.error); } else { Promise.resolve(mutator(store)).then(resolve,reject); } }); } finally { db.close(); }
+  return new Promise((resolve,reject)=>{
+    let tx;
+    try {
+      tx=db.transaction(DEVICE_STORE,mode);
+      const store=tx.objectStore(DEVICE_STORE);
+      const request=mode==='readonly'?store.get(key)
+        :value===undefined?store.delete(key):store.put(value,key);
+      let result=null;
+      request.onsuccess=()=>{ result=request.result??null; };
+      tx.oncomplete=()=>{ db.close(); resolve(result); };
+      tx.onabort=()=>{ db.close(); reject(tx.error||request.error||new Error('Device credential storage transaction aborted.')); };
+    } catch(error){ db.close(); reject(error); }
+  });
 }
-async function putDevice(record){ return deviceRecord('readwrite',store=>new Promise((resolve,reject)=>{ const q=store.put(record,DEVICE_RECORD); q.onsuccess=()=>resolve(record); q.onerror=()=>reject(q.error); })); }
-export async function clearLocalTrustedDevice(){ return deviceRecord('readwrite',store=>new Promise((resolve,reject)=>{ const q=store.delete(DEVICE_RECORD); q.onsuccess=()=>resolve(); q.onerror=()=>reject(q.error); })); }
+const readDeviceRecord=(key=DEVICE_RECORD)=>deviceRecordRequest('readonly',key);
+const putDeviceRecord=(key,record)=>deviceRecordRequest('readwrite',key,record);
+const removeDeviceRecord=key=>deviceRecordRequest('readwrite',key);
+export async function clearLocalTrustedDevice(){
+  await removeDeviceRecord(DEVICE_RECORD);
+  await removeDeviceRecord(DEVICE_PENDING_RECORD);
+}
 
-export async function createDeviceKeyPair({renew=false}={}){
-  const existing=await deviceRecord().catch(()=>null); if(!renew&&existing?.privateKey&&existing?.deviceId) return {deviceId:existing.deviceId,publicKeyJwk:existing.publicKeyJwk};
+// Pending private keys live under a DIFFERENT key from the active credential.
+// An expired/failed QR never destroys the key needed for existing trusted logins.
+async function createPendingDeviceCredential(){
   const keys=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},false,['sign','verify']);
   const publicKeyJwk=await crypto.subtle.exportKey('jwk',keys.publicKey);
   const deviceId=base64url(crypto.getRandomValues(new Uint8Array(24)));
-  await putDevice({deviceId,privateKey:keys.privateKey,publicKeyJwk,createdAt:new Date().toISOString()});
-  return {deviceId,publicKeyJwk};
+  const pending={deviceId,privateKey:keys.privateKey,publicKeyJwk,createdAt:new Date().toISOString()};
+  await putDeviceRecord(DEVICE_PENDING_RECORD,pending);
+  return pending;
+}
+async function requestPersistentCredentialStorage(){
+  // Best effort: browsers may still erase site data by user choice/policy.
+  try { await globalThis.navigator?.storage?.persist?.(); } catch {}
+}
+export async function discardPendingDeviceEnrollment(challengeId=''){
+  const pending=await readDeviceRecord(DEVICE_PENDING_RECORD);
+  if(pending && (!challengeId || pending.challengeId===text(challengeId))){
+    await removeDeviceRecord(DEVICE_PENDING_RECORD);
+  }
 }
 async function signDeviceChallenge(challenge){
-  const local=await deviceRecord(); if(!local?.privateKey || local.deviceId!==challenge.deviceId) throw Object.assign(new Error('Trusted-device key is unavailable.'),{code:'security/device-key-unavailable'});
+  const local=await readDeviceRecord(); if(!local?.privateKey || local.deviceId!==challenge.deviceId) throw Object.assign(new Error('Trusted-device key is unavailable.'),{code:'security/device-key-unavailable'});
   const data=new TextEncoder().encode(text(challenge.nonce));
   const sig=await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},local.privateKey,data);
   return base64url(sig);
@@ -78,7 +110,7 @@ async function completeCustomTokenSession(payload){
 
 export async function signInAdministrator(email,password){
   lastLoginEmail=text(email);
-  const local=await deviceRecord().catch(()=>null);
+  const local=await readDeviceRecord().catch(()=>null);
   const first=await workerRequest('/security/login/password',{body:{email:text(email),password:String(password??''),deviceId:local?.deviceId||''}});
   if(first.state==='trusted-device-challenge' && local?.privateKey){
     try {
@@ -128,40 +160,83 @@ export async function logoutAdministrator(){
   if(teardownError) throw teardownError;
 }
 
-export async function requestTrustedDeviceLogin(email,password){ const local=await deviceRecord(); return workerRequest('/security/device/login-challenge',{body:{email:text(email),password:String(password??''),deviceId:local?.deviceId||''}}); }
-export async function completeTrustedDeviceLogin(challenge){ const local=await deviceRecord(); const signature=await signDeviceChallenge({...challenge,deviceId:local.deviceId}); return completeCustomTokenSession(await workerRequest('/security/device/login-complete',{body:{challengeId:challenge.challengeId,deviceId:local.deviceId,signature}})); }
+export async function requestTrustedDeviceLogin(email,password){ const local=await readDeviceRecord(); return workerRequest('/security/device/login-challenge',{body:{email:text(email),password:String(password??''),deviceId:local?.deviceId||''}}); }
+export async function completeTrustedDeviceLogin(challenge){ const local=await readDeviceRecord(); const signature=await signDeviceChallenge({...challenge,deviceId:local.deviceId}); return completeCustomTokenSession(await workerRequest('/security/device/login-complete',{body:{challengeId:challenge.challengeId,deviceId:local.deviceId,signature}})); }
+let enrollmentCreationInFlight=false;
 export async function createDeviceEnrollmentChallenge(){
   const proof=requireRecentStepUp('register trusted device');
   const current=getSecuritySession();
-  const existing=await deviceRecord().catch(()=>null);
-  // A successful emergency recovery or device revocation retires the OLD
-  // server-side credential permanently. Explicit re-enrollment MUST create
-  // a new device ID and non-extractable private key, not retry the IndexedDB
-  // key the server correctly rejects as already registered.
+  const existing=await readDeviceRecord().catch(()=>null);
   if(current?.trustLevel==='trusted' && current.deviceId &&
      existing?.deviceId===current.deviceId){
     throw Object.assign(new Error('This device is already trusted.'),{
       code:'security-device-already-trusted'
     });
   }
-  const local=await createDeviceKeyPair({renew:true});
-  const enrollment=await workerRequest('/security/device/enrollment/create',{body:{deviceId:local.deviceId,publicKeyJwk:local.publicKeyJwk,proofId:proof.proofId},authorization:true});
-  const workspace=`pages/settings.html?room=security&approveDeviceEnrollment=${encodeURIComponent(enrollment.challengeId)}`;
-  const enrollmentUrl=new URL(`/admin/shell.html?workspace=${encodeURIComponent(workspace)}`,window.location.origin).href;
-  return {...enrollment,enrollmentUrl};
+  if(enrollmentCreationInFlight){
+    throw Object.assign(new Error('A device enrollment is already being prepared.'),{
+      code:'security-device-enrollment-in-progress'
+    });
+  }
+  enrollmentCreationInFlight=true;
+  try {
+    await requestPersistentCredentialStorage();
+    const pending=await createPendingDeviceCredential();
+    let enrollment;
+    try {
+      enrollment=await workerRequest('/security/device/enrollment/create',{
+        body:{deviceId:pending.deviceId,publicKeyJwk:pending.publicKeyJwk,proofId:proof.proofId},
+        authorization:true
+      });
+      if(!enrollment?.challengeId || !enrollment?.expiresAt){
+        throw new Error('Security Gateway returned an incomplete enrollment challenge.');
+      }
+      await putDeviceRecord(DEVICE_PENDING_RECORD,{
+        ...pending,challengeId:enrollment.challengeId,expiresAt:enrollment.expiresAt
+      });
+    } catch(error){
+      await removeDeviceRecord(DEVICE_PENDING_RECORD).catch(()=>{});
+      throw error;
+    }
+    const workspace=`pages/settings.html?room=security&approveDeviceEnrollment=${encodeURIComponent(enrollment.challengeId)}`;
+    const enrollmentUrl=new URL(`/admin/shell.html?workspace=${encodeURIComponent(workspace)}`,window.location.origin).href;
+    return {...enrollment,enrollmentUrl};
+  } finally { enrollmentCreationInFlight=false; }
 }
 export async function getDeviceEnrollmentStatus(challengeId){ return workerRequest('/security/device/enrollment/status',{body:{challengeId:text(challengeId)},authorization:true}); }
 export async function approveDeviceEnrollment(challengeId){ return workerRequest('/security/device/enrollment/approve',{body:{challengeId:text(challengeId),proofId:stepUpProof?.proofId||''},authorization:true}); }
 export async function completeDeviceEnrollment(challengeId,displayName='Trusted device'){
-  const local=await createDeviceKeyPair();
-  const payload=await workerRequest('/security/device/enrollment/complete',{body:{challengeId:text(challengeId),deviceId:local.deviceId,publicKeyJwk:local.publicKeyJwk,displayName:text(displayName)||'Trusted device'},authorization:true});
+  const pending=await readDeviceRecord(DEVICE_PENDING_RECORD);
+  const expiry=Date.parse(pending?.expiresAt||'');
+  if(!pending?.privateKey || pending.challengeId!==text(challengeId) ||
+     !Number.isFinite(expiry) || expiry<=Date.now()){
+    throw Object.assign(new Error('Pending device credential is missing, mismatched, or expired. Start enrollment again.'),{
+      code:'security-device-enrollment-pending-invalid'
+    });
+  }
+  const payload=await workerRequest('/security/device/enrollment/complete',{
+    body:{challengeId,deviceId:pending.deviceId,publicKeyJwk:pending.publicKeyJwk,displayName:text(displayName)||'Trusted device'},
+    authorization:true
+  });
+  if(payload?.ok!==true || payload?.deviceId!==pending.deviceId ||
+     !payload?.customToken || payload?.session?.deviceId!==pending.deviceId ||
+     payload?.session?.trustLevel!=='trusted') {
+    throw Object.assign(new Error('Security Gateway did not approve this exact trusted-device credential.'),{
+      code:'security-device-enrollment-response-invalid'
+    });
+  }
+  // Do not retire the old local key UNTIL backend acceptance.  If the backend
+  // rejects or the QR expires, the old credential stays usable.
+  const {challengeId:completedChallenge,expiresAt:completedExpiry,...credential}=pending;
+  await putDeviceRecord(DEVICE_RECORD, credential);
+  await removeDeviceRecord(DEVICE_PENDING_RECORD).catch(()=>{});
   const session=await completeCustomTokenSession(payload);
   return {...payload,session};
 }
 export async function renameTrustedDevice(deviceId,displayName){ return workerRequest('/security/device/rename',{body:{deviceId,displayName},authorization:true}); }
 export async function revokeTrustedDevice(deviceId){
   const result=await workerRequest('/security/device/revoke',{body:{deviceId,proofId:stepUpProof?.proofId||''},authorization:true});
-  const local=await deviceRecord().catch(()=>null);
+  const local=await readDeviceRecord().catch(()=>null);
   const currentDeviceRevoked=result?.currentDeviceRevoked===true || local?.deviceId===deviceId;
   if(currentDeviceRevoked){
     await clearLocalTrustedDevice().catch(()=>{});

@@ -11,6 +11,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { execFileSync } from 'node:child_process';
 import { dirname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createSafeRecoveryScan } from './security-dr-restore-policy.mjs';
 
 export const PROJECT = 'rolando-portfolio-3f1a3';
 export const ROOT_COLLECTIONS = Object.freeze([
@@ -173,7 +174,7 @@ export async function createEncryptedBackup({ output, request, passphrase, proje
   }
 }
 
-export async function verifyEncryptedBackup({ input, passphrase }) {
+export async function verifyEncryptedBackup({ input, passphrase, recoveryRehearsal = false }) {
   ensure(typeof passphrase === 'string' && passphrase.length >= 24,
     'A backup passphrase of at least 24 characters is required.');
   const handle = await fs.open(input, 'r');
@@ -192,6 +193,7 @@ export async function verifyEncryptedBackup({ input, passphrase }) {
     key.fill(0);
     decipher.setAuthTag(tag);
     const digest = createHash('sha256');
+    const recoveryScan = recoveryRehearsal ? createSafeRecoveryScan(ROOT_COLLECTIONS) : null;
     let tail = '', actual = 0, terminal = null;
     const decoder = new StringDecoder('utf8');
     function ingest(bytes) {
@@ -202,6 +204,7 @@ export async function verifyEncryptedBackup({ input, passphrase }) {
         const row = JSON.parse(line);
         if (row.type === 'document') {
           ensure(terminal === null && row.document?.name, 'Invalid archive document order.');
+          recoveryScan?.accept(row);
           digest.update(line + '\n');
           actual++;
         } else {
@@ -219,7 +222,9 @@ export async function verifyEncryptedBackup({ input, passphrase }) {
       'Archive missing a complete production manifest.');
     ensure(terminal.records === actual && terminal.sha256 === digest.digest('hex'),
       'Archive record count or digest mismatch.');
-    return { verified: true, records: actual, rootCollectionCount: terminal.rootCollections.length };
+    const result = { verified: true, records: actual, rootCollectionCount: terminal.rootCollections.length };
+    if (recoveryScan) result.recovery = recoveryScan.finish(true, actual);
+    return result;
   } finally {
     await handle.close();
   }
@@ -309,9 +314,10 @@ export function safeBackupFailureCode(error) {
 
 export async function main(args = process.argv.slice(2)) {
   const [action, ...params] = args;
-  if (!['backup', 'verify'].includes(action)) {
+  if (!['backup', 'verify', 'rehearse'].includes(action)) {
     process.stdout.write('Usage: node scripts/secure-firestore-backup.mjs backup --output /PRIVATE/backup.lanfbak --confirm-production-read\n' +
       '       node scripts/secure-firestore-backup.mjs verify --input /PRIVATE/backup.lanfbak\n' +
+      '       node scripts/secure-firestore-backup.mjs rehearse --input /PRIVATE/backup.lanfbak\n' +
       'Requires explicit separate owner approval for any production read. NO RESTORE COMMAND EXISTS.\n');
     return;
   }
@@ -322,11 +328,18 @@ export async function main(args = process.argv.slice(2)) {
     ensure(params[i]?.startsWith('--') && params[i + 1], 'Invalid command arguments.');
     flags.set(params[i], params[i + 1]);
   }
-  if (action === 'verify') {
-    ensure(flags.size === 1 && flags.has('--input'), 'Only --input is permitted for verify.');
+  if (action === 'verify' || action === 'rehearse') {
+    ensure(flags.size === 1 && flags.has('--input'), 'Only --input is permitted for offline verification.');
     const passphrase = await readHiddenPrompt('Backup passphrase (not displayed): ');
-    const result = await verifyEncryptedBackup({ input: flags.get('--input'), passphrase });
-    process.stdout.write('Encrypted archive verified. Records: ' + result.records + '. No data was displayed.\n');
+    const result = await verifyEncryptedBackup({
+      input: flags.get('--input'), passphrase, recoveryRehearsal: action === 'rehearse'
+    });
+    if (action === 'rehearse') {
+      process.stdout.write('PASS: authenticated Firestore forward-recovery inventory (NO WRITES). ' +
+        JSON.stringify(result.recovery) + '\n');
+    } else {
+      process.stdout.write('Encrypted archive verified. Records: ' + result.records + '. No data was displayed.\n');
+    }
     return;
   }
   ensure(flags.size === 2 && flags.has('--output') &&

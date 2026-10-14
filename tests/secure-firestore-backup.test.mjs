@@ -4,9 +4,10 @@ import { mkdtemp, readFile, rm, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  PROJECT, enumerateFirestore, createEncryptedBackup, verifyEncryptedBackup,
+  PROJECT, ROOT_COLLECTIONS, enumerateFirestore, createEncryptedBackup, verifyEncryptedBackup,
   createHiddenInputParser, safeBackupFailureCode
 } from '../scripts/secure-firestore-backup.mjs';
+import { createSafeRecoveryScan } from '../scripts/security-dr-restore-policy.mjs';
 
 const passphrase = 'local synthetic TEST only: long phrase 1234';
 const base = 'projects/' + PROJECT + '/databases/(default)/documents';
@@ -166,4 +167,58 @@ test('backup failures expose fixed nonsecret codes, never arbitrary exception de
     'BACKUP_FILE_NOT_FOUND');
   assert.equal(safeBackupFailureCode(new Error('Sensitive user-specific private content lorem ipsum')),
     'BACKUP_CHECK_FAILED');
+});
+
+test('authenticated Firestore catastrophe rehearsal quarantines all old Admin state and private records',async t=>{
+  const dir=await mkdtemp(join(tmpdir(),'lan-fb-forward-repair-'));
+  t.after(()=>rm(dir,{recursive:true,force:true}));
+  const archive=join(dir,'synthetic.lanfbak');
+  await createEncryptedBackup({output:archive,request:fixtureRequest().requests,passphrase});
+  const proof=await verifyEncryptedBackup({input:archive,passphrase,recoveryRehearsal:true});
+  assert.equal(proof.records,5);
+  assert.deepEqual(proof.recovery,{
+    portfolioContentCandidates:2,
+    quarantinedSecurityAndPrivate:3,
+    missingTombstones:0,
+    authenticated:true,
+    noOldSecurityStateReactivated:true,
+    freshIdentityAndMfaRequired:true,
+    writeOperations:0
+  });
+  const wrong='fake-not-the-real-passphrase-12345678';
+  await assert.rejects(verifyEncryptedBackup({input:archive,passphrase:wrong,recoveryRehearsal:true}));
+  const bytes=await readFile(archive);
+  bytes[bytes.length-1]^=1;
+  const damaged=join(dir,'damaged.lanfbak');
+  await writeFile(damaged,bytes);
+  await assert.rejects(verifyEncryptedBackup({input:damaged,passphrase,recoveryRehearsal:true}));
+});
+
+test('forward recovery fails closed on unsafe root paths, repeated docs and stale sessions/devices',()=>{
+  const doc=(path,missing=false)=>({
+    type:'document',
+    document:{name:base+'/'+path,...(missing?{}:{fields:{active:{booleanValue:true}}})},
+    missing
+  });
+  const security=ROOT_COLLECTIONS.filter(x=>x==='authorizedAdministrators'||x.startsWith('adminSecurity'));
+  assert.ok(security.length>=10,'Must include every canonical security collection');
+  const scan=createSafeRecoveryScan(ROOT_COLLECTIONS);
+  for(const root of security)scan.accept(doc(root+'/synthetic-old-uid'));
+  scan.accept(doc('portfolio/content-1'));
+  scan.accept(doc('privateMessageThreads/thread1/messages/msg1'));
+  scan.accept(doc('contactMessages/sensitive1'));
+  scan.accept(doc('portfolio/uncreated',true));
+  const status=scan.finish(true,security.length+4);
+  assert.equal(status.quarantinedSecurityAndPrivate,security.length+2);
+  assert.equal(status.portfolioContentCandidates,1);
+  assert.equal(status.missingTombstones,1);
+  assert.equal(status.noOldSecurityStateReactivated,true);
+  assert.equal(status.writeOperations,0);
+  assert.throws(()=>scan.accept(doc('adminSecuritySessions/synthetic-old-uid')),/Repeated/);
+  assert.throws(()=>createSafeRecoveryScan([]),/inventory/);
+  const bad=createSafeRecoveryScan(ROOT_COLLECTIONS);
+  assert.throws(()=>bad.accept(doc('unreviewedNewCollection/anything')),/Unreviewed/);
+  assert.throws(()=>bad.accept(doc('portfolio/doc1/arbitrary/nested')),/Unreviewed/);
+  assert.throws(()=>bad.accept({type:'document',document:{name:base+'/portfolio/malformed'},missing:false}),/Malformed/);
+  assert.throws(()=>bad.finish(false,0),/Authenticated/);
 });

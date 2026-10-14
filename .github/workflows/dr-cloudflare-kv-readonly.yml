@@ -3,7 +3,9 @@ on:
   pull_request:
     paths:
       - 'scripts/secure-cloudflare-kv-backup.mjs'
+      - 'scripts/secure-cloudflare-kv-wrangler-reader.mjs'
       - 'tests/secure-cloudflare-kv-backup.test.mjs'
+      - 'tests/secure-cloudflare-kv-wrangler-reader.test.mjs'
       - 'docs/production-dr-continuity-20261015.md'
       - '.github/workflows/dr-cloudflare-kv-readonly.yml'
   workflow_dispatch:
@@ -26,6 +28,8 @@ jobs:
           set -euo pipefail
           node --check scripts/secure-cloudflare-kv-backup.mjs
           node --check tests/secure-cloudflare-kv-backup.test.mjs
+          node --check scripts/secure-cloudflare-kv-wrangler-reader.mjs
+          node --check tests/secure-cloudflare-kv-wrangler-reader.test.mjs
           node --input-type=module <<'NODE'
           import {readFileSync} from 'node:fs';
           const s=readFileSync('scripts/secure-cloudflare-kv-backup.mjs','utf8');
@@ -35,5 +39,5 @@ jobs:
           if (!s.includes('cloudflareReader(process.env.LAN_CLOUDFLARE_ACCOUNT_ID, process.env.CLOUDFLARE_API_TOKEN)')) throw Error('KV token must come from local operator environment');
           console.log('PASS: canonical KV GET-only, encrypted, no-overwrite, local-token contract. NO CLOUD CALLS.');
           NODE
-      - name: Verify synthetic private encryption and Cloudflare GET-only pagination
-        run: node --test tests/secure-cloudflare-kv-backup.test.mjs
+      - name: Verify private encryption, Wrangler OAuth GET-only and binary transport
+        run: node --test tests/secure-cloudflare-kv-backup.test.mjs tests/secure-cloudflare-kv-wrangler-reader.test.mjs

@@ -4,6 +4,21 @@
 
 This document is an operator-controlled plan to preserve production access during a security-owner migration. It does **not** authorize executing any production operation. Production targets: Firebase `rolando-portfolio-3f1a3`, Cloudflare Worker `lan-cloudinary-telemetry`. Staging `lan-portfolio-staging` is isolated, not a production backup or restore destination.
 
+## Live Production status update — 2026-10-14
+
+**This section supersedes the historical pre-cutover observations below. Existing Production is live; this document grants no deployment approval.**
+
+- **Cloudflare Worker:** active version `7dbe1cae-6933-42e0-86ec-e1ed37f1bbb3` serves 100% traffic. Owner downloaded the deployed source; its SHA-256 matched the reviewed candidate's local Wrangler `--dry-run` bundle byte-for-byte. `SECURITY_COORDINATOR` Durable Object and separate `STORAGE_OAUTH` / `PORTFOLIO_MESSAGES` KV bindings are present. **Do not redeploy the identical Worker.**
+- **Firestore Rules:** authenticated read-only deployed source matched reviewed Git blob `2b67f1322118e51b848f49fca24b986559c34a64`.
+- **Identity Platform:** authenticated read-only project check found `mfa.state=ENABLED`, TOTP provider `ENABLED`. Do **not** execute the historical `DISABLED → ENABLED` procedure.
+- **Recovery:** owner completed server-confirmed new Recovery Kit rotation; Security Activity recorded rotation and rejected an old key. Never use the new key in destructive emergency recovery as a test. Private offline custody of the new kit is owner-controlled; full emergency recovery remains untested.
+- **Live access denial:** [Production HTTP audit #38593966952](https://github.com/shin-ich1/Myportfolio/actions/runs/38593966952) passed anonymous Worker Security API denials (three HTTP 401) and token-free direct Firestore denials (four HTTP 403 against synthetic IDs), plus published Admin/Public file hashes. [Admin regression CI #38593978453](https://github.com/shin-ich1/Myportfolio/actions/runs/38593978453) succeeded. These checks **do not** attest formerly authenticated *revoked* session denial.
+- **Email:** Security Email Branding UI shows **Not configured**. Do not claim security-alert delivery.
+
+### Current rollback and security decision
+
+**Continue existing Production, without a new deployment. HOLD any new high-risk migration or claim of complete disaster-recovery readiness** until there is an independently verified forward-corrective strategy covering the existing SQLite Durable Object class, Cloudflare KV, Firebase Auth/MFA, recovery-key continuity, IAM and server-only secrets. The encrypted 392-document Firestore backup is **partial**; it is not an Auth/DO/KV restore. An older pre-Durable-Object Worker version must **not** be used as an assumed safe rollback. Preserve server session validation and current DO class in any future forward repair; require explicit authorization and post-change live testing. Separately obtain live negative evidence for a deliberately revoked *non-current temporary* session, without revoking the owner's trusted browser or using emergency recovery. The legacy `main` branch is behind live Production; do not bulk-merge or bulk-deploy PR #23.
+
 ## Observed production baseline (owner screenshots / read-only checks)
 
 - Production Firestore administrator allowlist record is `active: true`; owner compared its document ID to the current Firebase Authentication UID and reported **MATCH**. This does **not** prove a working full MFA / recovery login.

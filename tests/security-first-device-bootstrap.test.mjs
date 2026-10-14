@@ -450,13 +450,36 @@ test("post-recovery enrollment rejects the retired public key but accepts a new 
   }finally{f.restore();}
 });
 
-test("explicit trusted-device enrollment rotates local key material; completing the challenge retains that exact new key",async()=>{
+test("trusted-device enrollment preserves the active local key until server-authorized completion",async()=>{
   const {readFileSync}=await import("node:fs");
   const source=readFileSync(new URL("../admin/services/adminSecurityService.js",import.meta.url),"utf8");
-  assert.match(source,/export async function createDeviceKeyPair\(\{renew=false\}=\{\}\)/);
-  assert.match(source,/if\(!renew&&existing\?\.privateKey&&existing\?\.deviceId\)/);
-  assert.match(source,/export async function createDeviceEnrollmentChallenge\(\)[\s\S]*?createDeviceKeyPair\(\{renew:true\}\)/);
-  assert.match(source,/export async function completeDeviceEnrollment\([^)]*\)[\s\S]*?createDeviceKeyPair\(\);/);
-  assert.match(source,/requireRecentStepUp\('register trusted device'\)[\s\S]*?createDeviceKeyPair\(\{renew:true\}\)/,
-    "do not rotate a stored credential without a recent step-up proof");
+  assert.match(source,/const DEVICE_RECORD = 'current';/);
+  assert.match(source,/const DEVICE_PENDING_RECORD = 'pending';/);
+  assert.doesNotMatch(source,/createDeviceKeyPair\(\{renew:true\}\)/,
+    "a pending enrollment must never overwrite the active credential");
+
+  const createStart=source.indexOf("export async function createDeviceEnrollmentChallenge()");
+  const statusStart=source.indexOf("export async function getDeviceEnrollmentStatus(",createStart);
+  assert.ok(createStart>=0 && statusStart>createStart);
+  const create=source.slice(createStart,statusStart);
+  assert.match(create,/requireRecentStepUp\('register trusted device'\)/);
+  assert.match(create,/await createPendingDeviceCredential\(\)/);
+  assert.match(create,/workerRequest\('\/security\/device\/enrollment\/create'/);
+  assert.doesNotMatch(create,/putDeviceRecord\(DEVICE_RECORD|removeDeviceRecord\(DEVICE_RECORD/,
+    "requesting enrollment cannot modify active trust");
+
+  const completeStart=source.indexOf("export async function completeDeviceEnrollment(");
+  const renameStart=source.indexOf("export async function renameTrustedDevice(",completeStart);
+  assert.ok(completeStart>=0 && renameStart>completeStart);
+  const complete=source.slice(completeStart,renameStart);
+  assert.match(complete,/readDeviceRecord\(DEVICE_PENDING_RECORD\)/);
+  assert.match(complete,/pending\.challengeId!==text\(challengeId\)/);
+  assert.match(complete,/expiry<=Date\.now\(\)/);
+  assert.match(complete,/payload\?\.session\?\.trustLevel!=='trusted'/);
+  const approved=complete.indexOf("workerRequest('/security/device/enrollment/complete'");
+  const promoted=complete.indexOf("putDeviceRecord(DEVICE_RECORD, credential)");
+  assert.ok(approved>=0 && promoted>approved,
+    "a new private key may become active ONLY after server authorization");
+  assert.match(source,/export async function discardPendingDeviceEnrollment/);
+  assert.match(source,/removeDeviceRecord\(DEVICE_PENDING_RECORD\)/);
 });

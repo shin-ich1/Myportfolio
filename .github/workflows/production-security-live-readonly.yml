@@ -1,0 +1,77 @@
+name: Production Security LIVE read-only attestation
+on:
+  push:
+    branches:
+      - fix/security-trusted-device-key-preservation-20261014
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify live Worker health and exact two published Security files
+        shell: bash
+        run: |
+          node <<'NODE'
+          const crypto = require('node:crypto');
+          const publicSite = 'https://rolando-portfolio-3f1a3.web.app';
+          const worker = 'https://lan-cloudinary-telemetry.lagmayr2.workers.dev/health';
+          const checks = [
+            ['/admin/services/adminSecurityService.js', '311ed5ed3849182b4782a3785c075ed020322c38'],
+            ['/admin/js/settings-security.js', 'eae5c866f1c6a26fe6d19473013bf3b19e524f17']
+          ];
+          const deadline = 20000;
+          async function get(url) {
+            const response = await fetch(url, {
+              signal: AbortSignal.timeout(deadline),
+              headers: { 'Accept': '*/*', 'Cache-Control': 'no-cache' }
+            });
+            if (!response.ok) throw Error('Read-only GET failed: HTTP ' + response.status + ' for ' + new URL(url).pathname);
+            return Buffer.from(await response.arrayBuffer());
+          }
+          const blob = bytes => crypto.createHash('sha1')
+            .update(Buffer.from('blob ' + bytes.length + '\0'))
+            .update(bytes).digest('hex');
+          let failures = 0;
+          for (const [path, expected] of checks) {
+            try {
+              const bytes = await get(publicSite + path + '?production_readonly=' + Date.now());
+              const actual = blob(bytes);
+              const ok = actual === expected;
+              console.log((ok ? 'PASS ' : 'FAIL ') + 'LIVE ' + path + ' Git blob: ' + actual);
+              if (!ok) failures++;
+            } catch (error) {
+              failures++;
+              console.error('FAIL LIVE ' + path + ': ' + error.message);
+            }
+          }
+          try {
+            const health = JSON.parse((await get(worker)).toString('utf8'));
+            const keys = [
+              'ok',
+              'firebaseConfigured',
+              'securityCoordinatorConfigured',
+              'cloudinaryConfigured',
+              'storageOAuthConfigured',
+              'googleDriveOAuthConfigured'
+            ];
+            for (const key of keys) {
+              const ok = health[key] === true;
+              console.log((ok ? 'PASS ' : 'FAIL ') + 'Worker health flag: ' + key);
+              if (!ok) failures++;
+            }
+            console.log('NOTE: Worker health flags attest configuration only, NOT privileged runtime calls or deployed source hash.');
+          } catch (error) {
+            failures++;
+            console.error('FAIL Worker health: ' + error.message);
+          }
+          console.log('NOTE: Firebase Rules release and Cloudflare deployed Worker source are NOT attested by public endpoints.');
+          if (failures) {
+            console.error('HOLD: ' + failures + ' live read-only check(s) failed. No Production writes performed.');
+            process.exitCode = 1;
+          } else console.log('PASS: live read-only HTTP checks. No Production writes performed.');
+          NODE

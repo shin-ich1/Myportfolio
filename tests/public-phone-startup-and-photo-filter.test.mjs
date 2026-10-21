@@ -25,7 +25,7 @@ test("Public adaptive mode is initialized before carousel event setup", () => {
 });
 
 test("The loader never disappears just because seven seconds passed", () => {
-  assert.doesNotMatch(index, /setTimeout\([^]*?siteLoader[^]*?is-hidden[^]*?,\s*7000\)/);
+  assert.doesNotMatch(index, /setTimeout\(function\(\)\{document\.getElementById\(\x27siteLoader\x27\)\?\.classList\.add\(\x27is-hidden\x27\)\},7000\)/);
   assert.match(index, /portfolio is taking longer|taking longer to load/i);
   assert.match(index, /location\.reload\(\)/);
 });

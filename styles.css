@@ -1626,5 +1626,6 @@ html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .publi
 html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .public-layout-item .public-card-carousel-shell{display:flex;min-height:0;flex-direction:column}
 html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .public-layout-item .public-card-carousel-track{height:auto;min-height:0;overflow-x:auto;overflow-y:visible}
 html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .public-layout-item .public-card-carousel-track>.public-footprint-card{height:auto;min-height:0}
-html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .public-layout-item .public-card-carousel-track>.public-media-footprint-card{height:auto;min-height:0;aspect-ratio:var(--public-media-card-ratio,4 / 3)}
+html[data-lan-public-mode="compact"] .public-layout-item .public-card-carousel-track>.public-media-footprint-card{height:auto;min-height:0;aspect-ratio:var(--public-media-card-ratio,4 / 3)}
+html[data-lan-public-mode="mobile"] .public-layout-item .editing-carousel>.public-media-footprint-card{height:calc((100cqi - 4px) * 3 / 4);min-height:0;aspect-ratio:var(--public-media-card-ratio,4 / 3)}
 

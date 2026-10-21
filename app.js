@@ -721,41 +721,54 @@ function applySingletonContent(homeRaw = {}, profileRaw = {}, contactRaw = {}) {
   };
 }
 
-async function loadPublicSingleton(documentId) {
-  const snapshot = await firebase.getDoc(firebase.doc(firebase.db, "portfolio", documentId));
+function withPublicStartupDeadline(request, deadline) {
+  if (!deadline) return request;
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) return Promise.reject(new Error("Public portfolio startup deadline exceeded."));
+  let timer;
+  return Promise.race([
+    request,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("Public portfolio startup deadline exceeded.")), remaining);
+    })
+  ]).finally(() => clearTimeout(timer));
+}
+
+async function loadPublicSingleton(documentId, deadline = 0) {
+  const snapshot = await withPublicStartupDeadline(firebase.getDoc(firebase.doc(firebase.db, "portfolio", documentId)), deadline);
   if (!snapshot.exists()) return {};
   const value = snapshot.data() || {};
   return isPublicRecord(value) ? value : {};
 }
 
-async function loadPublicCollection(name) {
+async function loadPublicCollection(name, deadline = 0) {
   const reference = firebase.collection(firebase.db, name);
   const canonicalQuery = firebase.query(
     reference,
     firebase.where("status", "==", "published"),
     firebase.where("visible", "==", true)
   );
-  let snapshot = await firebase.getDocs(canonicalQuery);
+  let snapshot = await withPublicStartupDeadline(firebase.getDocs(canonicalQuery), deadline);
 
   // Transitional compatibility for legacy Education records.
   if (snapshot.empty && name === "education") {
-    snapshot = await firebase.getDocs(firebase.query(
+    snapshot = await withPublicStartupDeadline(firebase.getDocs(firebase.query(
       reference,
       firebase.where("educationStatus", "==", "published"),
       firebase.where("educationVisible", "==", true)
-    ));
+    )), deadline);
   }
 
   return snapshot.docs.map((item) => ({ id: item.id, ...(item.data() || {}) }));
 }
 
-async function loadPublicCapabilities() {
+async function loadPublicCapabilities(deadline = 0) {
   publicSkillsById = new Map();
   publicToolsById = new Map();
   const capabilityCollection = firebase.collection(firebase.db, "skills");
   const snapshots = await Promise.allSettled([
-    firebase.getDocs(firebase.query(capabilityCollection, firebase.where("status", "==", "published"), firebase.where("visible", "==", true))),
-    firebase.getDocs(firebase.query(capabilityCollection, firebase.where("active", "==", true)))
+    withPublicStartupDeadline(firebase.getDocs(firebase.query(capabilityCollection, firebase.where("status", "==", "published"), firebase.where("visible", "==", true))), deadline),
+    withPublicStartupDeadline(firebase.getDocs(firebase.query(capabilityCollection, firebase.where("active", "==", true))), deadline)
   ]);
   snapshots.forEach((result) => {
     if (result.status !== "fulfilled") return;
@@ -777,11 +790,12 @@ async function loadPublicCapabilities() {
 
 async function initFirebase() {
   if (!firebaseConfig?.apiKey || !firebaseConfig?.projectId) return false;
+  const deadline = Date.now() + 15000;
   try {
-    const [appModule, firestoreModule] = await Promise.all([
+    const [appModule, firestoreModule] = await withPublicStartupDeadline(Promise.all([
       import("https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js"),
       import("https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js")
-    ]);
+    ]), deadline);
     const firebaseApp = appModule.initializeApp(firebaseConfig);
     firebase = {
       db: firestoreModule.getFirestore(firebaseApp),
@@ -794,7 +808,7 @@ async function initFirebase() {
       addDoc: firestoreModule.addDoc,
       serverTimestamp: firestoreModule.serverTimestamp
     };
-    await loadPublicPortfolioData();
+    await loadPublicPortfolioData(deadline);
     publicDataMode = "firestore";
     return true;
   } catch (error) {
@@ -803,7 +817,7 @@ async function initFirebase() {
   }
 }
 
-async function loadPublicPortfolioData() {
+async function loadPublicPortfolioData(deadline = 0) {
   loadedPublicCollections.clear();
   sourceMaps.clear();
   dynamicPortfolioModuleRegistry = [];
@@ -811,10 +825,10 @@ async function loadPublicPortfolioData() {
   publicServices = null;
 
   const [homeResult, profileResult, contactResult, servicesResult] = await Promise.allSettled([
-    loadPublicSingleton("home"),
-    loadPublicSingleton("profile"),
-    loadPublicSingleton("contact"),
-    loadPublicSingleton("services")
+    loadPublicSingleton("home", deadline),
+    loadPublicSingleton("profile", deadline),
+    loadPublicSingleton("contact", deadline),
+    loadPublicSingleton("services", deadline)
   ]);
 
   const home = homeResult.status === "fulfilled" ? homeResult.value : {};
@@ -825,6 +839,9 @@ async function loadPublicPortfolioData() {
   [homeResult, profileResult, contactResult, servicesResult].forEach((result) => {
     if (result.status === "rejected") console.warn("A public singleton could not be loaded.", result.reason);
   });
+  if (deadline && (homeResult.status === "rejected" || profileResult.status === "rejected")) {
+    throw new Error("Public portfolio core content could not load before the startup deadline.");
+  }
   applySingletonContent(home, profile, contact);
 
   const registry = portfolioModuleRegistry.filter((module) => module.active);
@@ -840,7 +857,7 @@ async function loadPublicPortfolioData() {
     ...registry.map((module) => module.collection)
   ])];
 
-  const results = await Promise.allSettled(collectionNames.map(async (name) => [name, await loadPublicCollection(name)]));
+  const results = await Promise.allSettled(collectionNames.map(async (name) => [name, await loadPublicCollection(name, deadline)]));
   const loaded = new Map();
   for (const result of results) {
     if (result.status === "fulfilled") {
@@ -886,7 +903,9 @@ async function loadPublicPortfolioData() {
 
   const projects = (loaded.get("projects") || []).filter(isPublicProjectRecord)
     .sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));
-  await loadPublicCapabilities();
+  if (deadline && Date.now() >= deadline) throw new Error("Public portfolio data load exceeded the startup deadline.");
+  await loadPublicCapabilities(deadline);
+  if (deadline && Date.now() >= deadline) throw new Error("Public portfolio capabilities exceeded the startup deadline.");
   publicExperiences = rawPublicExperiences.map(normalizeExperience)
     .sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));
   publicPhotoProjects = rawPublicPhotoProjects.map(normalizePhotoProject)

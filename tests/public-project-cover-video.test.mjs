@@ -402,6 +402,7 @@ test("Public video source resolution exposes original retry only for an allowed 
   assert.deepEqual(resolve({ publicDisplayUrl: optimized, publicOriginalUrl: "" }), { url: optimized, fallbackUrl: "" });
   assert.deepEqual(resolve({ publicDisplayUrl: optimized, publicOriginalUrl: "javascript:alert(1)" }), { url: optimized, fallbackUrl: "" });
   assert.deepEqual(resolve({ publicDisplayUrl: original, publicOriginalUrl: original }), { url: original, fallbackUrl: "" });
+  assert.deepEqual(resolve({ publicDisplayUrl: "", publicOriginalUrl: original }), { url: "", fallbackUrl: "" });
 });
 
 test("Public card video retries failed optimized media once without adding a Firestore request", () => {
@@ -426,4 +427,37 @@ test("Project detail player uses the same authorized one-time media retry and sa
   assert.match(binder, /failure\.hidden\s*=\s*false/);
   assert.match(action, /publicVideoPlaybackSources\(/);
   assert.doesNotMatch(binder, /getDoc\(|getDocs\(|onSnapshot\(/);
+});
+
+
+test("Actual project modal player retries once and preserves failure feedback if original fails too", () => {
+  const binderSource = owner("bindProjectVideoPlayer", "openProjectVideoResource");
+  const listeners = {};
+  const link = { href: "https://cdn.example.com/optimized.mp4" };
+  const failure = { hidden: true };
+  const video = {
+    src: "https://cdn.example.com/optimized.mp4",
+    dataset: { projectVideoFallbackSrc: "https://cdn.example.com/original.mp4" },
+    readyState: 0, error: null, loads: 0,
+    addEventListener(event, callback) { listeners[event] = callback; },
+    load() { this.loads += 1; }
+  };
+  const frame = { querySelector(selector) {
+    if (selector === "video.blender-player") return video;
+    if (selector === "[data-project-video-failure]") return failure;
+    if (selector === "[data-project-video-fallback]") return link;
+    return null;
+  }};
+  const root = { querySelectorAll() { return [frame]; } };
+  new Function("root", binderSource.replace("root = document", "root") + "\nbindProjectVideoPlayer(root);")(root);
+  listeners.error();
+  assert.equal(video.src, "https://cdn.example.com/original.mp4");
+  assert.equal(video.loads, 1);
+  assert.equal(link.href, video.src);
+  assert.equal(failure.hidden, true);
+  listeners.error();
+  assert.equal(video.loads, 1, "Failed original must not loop or fetch repeatedly");
+  assert.equal(failure.hidden, false);
+  listeners.loadedmetadata();
+  assert.equal(failure.hidden, true);
 });

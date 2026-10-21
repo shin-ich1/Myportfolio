@@ -1362,12 +1362,13 @@ function publicVideoFrameMarkup(source, label = "Video", { className = "", autop
   const posterUrl = safeImageSource(poster);
   const safeClass = cleanText(className).replace(/[^a-zA-Z0-9_-]+/g, " ").trim();
   const classes = ["public-media-frame", "public-media-frame--video", safeClass, url ? "media-loading" : "media-fallback"].filter(Boolean).join(" ");
-  const fallback = `<span class="public-media-frame__fallback"><strong>LΛN</strong><small>${escapeHtml(label)}</small>${posterUrl ? `<img class="public-media-frame__poster" src="${escapeHtml(posterUrl)}" alt="" aria-hidden="true">` : ""}</span>`;
-  if (!url) return `<span class="${classes}" data-public-media-frame>${fallback}</span>`;
+  const fallback = `<span class="public-media-frame__fallback"><strong>LΛN</strong><small>${escapeHtml(label)}</small></span>`;
+  const posterMarkup = posterUrl ? `<img class="public-media-frame__poster" data-public-media-poster src="${escapeHtml(posterUrl)}" alt="" aria-hidden="true" loading="lazy" decoding="async">` : "";
+  if (!url) return `<span class="${classes}" data-public-media-frame>${fallback}${posterMarkup}</span>`;
   const autoplayAttrs = autoplay ? " autoplay muted loop" : " controls";
   const posterAttr = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
   const loadingMode = loading === "eager" ? "eager" : "lazy";
-  return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}">${fallback}<video class="public-media-frame__video" data-public-media-video data-public-media-src="${escapeHtml(url)}"${autoplayAttrs} playsinline preload="metadata"${posterAttr}></video></span>`;
+  return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}" data-public-media-autoplay="${autoplay ? "true" : "false"}">${fallback}${posterMarkup}<video class="public-media-frame__video" data-public-media-video data-public-media-src="${escapeHtml(url)}"${autoplayAttrs} playsinline preload="none"${posterAttr}></video></span>`;
 }
 function bindPublicMediaFrames(root = document) {
   root?.querySelectorAll?.("[data-public-media-frame]").forEach((frame) => {
@@ -1394,9 +1395,9 @@ function bindPublicMediaFrames(root = document) {
       frame.classList.remove("media-loading", "media-ready");
       frame.classList.add("media-fallback");
     };
-    const ready = () => {
+    const ready = ({ keepObserving = false } = {}) => {
       clearLoadingTimer();
-      disconnectObserver();
+      if (!keepObserving) disconnectObserver();
       frame.classList.remove("media-loading", "media-fallback");
       frame.classList.add("media-ready");
     };
@@ -1425,33 +1426,88 @@ function bindPublicMediaFrames(root = document) {
       return;
     }
 
-    const startVideo = () => {
-      if (frame.dataset.publicMediaStarted === "true") return;
-      frame.dataset.publicMediaStarted = "true";
-      disconnectObserver();
-      frame.classList.remove("media-ready", "media-fallback");
+    let videoInView = false;
+    let playPending = false;
+    const autoplayVideo = frame.dataset.publicMediaAutoplay !== "false" && video.hasAttribute("autoplay");
+    const showPoster = () => {
+      if (frame.classList.contains("media-fallback")) return;
+      frame.classList.remove("media-ready");
       frame.classList.add("media-loading");
+    };
+    const attemptPlay = () => {
+      if (!autoplayVideo || !videoInView || playPending || frame.dataset.publicMediaStarted !== "true" || frame.classList.contains("media-fallback")) return;
+      if (!video.paused) return ready({ keepObserving: true });
+      video.muted = true;
+      video.playsInline = true;
+      playPending = true;
+      try {
+        const playback = video.play();
+        if (playback && typeof playback.then === "function") {
+          playback.then(() => {
+            playPending = false;
+            if (!videoInView) { video.pause(); showPoster(); return; }
+            ready({ keepObserving: true });
+          }).catch(() => {
+            playPending = false;
+            showPoster(); // Autoplay policy is not a broken video; keep its poster.
+          });
+        } else {
+          playPending = false;
+          if (!video.paused) ready({ keepObserving: true });
+        }
+      } catch {
+        playPending = false;
+        showPoster();
+      }
+    };
+    const startVideo = () => {
+      if (frame.dataset.publicMediaStarted === "true") {
+        if (autoplayVideo) attemptPlay();
+        return;
+      }
+      frame.dataset.publicMediaStarted = "true";
+      showPoster();
       video.addEventListener("error", fail, { once: true });
-      video.addEventListener("loadeddata", ready, { once: true });
+      video.addEventListener("playing", () => {
+        if (videoInView || !autoplayVideo) ready({ keepObserving: true });
+        else video.pause();
+      });
+      video.addEventListener("loadedmetadata", () => {
+        if (autoplayVideo) attemptPlay();
+        else ready({ keepObserving: true });
+      }, { once: true });
+      video.addEventListener("canplay", attemptPlay);
       const source = String(video.dataset.publicMediaSrc || video.getAttribute("src") || video.querySelector("source")?.getAttribute("src") || "").trim();
       if (!source) return fail();
+      if (autoplayVideo) {
+        video.muted = true;
+        video.playsInline = true;
+      }
       if (!video.getAttribute("src")) video.setAttribute("src", source);
       video.load();
-      if (video.readyState >= 2) return ready();
-      loadingTimer = window.setTimeout(() => {
-        if (!frame.classList.contains("media-ready")) fail();
-      }, 20000);
+      if (autoplayVideo) attemptPlay();
+      else if (video.readyState >= 1) ready({ keepObserving: true });
     };
 
     const loadingMode = String(frame.dataset.publicMediaLoading || "lazy").trim().toLowerCase();
-    if (loadingMode === "eager" || isNearViewport(1.8) || typeof IntersectionObserver !== "function") {
+    if (loadingMode === "eager" || typeof IntersectionObserver !== "function") {
+      videoInView = true;
       startVideo();
       return;
     }
     observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) startVideo();
-    }, { rootMargin: "160% 0px" });
+      videoInView = entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0);
+      if (videoInView) startVideo();
+      else if (frame.dataset.publicMediaStarted === "true" && autoplayVideo) {
+        video.pause();
+        showPoster();
+      }
+    }, { rootMargin: "30% 0px" });
     observer.observe(frame);
+    if (isNearViewport(1.2)) {
+      videoInView = true;
+      startVideo();
+    }
   });
 }
 

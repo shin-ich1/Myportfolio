@@ -191,6 +191,15 @@ nav a:focus-visible {
   letter-spacing: .08em;
   animation: lan-loader 1.8s var(--ease) infinite;
 }
+.site-loader-retry {
+  padding: .65rem 1rem;
+  border: 1px solid #315371;
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.site-loader-retry[hidden] { display: none; }
 .site-loader.is-hidden { visibility: hidden; opacity: 0; pointer-events: none; }
 @keyframes lan-loader { 50% { transform: translateY(-3px); box-shadow: 0 0 64px rgba(22,136,255,.25); } }
 

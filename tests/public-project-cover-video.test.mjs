@@ -23,7 +23,7 @@ test("Project video previews use the canonical public-media loader, not direct u
   const card = owner("projectCardMediaMarkup", "projectSingleActionMarkup");
   assert.match(card, /publicVideoFrameMarkup\(/);
   assert.doesNotMatch(card, /<video/);
-  assert.match(card, /poster:/);
+  assert.match(card, /\{ className: "project-card-video-preview", poster \}/);
   const frame = owner("publicVideoFrameMarkup", "bindPublicMediaFrames");
   assert.match(frame, /autoplay muted loop/);
   assert.match(frame, /playsinline/);
@@ -71,7 +71,7 @@ test("Project video actions share one controllable player with visible loading e
   assert.match(binder, /addEventListener\("error"/);
   assert.match(binder, /addEventListener\("loadedmetadata"/);
   assert.match(binder, /data-project-video-failure/);
-  assert.match(binder, /data-project-video-fallback/);
+  assert.match(shared, /data-project-video-fallback/);
   const modal = owner("openProjectVideoResource", "openProjectDetailsById");
   assert.match(modal, /projectVideoPlayerMarkup\(/);
   assert.match(modal, /bindProjectVideoPlayer\(/);
@@ -85,4 +85,44 @@ test("Existing video-source routing and custom-module owners remain unchanged", 
   assert.match(app, /function normalizedVideoEmbedUrl\(/);
   assert.match(app, /if \(kind === "video"\)[\s\S]*?publicVideoFrameMarkup\(presentation, item\.title/);
   assert.match(app, /function openDynamicEntry\(/);
+});
+
+
+test("Video previews are always silent/looping and preserve the cover poster on restricted phones", () => {
+  const frameSource = owner("publicVideoFrameMarkup", "bindPublicMediaFrames");
+  const render = new Function("mediaPresentation", "cleanText", "safeImageSource", "escapeHtml",
+    frameSource + "\nreturn publicVideoFrameMarkup;"
+  )(
+    source => ({ publicDisplayUrl: source?.url || "" }),
+    value => String(value || "").trim(),
+    value => String(value || ""),
+    value => String(value || "")
+  );
+  const markup = render({ url: "/future/a.mp4" }, "Future preview", { poster: "/future/a.jpg" });
+  assert.match(markup, /autoplay muted loop/);
+  assert.match(markup, /playsinline/);
+  assert.match(markup, /data-public-media-src="\/future\/a\.mp4"/);
+  assert.match(markup, /poster="\/future\/a\.jpg"/);
+  assert.match(markup, /public-media-frame__poster/);
+  assert.doesNotMatch(markup, /controls/);
+});
+
+test("Project modal video failure feedback appears on media error, clears on metadata", () => {
+  const binderSource = owner("bindProjectVideoPlayer", "openProjectVideoResource");
+  const events = {};
+  const video = {
+    error: null, readyState: 0,
+    addEventListener(type, callback) { events[type] = callback; }
+  };
+  const message = { hidden: true };
+  const frame = { querySelector(sel) {
+    return sel === "video.blender-player" ? video : sel === "[data-project-video-failure]" ? message : null;
+  } };
+  const root = { querySelectorAll() { return [frame]; } };
+  new Function("root", binderSource.replace("root = document", "root") + "\nbindProjectVideoPlayer(root);")(root);
+  assert.equal(message.hidden, true);
+  events.error();
+  assert.equal(message.hidden, false);
+  events.loadedmetadata();
+  assert.equal(message.hidden, true);
 });

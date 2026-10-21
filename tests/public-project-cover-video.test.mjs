@@ -334,3 +334,29 @@ test("Project video poster picks the first publicly renderable cover, not merely
   assert.equal(result, "VIDEO");
   assert.equal(calls[0].poster, "/public-cover.jpg");
 });
+
+
+test("Shared image validator permits safe site-relative Project video posters without trusting executable URLs", () => {
+  const start = app.indexOf('const safeImageSource = (value = "") => {');
+  assert.ok(start >= 0);
+  const end = app.indexOf("\n};", start);
+  assert.ok(end > start);
+  const getSafe = new Function("cleanText",
+    app.slice(start, end + 3) + "\nreturn safeImageSource;"
+  )(value => String(value || "").trim());
+  for (const source of [
+    "assets/images/future-project-cover.jpg",
+    "my-folder/cover-2027.webp?size=small",
+    "./assets/images/local.png",
+    "../assets/images/local.png",
+    "/assets/images/local.png",
+    "https://cdn.example.com/cover.webp"
+  ]) assert.equal(getSafe(source), source);
+  for (const source of [
+    "javascript:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "//attacker.example.com/cover.png",
+    "file:///private.jpg",
+    "assets\\evil.jpg"
+  ]) assert.equal(getSafe(source), "");
+});

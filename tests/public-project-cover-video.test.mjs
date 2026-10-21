@@ -586,6 +586,7 @@ test("Public video playback source owner supplies browser-compatible fallback fo
     { location: { href: "https://portfolio.example/" } },
     input => ({
       asset: input,
+      publicAllowed: true,
       publicDisplayUrl: storageAssetUrl(input, "display"),
       publicOriginalUrl: storageAssetUrl(input, "original")
     }),

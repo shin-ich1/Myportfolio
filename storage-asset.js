@@ -193,12 +193,27 @@ function cloudinaryImageDeliveryUrl(asset = {}, purpose = 'display') {
   return base.replace('/upload/', `/upload/${transform}/`);
 }
 
+function cloudinaryVideoDeliveryUrl(asset = {}) {
+  const base = text(asset.secureUrl || asset.url || asset.previewUrl);
+  if (lower(asset.provider) !== 'cloudinary' || lower(asset.resourceType) !== 'video') return '';
+  if (lower(asset.type || 'upload') !== 'upload' || ['private', 'admin-only', 'restricted'].includes(lower(asset.access))) return '';
+  if (!isManagedCloudinaryUrl(base) || !base.includes('/video/upload/')) return '';
+  // Preserve deliberately configured transformations. The original remains available
+  // through "original"/"download", while public display negotiates a browser format.
+  if (/\/(?:q_auto(?::[a-z]+)?|f_auto(?::video)?)(?:[\/,]|$)/i.test(base)) return base;
+  return base.replace('/video/upload/', '/video/upload/q_auto/f_auto:video/');
+}
+
 export function storageAssetUrl(value, purpose = 'display') {
   const asset = normalizeStorageAsset(value);
   if (!asset) return typeof value === 'string' ? text(value) : directUrl(value);
   const kind = lower(purpose);
   if (kind === 'download') return text(asset.downloadUrl || asset.originalUrl || asset.url || asset.secureUrl);
   if (kind === 'original') return text(asset.originalUrl || asset.url || asset.secureUrl || asset.downloadUrl);
+  if (['display', 'preview', 'card', 'detail'].includes(kind)) {
+    const browserVideo = cloudinaryVideoDeliveryUrl(asset);
+    if (browserVideo && !(kind === 'card' && asset.cardUrl) && !(kind === 'detail' && asset.detailUrl)) return browserVideo;
+  }
   if (kind === 'card') return text(asset.cardUrl || cloudinaryImageDeliveryUrl(asset, 'card') || asset.previewUrl || asset.url || asset.secureUrl);
   if (kind === 'detail') return text(asset.detailUrl || cloudinaryImageDeliveryUrl(asset, 'detail') || asset.previewUrl || asset.url || asset.secureUrl);
   if (['preview', 'pdf-preview', 'office-preview'].includes(kind)) return text(asset.previewUrl || asset.cardUrl || asset.url || asset.secureUrl);

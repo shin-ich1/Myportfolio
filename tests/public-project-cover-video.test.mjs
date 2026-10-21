@@ -461,3 +461,12 @@ test("Actual project modal player retries once and preserves failure feedback if
   listeners.loadedmetadata();
   assert.equal(failure.hidden, true);
 });
+
+
+test("Unsupported-source playback rejections retry the distinct authorized original; policy blocks never bypass autoplay restrictions", () => {
+  const preview = owner("bindPublicMediaFrames", "projectCardMediaMarkup");
+  const viewer = owner("bindProjectVideoPlayer", "openProjectVideoResource");
+  assert.match(preview, /catch\(\s*\(error\)\s*=>[\s\S]*?error\?\.name\s*===\s*"NotSupportedError"[\s\S]*?retryVideoSource\(\)/);
+  assert.match(viewer, /video\.play\(\)\?\.catch\?\.\(\(error\)\s*=>[\s\S]*?error\?\.name\s*===\s*"NotSupportedError"[\s\S]*?retryVideoSource\(\)/);
+  assert.doesNotMatch(preview, /NotAllowedError"[\s\S]{0,60}retryVideoSource/);
+});

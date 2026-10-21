@@ -106,3 +106,40 @@ test("Public startup deadline resolves fast reads and rejects stalled requests",
   assert.equal(withDeadline(fast, 0), fast, "Background refresh must not add a startup deadline");
   await assert.rejects(withDeadline(new Promise(() => {}), Date.now() + 30), /startup deadline exceeded/i);
 });
+
+
+test("Restricted in-app browsers can toggle the theme when localStorage is blocked", () => {
+  const start = app.indexOf('  document.querySelector(".theme")?.addEventListener("click", () => {');
+  const end = app.indexOf('  document.querySelectorAll("[data-open-project]"', start);
+  assert.ok(start >= 0 && end > start, "Theme event owner must exist");
+  const themeOwner = app.slice(start, end);
+  let click;
+  const classes = new Set(["light"]);
+  const root = {
+    dataset: {},
+    classList: {
+      toggle(name) { classes.has(name) ? classes.delete(name) : classes.add(name); },
+      contains(name) { return classes.has(name); }
+    }
+  };
+  let iconUpdates = 0;
+  const documentStub = {
+    documentElement: root,
+    querySelector() { return { addEventListener(name, callback) { if (name === "click") click = callback; } }; }
+  };
+  const blockedStorage = { setItem() { throw new DOMException("Storage denied", "SecurityError"); } };
+  new Function("document", "localStorage", "updateThemeIcon", themeOwner)(
+    documentStub, blockedStorage, () => { iconUpdates++; }
+  );
+  assert.doesNotThrow(() => click(), "Blocked storage must not break the theme button");
+  assert.equal(root.dataset.theme, "dark");
+  assert.equal(iconUpdates, 1);
+});
+
+test("Public startup must not fail before rendering when in-app storage is unavailable", () => {
+  const from = app.indexOf("(async () => {", app.lastIndexOf("function installPublicPortfolioSync()"));
+  assert.ok(from >= 0, "Expected public startup owner");
+  const startup = app.slice(from);
+  assert.doesNotMatch(startup, /localStorage\.getItem\("theme"\)/,
+    "The HTML bootstrap already reads theme with a try/catch; public startup must use the resolved theme");
+});

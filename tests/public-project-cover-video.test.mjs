@@ -385,3 +385,43 @@ test("Project cover uses one resolved image URL for uncropped foreground and sof
   assert.match(css, /\.public-media-frame__image\{[^}]*object-fit:contain/);
   assert.match(css, /\.public-media-frame\.media-fallback>.public-media-frame__ambient\{display:none\}/);
 });
+
+
+test("Public video source resolution exposes original retry only for an allowed public media asset", () => {
+  const resolver = owner("publicVideoPlaybackSources", "publicVideoFrameMarkup");
+  const resolve = new Function("mediaPresentation", "cleanText", "window", resolver + "\nreturn publicVideoPlaybackSources;")(
+    asset => asset,
+    value => String(value || "").trim(),
+    { location: { href: "https://portfolio.example/" } }
+  );
+  const optimized = "https://res.cloudinary.com/demo/video/upload/q_auto/f_auto:video/v1/clip.mp4";
+  const original = "https://res.cloudinary.com/demo/video/upload/v1/clip.mp4";
+  assert.deepEqual(resolve({ publicDisplayUrl: optimized, publicOriginalUrl: original }), { url: optimized, fallbackUrl: original });
+  assert.deepEqual(resolve({ publicDisplayUrl: optimized, publicOriginalUrl: "" }), { url: optimized, fallbackUrl: "" });
+  assert.deepEqual(resolve({ publicDisplayUrl: optimized, publicOriginalUrl: "javascript:alert(1)" }), { url: optimized, fallbackUrl: "" });
+  assert.deepEqual(resolve({ publicDisplayUrl: original, publicOriginalUrl: original }), { url: original, fallbackUrl: "" });
+});
+
+test("Public card video retries failed optimized media once without adding a Firestore request", () => {
+  const markup = owner("publicVideoFrameMarkup", "bindPublicMediaFrames");
+  const binder = owner("bindPublicMediaFrames", "projectCardMediaMarkup");
+  assert.match(markup, /data-public-media-fallback-src/);
+  assert.match(binder, /publicMediaFallbackTried/);
+  assert.match(binder, /video\.addEventListener\("error",\s*retryVideoSource\)/);
+  assert.match(binder, /video\.setAttribute\("src", fallbackSource\)/);
+  assert.match(binder, /video\.load\(\)/);
+  assert.doesNotMatch(binder, /getDoc\(|getDocs\(|onSnapshot\(|query\(/);
+});
+
+test("Project detail player uses the same authorized one-time media retry and safe fallback link", () => {
+  const markup = owner("projectVideoPlayerMarkup", "bindProjectVideoPlayer");
+  const binder = owner("bindProjectVideoPlayer", "openProjectVideoResource");
+  const action = owner("openProjectVideoResource", "openProjectDetailsById");
+  assert.match(markup, /data-project-video-fallback-src/);
+  assert.match(binder, /projectVideoFallbackTried/);
+  assert.match(binder, /video\.addEventListener\("error",\s*retryVideoSource\)/);
+  assert.match(binder, /video\.src\s*=\s*fallbackSource/);
+  assert.match(binder, /failure\.hidden\s*=\s*false/);
+  assert.match(action, /publicVideoPlaybackSources\(/);
+  assert.doesNotMatch(binder, /getDoc\(|getDocs\(|onSnapshot\(/);
+});

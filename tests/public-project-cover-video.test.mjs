@@ -535,7 +535,8 @@ test("Actual public card video retries one authorized source once and then stops
 test("Shared video fallback reattempts playback after fallback metadata becomes ready", () => {
   const binder = owner("bindPublicMediaFrames", "projectCardMediaMarkup");
   assert.match(binder, /video\.dataset\.publicMediaFallbackTried\s*=\s*"true"/);
-  assert.match(binder, /video\.addEventListener\("loadedmetadata",\s*\(\)\s*=>\s*\{[\s\S]*?attemptPlay\(\);\s*\}/);
+  assert.match(binder, /video\.addEventListener\("loadedmetadata",\s*\(\)\s*=>\s*\{[\s\S]*?attemptPlay\(\)/);
+  assert.doesNotMatch(binder, /video\.addEventListener\("loadedmetadata",[\s\S]*?\},\s*\{\s*once:\s*true\s*\}\)/);
   assert.match(binder, /video\.addEventListener\("canplay",\s*attemptPlay\)/);
   assert.doesNotMatch(binder, /\bvideo\.play\(\)\s*;\s*\/\/ bypass/);
 });

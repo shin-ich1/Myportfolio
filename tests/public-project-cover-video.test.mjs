@@ -12,11 +12,17 @@ const owner = (name, nextName) => {
   return app.slice(start, end);
 };
 
-test("Project card covers fill their thumbnails, preserving original in full details", () => {
-  assert.match(css, /\.media\s*\{[^}]*--public-media-fit:\s*cover;/);
-  assert.match(css, /\.public-media-frame__image\{[^}]*object-fit:\s*var\(--public-media-fit,\s*contain\)/);
+test("Project screenshot covers remain uncropped in cards and details", () => {
+  assert.doesNotMatch(css, /\.media\s*\{[^}]*--public-media-fit:\s*cover/);
+  assert.match(css, /\.media\s*>\s*img\s*\{[^}]*object-fit:\s*contain/);
+  assert.match(css, /\.public-media-frame__image\{[^}]*object-fit:\s*contain/);
   assert.match(css, /\.project-detail-cover-frame>\.public-media-frame\{width:100%;height:100%\}/);
-  assert.doesNotMatch(css, /\.project-detail-cover-frame\{[^}]*--public-media-fit:\s*cover/);
+});
+
+test("Project detail cover uses landscape ratio rather than an oversized fixed-height box", () => {
+  assert.match(css, /\.project-detail-cover-frame\{[^}]*aspect-ratio:\s*16\s*\/\s*9/);
+  assert.match(css, /\.project-detail-cover-frame\{[^}]*height:\s*auto/);
+  assert.doesNotMatch(css, /\.project-detail-cover-frame\{[^}]*min-height:\s*280px/);
 });
 
 test("Project video previews use the canonical public-media loader, not direct unobserved video tags", () => {

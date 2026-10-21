@@ -277,3 +277,31 @@ test("Shared video loader starts only near viewport, shows poster on autoplay re
   await runCase(false);
   await runCase(true);
 });
+
+
+test("Canonical asset resolver serves browser-negotiated Cloudinary videos while preserving originals", () => {
+  const assetSource = readFileSync(new URL("../storage-asset.js", import.meta.url), "utf8");
+  const resolve = new Function("URL", assetSource.replaceAll("export function ", "function ") + "\nreturn storageAssetUrl;")(URL);
+  const original = "https://res.cloudinary.com/demo/video/upload/v12345/future-project.mp4";
+  const video = { provider: "cloudinary", resourceType: "video", type: "upload", access: "public-preview", url: original };
+  const optimized = "https://res.cloudinary.com/demo/video/upload/q_auto/f_auto:video/v12345/future-project.mp4";
+  assert.equal(resolve(video), optimized);
+  assert.equal(resolve(video, "preview"), optimized);
+  assert.equal(resolve(video, "card"), optimized);
+  assert.equal(resolve(video, "detail"), optimized);
+  assert.equal(resolve(video, "original"), original);
+  assert.equal(resolve(video, "download"), original);
+});
+
+test("Canonical video optimization does not rewrite unrelated providers or private URLs", () => {
+  const assetSource = readFileSync(new URL("../storage-asset.js", import.meta.url), "utf8");
+  const resolve = new Function("URL", assetSource.replaceAll("export function ", "function ") + "\nreturn storageAssetUrl;")(URL);
+  const original = "https://res.cloudinary.com/demo/video/upload/v12345/future-project.mp4";
+  assert.equal(resolve({ provider: "cloudinary", resourceType: "video", type: "authenticated", url: original }), original);
+  assert.equal(resolve({ provider: "cloudinary", resourceType: "video", type: "upload", access: "private", url: original }), original);
+  const image = "https://res.cloudinary.com/demo/image/upload/v12345/project.jpg";
+  assert.equal(resolve({ provider: "cloudinary", resourceType: "image", url: image }), image);
+  const alreadyOptimized = "https://res.cloudinary.com/demo/video/upload/q_auto/f_auto:video/v1/clip.mp4";
+  assert.equal(resolve({ provider: "cloudinary", resourceType: "video", url: alreadyOptimized }), alreadyOptimized);
+  assert.equal(resolve("assets/videos/local-video.mp4"), "assets/videos/local-video.mp4");
+});

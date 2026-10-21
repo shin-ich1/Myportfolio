@@ -525,7 +525,7 @@ nav a:focus-visible {
 .public-media-frame--video.media-loading>.public-media-frame__video{opacity:0;visibility:hidden}
 .public-media-frame--video.media-ready>.public-media-frame__poster{opacity:0;visibility:hidden}
 .public-media-frame.media-fallback>.public-media-frame__fallback{opacity:1;visibility:visible}
-.public-media-frame.media-loading>:is(.public-media-frame__image,.public-media-frame__video){opacity:1;visibility:visible}
+.public-media-frame.media-loading>.public-media-frame__image{opacity:1;visibility:visible}
 .public-media-frame.media-ready>.public-media-frame__fallback{opacity:0;visibility:hidden}
 .public-media-frame.media-ready>:is(.public-media-frame__image,.public-media-frame__video){opacity:1;visibility:visible}
 .public-media-frame.media-fallback{background:var(--public-media-canvas)}

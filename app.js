@@ -9,6 +9,7 @@ import { publicSectionEligibility } from "./public-section-eligibility.js";
 import { resolvePublicLayoutPreset, resolvePublicOverflow, placementOrder, publicLayoutSpan, planPublicLayoutRows } from "./public-layout-contract.js";
 import { initPublicAdaptiveMode, isPublicDocumentFlowMode } from "./public-adaptive.js";
 import { resolveModuleRecordMedia, resolveModuleFieldAssetPresentation, resolvePortfolioAssetPresentation } from "./record-media.js";
+import { storageAssetUrl } from "./storage-asset.js";
 import {
   clearVisitorConversationIdentity,
   createPrivateMessageChallenge,
@@ -1373,7 +1374,13 @@ function publicVideoPlaybackSources(source) {
   };
   const url = allowedUrl(presentation.publicDisplayUrl);
   const original = allowedUrl(presentation.publicOriginalUrl);
-  return { url, fallbackUrl: url && original && original !== url ? original : "" };
+  // Only a public, managed Cloudinary video can request a new compatible rendition.
+  // Static or other-provider files keep their existing authorized original fallback.
+  const compatible = presentation.publicAllowed
+    ? allowedUrl(storageAssetUrl(presentation.asset, "compatible-video"))
+    : "";
+  const fallback = compatible && compatible !== url ? compatible : original;
+  return { url, fallbackUrl: url && fallback && fallback !== url ? fallback : "" };
 }
 
 function publicVideoFrameMarkup(source, label = "Video", { className = "", autoplay = true, loading = "lazy", poster = "" } = {}) {

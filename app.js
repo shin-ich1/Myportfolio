@@ -3036,7 +3036,7 @@ function bind() {
     const selectedTheme = document.documentElement.classList.contains("light") ? "light" : "dark";
     document.documentElement.dataset.theme = selectedTheme;
     document.documentElement.dataset.cmsThemeResolved = selectedTheme;
-    localStorage.setItem("theme", selectedTheme);
+    try { localStorage.setItem("theme", selectedTheme); } catch { /* In-app and private browsers may restrict storage. */ }
     updateThemeIcon();
   });
   document.querySelectorAll("[data-open-project]").forEach((button) => button.addEventListener("click", () => openProjectById(button.dataset.openProject)));
@@ -4196,7 +4196,7 @@ function installPublicPortfolioSync() {
 }
 
 (async () => {
-  if (localStorage.getItem("theme") === "light") document.documentElement.classList.add("light");
+  // index.html already resolves the saved theme with storage access safely guarded.
   document.documentElement.dataset.theme = document.documentElement.classList.contains("light") ? "light" : "dark";
   document.documentElement.dataset.cmsThemeResolved = document.documentElement.dataset.theme;
   installPublicPortfolioSync();

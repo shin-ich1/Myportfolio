@@ -160,3 +160,40 @@ test("Project video fallback links allow ordinary media URLs but never executabl
   assert.match(markup("assets/videos/clip.mp4"), /https:\/\/example\.org\/portfolio\/assets\/videos\/clip\.mp4/);
   assert.match(markup("https://cdn.example.org/clip.mp4"), /https:\/\/cdn\.example\.org\/clip\.mp4/);
 });
+
+
+test("Shared video frames always expose a real poster while loading on restricted mobile browsers", () => {
+  const markup = owner("publicVideoFrameMarkup", "bindPublicMediaFrames");
+  assert.match(markup, /data-public-media-poster/);
+  assert.match(markup, /preload="none"/);
+  const cssOwner = css.slice(css.indexOf(".public-media-frame__fallback"), css.indexOf(".card:hover .media"));
+  assert.match(cssOwner, /\.public-media-frame__poster\{[^}]*z-index:\s*1/);
+  assert.match(cssOwner, /media-loading[^}]*public-media-frame__video[^}]*opacity:\s*0/);
+  assert.match(cssOwner, /media-ready[^}]*public-media-frame__poster[^}]*opacity:\s*0/);
+});
+
+test("Shared video frame loader explicitly attempts muted inline autoplay and does not mislabel a policy block as a media error", () => {
+  const binder = owner("bindPublicMediaFrames", "projectCardMediaMarkup");
+  assert.match(binder, /video\.muted\s*=\s*true/);
+  assert.match(binder, /video\.playsInline\s*=\s*true/);
+  assert.match(binder, /video\.play\(\)/);
+  assert.match(binder, /video\.addEventListener\("playing"/);
+  assert.match(binder, /video\.addEventListener\("error",\s*fail/);
+  assert.match(binder, /catch\([\s\S]*?showPoster\(/);
+});
+
+test("Shared video frame suspends offscreen playback without resetting the source or looping downloads", () => {
+  const binder = owner("bindPublicMediaFrames", "projectCardMediaMarkup");
+  assert.match(binder, /video\.pause\(\)/);
+  assert.match(binder, /rootMargin:\s*"30% 0px"/);
+  assert.match(binder, /if \(frame\.dataset\.publicMediaStarted === "true"\)/);
+  assert.doesNotMatch(binder, /video\.src\s*=\s*[^;\n]+[?]/);
+  assert.match(binder, /if \(autoplayVideo\)/);
+});
+
+test("Public media frame image loading remains owned by the original image branch", () => {
+  const binder = owner("bindPublicMediaFrames", "projectCardMediaMarkup");
+  assert.match(binder, /if \(image\) \{/);
+  assert.match(binder, /image\.addEventListener\("error"/);
+  assert.match(binder, /image\.addEventListener\("load", ready/);
+});

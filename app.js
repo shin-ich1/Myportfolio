@@ -1467,17 +1467,19 @@ function bindPublicMediaFrames(root = document) {
             playPending = false;
             if (!videoInView) { video.pause(); showPoster(); return; }
             ready({ keepObserving: true });
-          }).catch(() => {
+          }).catch((error) => {
             playPending = false;
-            showPoster(); // Autoplay policy is not a broken video; keep its poster.
+            if (error?.name === "NotSupportedError") retryVideoSource();
+            else showPoster(); // Autoplay restrictions retain the poster; never bypass policy.
           });
         } else {
           playPending = false;
           if (!video.paused) ready({ keepObserving: true });
         }
-      } catch {
+      } catch (error) {
         playPending = false;
-        showPoster();
+        if (error?.name === "NotSupportedError") retryVideoSource();
+        else showPoster();
       }
     };
     const retryVideoSource = () => {
@@ -4198,7 +4200,9 @@ function bindProjectVideoPlayer(root = document, { playOnOpen = false } = {}) {
     else if (video.readyState >= 1) clearFailure();
     if (playOnOpen && !video.error) {
       try {
-        video.play()?.catch?.(() => {});
+        video.play()?.catch?.((error) => {
+          if (error?.name === "NotSupportedError") retryVideoSource();
+        });
       } catch {}
     }
   });

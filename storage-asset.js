@@ -203,6 +203,10 @@ function cloudinaryVideoDeliveryUrl(asset = {}, { compatible = false } = {}) {
   // Do not expose private assets or modify original/download URL semantics.
   if (compatible) {
     if (/\/f_mp4,vc_h264,q_auto\//i.test(base)) return base;
+    // Some existing managed references already contain our automatic delivery URL.
+    // Replace that transformation instead of applying two conflicting formats.
+    const automatic = /\/video\/upload\/(?:q_auto\/f_auto(?::video)?|f_auto(?::video)?\/q_auto)\//i;
+    if (automatic.test(base)) return base.replace(automatic, '/video/upload/f_mp4,vc_h264,q_auto/');
     return base.replace('/video/upload/', '/video/upload/f_mp4,vc_h264,q_auto/');
   }
   // Preserve deliberately configured transformations. The original remains available

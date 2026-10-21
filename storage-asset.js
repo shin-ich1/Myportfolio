@@ -196,7 +196,7 @@ function cloudinaryImageDeliveryUrl(asset = {}, purpose = 'display') {
 function cloudinaryVideoDeliveryUrl(asset = {}) {
   const base = text(asset.secureUrl || asset.url || asset.previewUrl);
   if (lower(asset.provider) !== 'cloudinary' || lower(asset.resourceType) !== 'video') return '';
-  if (lower(asset.type || 'upload') !== 'upload' || ['private', 'admin-only', 'restricted'].includes(lower(asset.access))) return '';
+  if (lower(asset.type || 'upload') !== 'upload' || !['', 'public-preview'].includes(lower(asset.access))) return '';
   if (!isManagedCloudinaryUrl(base) || !base.includes('/video/upload/')) return '';
   // Preserve deliberately configured transformations. The original remains available
   // through "original"/"download", while public display negotiates a browser format.

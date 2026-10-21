@@ -126,3 +126,14 @@ test("Project modal video failure feedback appears on media error, clears on met
   events.loadedmetadata();
   assert.equal(message.hidden, true);
 });
+
+
+test("Watch Video preserves one-click playback while project detail video stays manually controllable", () => {
+  const binder = owner("bindProjectVideoPlayer", "openProjectVideoResource");
+  assert.match(binder, /playOnOpen\s*=\s*false/);
+  assert.match(binder, /if \(playOnOpen\)/);
+  const watch = owner("openProjectVideoResource", "openProjectDetailsById");
+  assert.match(watch, /bindProjectVideoPlayer\(document\.querySelector\("#modal"\), \{ playOnOpen: true \}\)/);
+  const details = owner("openProjectById", "openResumeChooser");
+  assert.doesNotMatch(details, /playOnOpen:\s*true/);
+});

@@ -299,6 +299,8 @@ test("Canonical video optimization does not rewrite unrelated providers or priva
   const original = "https://res.cloudinary.com/demo/video/upload/v12345/future-project.mp4";
   assert.equal(resolve({ provider: "cloudinary", resourceType: "video", type: "authenticated", url: original }), original);
   assert.equal(resolve({ provider: "cloudinary", resourceType: "video", type: "upload", access: "private", url: original }), original);
+  assert.equal(resolve({ provider: "cloudinary", resourceType: "video", type: "upload", access: "metadata-only", url: original }), original);
+  assert.equal(resolve({ provider: "cloudinary", resourceType: "video", type: "upload", access: "public-download", url: original }), original);
   const image = "https://res.cloudinary.com/demo/image/upload/v12345/project.jpg";
   assert.equal(resolve({ provider: "cloudinary", resourceType: "image", url: image }), image);
   const alreadyOptimized = "https://res.cloudinary.com/demo/video/upload/q_auto/f_auto:video/v1/clip.mp4";

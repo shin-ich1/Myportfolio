@@ -4061,8 +4061,15 @@ function normalizedVideoEmbedUrl(value = "") {
 }
 
 function projectVideoPlayerMarkup(url, poster = "") {
-  const videoUrl = cleanText(url);
+  const rawUrl = cleanText(url);
   const posterUrl = safeImageSource(poster);
+  let videoUrl = "";
+  if (rawUrl) {
+    try {
+      const resolved = new URL(rawUrl, window.location.href);
+      if (resolved.protocol === "https:" || resolved.protocol === "http:") videoUrl = resolved.href;
+    } catch {}
+  }
   if (!videoUrl) return "";
   return `<div class="project-video-playback"><video class="blender-player" controls playsinline preload="metadata" src="${escapeHtml(videoUrl)}"${posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : ""}>Your browser cannot play this video.</video><p class="project-video-failure" data-project-video-failure hidden>Video playback is unavailable in this browser. <a href="${escapeHtml(videoUrl)}" data-project-video-fallback target="_blank" rel="noopener noreferrer">Open video file</a></p></div>`;
 }

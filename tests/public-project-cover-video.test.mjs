@@ -141,13 +141,13 @@ test("Watch Video preserves one-click playback while project detail video stays 
 
 test("Project video fallback links allow ordinary media URLs but never executable URL schemes", () => {
   const markupOwner = owner("projectVideoPlayerMarkup", "bindProjectVideoPlayer");
-  const markup = new Function("cleanText", "safeImageSource", "escapeHtml", "window",
+  const markup = new Function("cleanText", "safeImageSource", "escapeHtml", "window", "URL",
     markupOwner + "\nreturn projectVideoPlayerMarkup;"
   )(
     value => String(value || "").trim(),
     value => String(value || ""),
     value => String(value || ""),
-    { location: { href: "https://example.org/portfolio/" } }
+    { location: { href: "https://example.org/portfolio/" } }, URL
   );
   assert.equal(markup("javascript:alert(1)"), "");
   assert.equal(markup("data:text/html,<script>alert(1)</script>"), "");

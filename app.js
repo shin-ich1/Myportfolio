@@ -1510,7 +1510,7 @@ function bindPublicMediaFrames(root = document) {
       video.addEventListener("loadedmetadata", () => {
         if (autoplayVideo) attemptPlay();
         else ready({ keepObserving: true });
-      }, { once: true });
+      });
       video.addEventListener("canplay", attemptPlay);
       const source = String(video.dataset.publicMediaSrc || video.getAttribute("src") || video.querySelector("source")?.getAttribute("src") || "").trim();
       if (!source) return fail();
@@ -4194,17 +4194,24 @@ function bindProjectVideoPlayer(root = document, { playOnOpen = false } = {}) {
       video.src = fallbackSource;
       video.load();
     };
-    video.addEventListener("error", retryVideoSource);
-    video.addEventListener("loadedmetadata", clearFailure);
-    if (video.error) showFailure();
-    else if (video.readyState >= 1) clearFailure();
-    if (playOnOpen && !video.error) {
+    const attemptPlayback = () => {
       try {
         video.play()?.catch?.((error) => {
           if (error?.name === "NotSupportedError") retryVideoSource();
+          // NotAllowedError must retain browser controls and user-gesture policy.
         });
-      } catch {}
-    }
+      } catch (error) {
+        if (error?.name === "NotSupportedError") retryVideoSource();
+      }
+    };
+    video.addEventListener("error", retryVideoSource);
+    video.addEventListener("loadedmetadata", () => {
+      clearFailure();
+      if (playOnOpen && video.dataset.projectVideoFallbackTried === "true") attemptPlayback();
+    });
+    if (video.error) showFailure();
+    else if (video.readyState >= 1) clearFailure();
+    if (playOnOpen && !video.error) attemptPlayback();
   });
 }
 

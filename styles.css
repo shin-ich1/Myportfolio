@@ -1636,5 +1636,5 @@ html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .publi
 html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .public-layout-item .public-card-carousel-track{height:auto;min-height:0;overflow-x:auto;overflow-y:visible}
 html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .public-layout-item .public-card-carousel-track>.public-footprint-card{height:auto;min-height:0}
 html[data-lan-public-mode="compact"] .public-layout-item .public-card-carousel-track>.public-media-footprint-card{height:auto;min-height:0;aspect-ratio:var(--public-media-card-ratio,4 / 3)}
-html[data-lan-public-mode="mobile"] .public-layout-item .editing-carousel>.public-media-footprint-card{height:calc(75cqi - 3px);min-height:0;aspect-ratio:var(--public-media-card-ratio,4 / 3)}
+html[data-lan-public-mode="mobile"] .public-layout-item .editing-carousel>.public-media-footprint-card{height:calc(75vw - 2.75rem);height:calc(75cqi - 3px);min-height:0;aspect-ratio:var(--public-media-card-ratio,4 / 3)}
 

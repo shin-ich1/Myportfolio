@@ -94,3 +94,15 @@ test("Photo Editing category taps preserve page scroll and do not rebuild unrela
   assert.equal(galleryShapes, 1);
   assert.equal(refreshed, 1);
 });
+
+
+test("Public startup deadline resolves fast reads and rejects stalled requests", async () => {
+  const from = app.indexOf("function withPublicStartupDeadline(");
+  const to = app.indexOf("\nasync function loadPublicSingleton(", from);
+  assert.ok(from >= 0 && to > from, "Expected canonical startup deadline helper");
+  const withDeadline = new Function(app.slice(from, to) + "\nreturn withPublicStartupDeadline;")();
+  const fast = Promise.resolve("ready");
+  assert.equal(await withDeadline(fast, Date.now() + 1000), "ready");
+  assert.equal(withDeadline(fast, 0), fast, "Background refresh must not add a startup deadline");
+  await assert.rejects(withDeadline(new Promise(() => {}), Date.now() + 30), /startup deadline exceeded/i);
+});

@@ -470,3 +470,64 @@ test("Unsupported-source playback rejections retry the distinct authorized origi
   assert.match(viewer, /video\.play\(\)\?\.catch\?\.\(\(error\)\s*=>[\s\S]*?error\?\.name\s*===\s*"NotSupportedError"[\s\S]*?retryVideoSource\(\)/);
   assert.doesNotMatch(preview, /NotAllowedError"[\s\S]{0,60}retryVideoSource/);
 });
+
+
+test("Actual public card video retries one authorized source once and then stops on repeated failure", () => {
+  const binderSource = owner("bindPublicMediaFrames", "projectCardMediaMarkup");
+  let observer = null;
+  const handlers = {};
+  class Frame {
+    constructor() {
+      this.dataset = { publicMediaLoading: "lazy", publicMediaAutoplay: "true" };
+      const state = new Set(["media-loading"]);
+      this.classList = {
+        contains: name => state.has(name),
+        add: (...names) => names.forEach(name => state.add(name)),
+        remove: (...names) => names.forEach(name => state.delete(name))
+      };
+    }
+    getBoundingClientRect() { return { top: 3000, bottom: 3100 }; }
+    querySelector(selector) {
+      return selector === "[data-public-media-video]" ? video : null;
+    }
+  }
+  class Observer {
+    constructor(callback) { observer = this; this.callback = callback; }
+    observe() {}
+    disconnect() {}
+    fire(on) { this.callback([{ isIntersecting: on, intersectionRatio: on ? 1 : 0 }]); }
+  }
+  const video = {
+    dataset: {
+      publicMediaSrc: "/optimized.mp4",
+      publicMediaFallbackSrc: "/original.mp4"
+    },
+    attrs: { autoplay: "" }, paused: true, readyState: 0, loads: 0,
+    addEventListener(type, callback) { handlers[type] = callback; },
+    hasAttribute(name) { return name === "autoplay"; },
+    getAttribute(name) { return Object.hasOwn(this.attrs, name) ? this.attrs[name] : null; },
+    setAttribute(name, value) { this.attrs[name] = value; },
+    querySelector() { return null; },
+    load() { this.loads += 1; },
+    play() { return Promise.reject(Object.assign(new Error("autoplay restricted"), { name: "NotAllowedError" })); },
+    pause() { this.paused = true; }
+  };
+  const frame = new Frame();
+  const doc = { documentElement: { clientHeight: 800 }, querySelectorAll() { return [frame]; } };
+  const win = { innerHeight: 800, clearTimeout() {}, setTimeout() { return 1; } };
+  const bind = new Function("document", "window", "HTMLElement", "IntersectionObserver",
+    binderSource + "\nreturn bindPublicMediaFrames;"
+  )(doc, win, Frame, Observer);
+  bind(doc);
+  assert.equal(video.loads, 0);
+  observer.fire(true);
+  assert.equal(video.loads, 1);
+  assert.equal(video.getAttribute("src"), "/optimized.mp4");
+  handlers.error();
+  assert.equal(video.loads, 2);
+  assert.equal(video.getAttribute("src"), "/original.mp4");
+  assert.equal(video.dataset.publicMediaFallbackTried, "true");
+  handlers.error();
+  assert.equal(video.loads, 2);
+  assert.equal(frame.classList.contains("media-fallback"), true);
+});

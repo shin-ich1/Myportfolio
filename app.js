@@ -1566,6 +1566,10 @@ function photoCardMediaMarkup(item) {
   return `<span class="photo-thumb-final">${publicMediaFrameMarkup(finalAsset, item.title, { className: "public-media-frame--cover", fallbackLabel: "Photo editing media" })}</span>`;
 }
 
+function photoGalleryCardsMarkup(items = []) {
+  return items.map((item) => `<button class="gallery-card public-footprint-card public-media-footprint-card" data-photo-source-id="${escapeHtml(item.id)}">${photoCardMediaMarkup(item)}<span class="view-full">${icon("zoom-in")} View Full</span><strong>${escapeHtml(item.title)}</strong></button>`).join("");
+}
+
 function refreshPhotoGalleryPreviewLayout(preview) {
   if (!(preview instanceof HTMLElement)) return;
   const tiles = [...preview.querySelectorAll("[data-photo-gallery-tile]")];
@@ -2248,7 +2252,7 @@ function render() {
   if (aboutVisible) pushCore('about','text-section',1,100,`<article id="about" class="panel portfolio-panel about-panel"><h2>${icon("user")} About Me</h2><div class="about public-section-scroll" data-about-layout>${content.about.image ? `<div class="about-photo" data-about-photo><img src="${escapeHtml(content.about.image)}" alt="${escapeHtml(content.about.imageAlt || "Rolando Lagmay Jr.")}"></div>` : ""}<div class="about-copy"><p>${escapeHtml(content.about.text || content.about.shortText)}</p></div></div></article>`);
   if (experienceVisible) pushCore('experience','timeline',experiences.length,200,`<article id="experience" class="panel portfolio-panel experience-panel"><h2>${icon("briefcase-business")} Experience</h2><div class="timeline public-section-scroll">${experiences.map((item) => `<div class="timeline-item" data-experience-id="${escapeHtml(item.id || "")}"><span></span><div><div class="exp-head"><h3>${escapeHtml(item.role)}</h3><time>${escapeHtml(item.date)}</time></div>${item.company ? `<a>${escapeHtml(item.company)}</a>` : ""}<p>${escapeHtml(item.details)}</p></div></div>`).join("")}</div></article>`);
   if (projectsVisible) pushCore('projects','carousel',projects.length,300,`<section id="projects" class="panel portfolio-panel projects-section"><h2>${icon("folder-git-2")} Projects</h2><div class="project-showcase-shell public-card-carousel-shell"><button class="carousel-arrow project-showcase-arrow project-showcase-left" type="button" aria-label="Previous projects">${icon("chevron-left")}</button><div class="projects project-showcase-track public-card-carousel-track" aria-label="Project showcase">${projects.map((project) => `<article class="card public-footprint-card public-content-budget-card project-content-budget-card"><button class="media" type="button" data-open-project="${escapeHtml(project.id)}">${projectCardMediaMarkup(project)}</button><div class="card-body"><h3 class="public-content-budget-title">${escapeHtml(project.title)}</h3><p class="public-content-budget-summary">${escapeHtml(project.description)}</p><div class="tags project-capabilities public-content-budget-flex${(project.capabilities || []).length ? " has-capabilities" : ""}" data-project-capabilities data-public-budget-group="capabilities" data-project-id="${escapeHtml(project.id)}">${projectCapabilityTagsMarkup(project.capabilities || [], true)}</div><div class="actions public-content-budget-actions">${projectActionMarkup(project)}</div></div></article>`).join("")}</div><button class="carousel-arrow project-showcase-arrow project-showcase-right" type="button" aria-label="Next projects">${icon("chevron-right")}</button></div></section>`);
-  if (photoEditingVisible) pushCore('photo-editing','media-gallery',photos.length,400,`<section id="photo-editing" class="panel portfolio-panel photo-portfolio-section"><h2>${icon("camera")} Photo Editing Portfolio</h2><div class="filters">${categories.map((category) => `<button class="filter ${category === activeFilter ? "active" : ""}" data-filter="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}</div><div class="editing-carousel-shell public-card-carousel-shell"><button class="carousel-arrow carousel-left" type="button" aria-label="Previous editing projects">${icon("chevron-left")}</button><div class="editing-carousel public-card-carousel-track" aria-label="Photo editing projects">${gallery.map((item) => `<button class="gallery-card public-footprint-card public-media-footprint-card" data-photo-source-id="${escapeHtml(item.id)}">${photoCardMediaMarkup(item)}<span class="view-full">${icon("zoom-in")} View Full</span><strong>${escapeHtml(item.title)}</strong></button>`).join("")}</div><button class="carousel-arrow carousel-right" type="button" aria-label="Next editing projects">${icon("chevron-right")}</button></div></section>`);
+  if (photoEditingVisible) pushCore('photo-editing','media-gallery',photos.length,400,`<section id="photo-editing" class="panel portfolio-panel photo-portfolio-section"><h2>${icon("camera")} Photo Editing Portfolio</h2><div class="filters">${categories.map((category) => `<button class="filter ${category === activeFilter ? "active" : ""}" data-filter="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}</div><div class="editing-carousel-shell public-card-carousel-shell"><button class="carousel-arrow carousel-left" type="button" aria-label="Previous editing projects">${icon("chevron-left")}</button><div class="editing-carousel public-card-carousel-track" aria-label="Photo editing projects">${photoGalleryCardsMarkup(gallery)}</div><button class="carousel-arrow carousel-right" type="button" aria-label="Next editing projects">${icon("chevron-right")}</button></div></section>`);
   if (educationVisible) pushCore('education','list',(content.education||[]).length,500,`<section id="education" class="panel portfolio-panel education-section education-section--compact"><div class="education-section-heading"><h2>${icon("graduation-cap")} Education</h2></div><div class="education-public-grid public-section-scroll">${(content.education || []).map(educationCardMarkup).join("")}</div></section>`);
   if (certificatesVisible) pushCore('certificates','list',(content.certificates||[]).length,700,`<article id="certificates" class="panel portfolio-panel certificates-panel"><h2>${icon("award")} Certificates</h2><div class="public-section-scroll">${(content.certificates || []).map((item) => { const meta = [item.year, formatHours(item.trainingHours)].filter(Boolean).join(" · "); return `<div class="cert"><span>${escapeHtml(item.title)}</span><time>${escapeHtml(meta)}</time></div>`; }).join("")}</div></article>`);
   if (contactVisible) pushCore('contact','cta-contact',1,1000,`<article id="contact" class="panel portfolio-panel contact-panel"><h2>${icon("send")} ${escapeHtml(content.contact?.heading || "Let's Work Together")}</h2><div class="public-section-scroll"><p>${escapeHtml(content.contact?.message || "I'm open to opportunities and meaningful projects. Let's create something useful together.")}</p><ul>${content.site.phone ? `<li>${icon("phone")} <a href="tel:${escapeHtml(content.site.phone)}">${escapeHtml(content.site.phone)}</a></li>` : ""}${content.site.email ? `<li>${icon("mail")} <a href="mailto:${escapeHtml(content.site.email)}">${escapeHtml(content.site.email)}</a></li>` : ""}${content.site.location ? `<li>${icon("map-pin")} ${escapeHtml(content.site.location)}</li>` : ""}${content.contact?.availability ? `<li>${icon("circle-check")} ${escapeHtml(content.contact.availability)}</li>` : ""}</ul><div class="actions">${content.site.email ? `<a class="btn" href="mailto:${escapeHtml(content.site.email)}">${icon("mail")} Send Email</a>` : ""}${content.site.linkedin ? `<a class="btn ghost" target="_blank" rel="noopener noreferrer" href="${escapeHtml(content.site.linkedin)}">${icon("linkedin")} LinkedIn</a>` : ""}${content.site.facebook ? `<a class="btn ghost" target="_blank" rel="noopener noreferrer" href="${escapeHtml(content.site.facebook)}">${icon("facebook")} Facebook</a>` : ""}${(content.site.contactMethods || []).filter((method) => !["phone","github","linkedin","facebook"].includes(method.type)).map((method) => { const href = contactMethodHref(method); return href ? `<a class="btn ghost" target="_blank" rel="noopener noreferrer" href="${escapeHtml(href)}">${icon("external-link")} ${escapeHtml(method.label)}</a>` : ""; }).join("")}</div></div></article>`);
@@ -2308,6 +2312,7 @@ function render() {
   <footer class="wrap site-footer"><a class="brand" href="#home">${escapeHtml(content.site.brand || "LΛN")}</a><span>© ${new Date().getFullYear()} ${escapeHtml(content.site.name)}</span><span class="site-footer-links"><a href="#home">Back to top ↑</a><a class="footer-admin-link" href="admin/">${icon("lock-keyhole")} Admin</a></span></footer>
   <button class="public-message-launcher" id="publicMessageLauncher" type="button" aria-label="Open private message" title="Private message">${icon("message-circle")}<span class="public-message-launcher-dot" aria-hidden="true"></span></button><div id="modal"></div>`;
 
+  initPublicAdaptiveMode();
   bind();
   bindPublicMediaFrames(app);
   window.lucide?.createIcons();
@@ -3015,7 +3020,6 @@ function bind() {
     localStorage.setItem("theme", selectedTheme);
     updateThemeIcon();
   });
-  document.querySelectorAll(".filter").forEach((button) => button.addEventListener("click", () => { activeFilter = button.dataset.filter; render(); }));
   document.querySelectorAll("[data-open-project]").forEach((button) => button.addEventListener("click", () => openProjectById(button.dataset.openProject)));
   document.querySelectorAll("[data-project-details]").forEach((button) => button.addEventListener("click", () => openProjectDetailsById(button.dataset.projectDetails)));
   document.querySelectorAll("[data-project-video]").forEach((button) => button.addEventListener("click", () => openProjectVideoResource(button.dataset.projectVideo, button.dataset.projectVideoUrl)));
@@ -3043,7 +3047,6 @@ function bind() {
   setupPhotoGalleryMediaShapes();
   setupAboutMediaFlow();
   setupDynamicModuleCarousels();
-  initPublicAdaptiveMode();
   setupPublicVerticalOverflow();
   setupPublicContentBudgetCards();
   setupProjectCapabilityOverflow();
@@ -3526,6 +3529,24 @@ function setupEditingCarousel() {
     const target = Math.min(maxScroll(), Math.max(0, Math.round(track.scrollLeft / step) * step));
     track.scrollTo({ left: target, behavior: "smooth" });
   };
+
+  const filterButtons = [...document.querySelectorAll("#photo-editing .filter")];
+  filterButtons.forEach((button) => button.addEventListener("click", () => {
+    const nextFilter = button.dataset.filter;
+    if (!nextFilter || nextFilter === activeFilter) return;
+    activeFilter = nextFilter;
+    const filteredPhotos = photoItems().filter((item) => activeFilter === "All" || item.category === activeFilter);
+    track.innerHTML = photoGalleryCardsMarkup(filteredPhotos);
+    track.scrollLeft = 0;
+    filterButtons.forEach((candidate) => candidate.classList.toggle("active", candidate.dataset.filter === activeFilter));
+    track.querySelectorAll("[data-photo-source-id]").forEach((card) => {
+      card.addEventListener("click", () => openPhotoEditingSource(card.dataset.photoSourceId));
+    });
+    bindPublicMediaFrames(track);
+    setupPhotoGalleryMediaShapes(track);
+    window.lucide?.createIcons();
+    requestAnimationFrame(updateArrows);
+  }));
 
   left.addEventListener("click", () => track.scrollBy({ left: -cardStep(), behavior: "smooth" }));
   right.addEventListener("click", () => track.scrollBy({ left: cardStep(), behavior: "smooth" }));

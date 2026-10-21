@@ -599,3 +599,16 @@ test("Public video playback source owner supplies browser-compatible fallback fo
   const local = sources("assets/videos/future-video.mp4");
   assert.equal(local.fallbackUrl, "");
 });
+
+
+test("Canonical H.264 fallback replaces a prior automatic-format transformation rather than stacking conflicting formats", () => {
+  const source = readFileSync(new URL("../storage-asset.js", import.meta.url), "utf8");
+  const resolve = new Function("URL", source.replaceAll("export function ", "function ") + "\nreturn storageAssetUrl;")(URL);
+  const base = "https://res.cloudinary.com/demo/video/upload/v8/future.mp4";
+  const expected = "https://res.cloudinary.com/demo/video/upload/f_mp4,vc_h264,q_auto/v8/future.mp4";
+  const auto = "https://res.cloudinary.com/demo/video/upload/q_auto/f_auto:video/v8/future.mp4";
+  const asset = {provider:"cloudinary",resourceType:"video",type:"upload",access:"public-preview",url:auto};
+  assert.equal(resolve(asset, "compatible-video"), expected);
+  assert.equal(resolve({...asset,url:expected}, "compatible-video"), expected);
+  assert.equal(resolve({...asset,url:base,access:"admin-only"}, "compatible-video"), "");
+});

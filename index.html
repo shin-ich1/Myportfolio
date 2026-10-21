@@ -12,10 +12,19 @@
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
 </head>
 <body>
-  <div class="site-loader" id="siteLoader" aria-live="polite"><div class="site-loader-mark">LΛN</div><span>Loading portfolio</span></div>
+  <div class="site-loader" id="siteLoader" aria-live="polite"><div class="site-loader-mark">LΛN</div><span data-loader-status>Loading portfolio</span><button type="button" data-loader-retry hidden onclick="location.reload()" style="padding:.65rem 1rem;border:1px solid #315371;border-radius:8px;background:#0d1a2a;color:#f7f9fc;cursor:pointer">Retry loading</button></div>
   <div id="app"></div>
 
   <script type="module" src="app.js"></script>
-  <script>setTimeout(function(){document.getElementById('siteLoader')?.classList.add('is-hidden')},7000)</script>
+  <script>
+    setTimeout(function () {
+      var loader = document.getElementById('siteLoader');
+      if (!loader || loader.classList.contains('is-hidden')) return;
+      var status = loader.querySelector('[data-loader-status]');
+      if (status) status.textContent = 'The portfolio is taking longer to load.';
+      var retry = loader.querySelector('[data-loader-retry]');
+      if (retry) retry.hidden = false;
+    }, 7000);
+  </script>
 </body>
 </html>

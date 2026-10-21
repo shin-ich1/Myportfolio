@@ -197,3 +197,83 @@ test("Public media frame image loading remains owned by the original image branc
   assert.match(binder, /image\.addEventListener\("error"/);
   assert.match(binder, /image\.addEventListener\("load", ready/);
 });
+
+
+test("Shared video loader starts only near viewport, shows poster on autoplay rejection and resumes when visible", async () => {
+  const binderSource = owner("bindPublicMediaFrames", "projectCardMediaMarkup");
+  const runCase = async (blocked) => {
+    let observer;
+    class Frame {
+      constructor() {
+        this.dataset = { publicMediaAutoplay: "true", publicMediaLoading: "lazy" };
+        const tokens = new Set(["media-loading"]);
+        this.classList = {
+          contains: value => tokens.has(value),
+          add: (...values) => values.forEach(value => tokens.add(value)),
+          remove: (...values) => values.forEach(value => tokens.delete(value))
+        };
+      }
+      querySelector(query) {
+        if (query === "[data-public-media-image]") return null;
+        if (query === "[data-public-media-video]") return video;
+        return null;
+      }
+      getBoundingClientRect() { return { top: 2400, bottom: 2600 }; }
+    }
+    class Observer {
+      constructor(callback) { this.callback = callback; observer = this; this.disconnected = false; }
+      observe() {}
+      disconnect() { this.disconnected = true; }
+      fire(visible) { this.callback([{ isIntersecting: visible, intersectionRatio: visible ? 1 : 0 }]); }
+    }
+    const handlers = {};
+    const video = {
+      dataset: { publicMediaSrc: "/media/future-video.webm" },
+      muted: false, playsInline: false, paused: true, readyState: 0,
+      playCalls: 0, pauseCalls: 0, attrs: {},
+      hasAttribute(name) { return name === "autoplay"; },
+      getAttribute(name) { return this.attrs[name] || ""; },
+      setAttribute(name, value) { this.attrs[name] = value; },
+      querySelector() { return null; },
+      addEventListener(name, listener) { handlers[name] = listener; },
+      load() { this.loadCalls = (this.loadCalls || 0) + 1; },
+      play() {
+        this.playCalls += 1;
+        if (blocked) return Promise.reject(new Error("NotAllowedError"));
+        this.paused = false;
+        return Promise.resolve();
+      },
+      pause() { this.pauseCalls += 1; this.paused = true; }
+    };
+    const frame = new Frame();
+    const doc = { documentElement: { clientHeight: 800 }, querySelectorAll() { return [frame]; } };
+    const win = { innerHeight: 800, clearTimeout() {}, setTimeout() { return 1; } };
+    const bind = new Function("document", "window", "HTMLElement", "IntersectionObserver",
+      binderSource + "\nreturn bindPublicMediaFrames;"
+    )(doc, win, Frame, Observer);
+    bind(doc);
+    assert.equal(video.loadCalls || 0, 0, "Offscreen videos must not fetch");
+    assert.equal(video.playCalls, 0);
+    observer.fire(true);
+    assert.equal(video.loadCalls, 1);
+    assert.equal(video.playCalls, 1);
+    assert.equal(video.muted, true);
+    assert.equal(video.playsInline, true);
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    if (blocked) {
+      assert.equal(frame.classList.contains("media-loading"), true, "Autoplay block leaves poster visible");
+      assert.equal(frame.classList.contains("media-fallback"), false, "Browser policy is not a corrupt video");
+    } else {
+      assert.equal(frame.classList.contains("media-ready"), true);
+      assert.equal(observer.disconnected, false, "Visibility watcher remains for pause/resume");
+      observer.fire(false);
+      assert.equal(video.pauseCalls, 1);
+      assert.equal(frame.classList.contains("media-loading"), true);
+      observer.fire(true);
+      assert.equal(video.loadCalls, 1, "Resume must not re-download source");
+      assert.equal(video.playCalls, 2);
+    }
+  };
+  await runCase(false);
+  await runCase(true);
+});

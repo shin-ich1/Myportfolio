@@ -137,3 +137,20 @@ test("Watch Video preserves one-click playback while project detail video stays 
   const details = owner("openProjectById", "openResumeChooser");
   assert.doesNotMatch(details, /playOnOpen:\s*true/);
 });
+
+
+test("Project video fallback links allow ordinary media URLs but never executable URL schemes", () => {
+  const markupOwner = owner("projectVideoPlayerMarkup", "bindProjectVideoPlayer");
+  const markup = new Function("cleanText", "safeImageSource", "escapeHtml", "window",
+    markupOwner + "\nreturn projectVideoPlayerMarkup;"
+  )(
+    value => String(value || "").trim(),
+    value => String(value || ""),
+    value => String(value || ""),
+    { location: { href: "https://example.org/portfolio/" } }
+  );
+  assert.equal(markup("javascript:alert(1)"), "");
+  assert.equal(markup("data:text/html,<script>alert(1)</script>"), "");
+  assert.match(markup("assets/videos/clip.mp4"), /https:\/\/example\.org\/portfolio\/assets\/videos\/clip\.mp4/);
+  assert.match(markup("https://cdn.example.org/clip.mp4"), /https:\/\/cdn\.example\.org\/clip\.mp4/);
+});

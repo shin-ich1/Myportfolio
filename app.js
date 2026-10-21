@@ -1514,8 +1514,10 @@ function bindPublicMediaFrames(root = document) {
 function projectCardMediaMarkup(project = {}) {
   const videoSource = project.demoVideo || project.raw?.demoVideo || project.raw?.video || null;
   const videoUrl = mediaUrl(videoSource);
-  const coverSource = project.raw?.coverImage || project.raw?.image || project.raw?.thumbnail || project.image || null;
-  const poster = mediaUrl(coverSource, { family: "image", type: "image", access: "public-preview" });
+  const coverCandidates = [project.raw?.coverImage, project.raw?.coverImageUrl, project.raw?.image, project.raw?.thumbnail, project.image];
+  const imagePresentation = { family: "image", type: "image", access: "public-preview" };
+  const coverSource = coverCandidates.find((source) => source && mediaUrl(source, imagePresentation)) || null;
+  const poster = coverSource ? mediaUrl(coverSource, imagePresentation) : "";
   if (videoUrl) {
     return publicVideoFrameMarkup(videoSource, project.title, { className: "project-card-video-preview", poster });
   }

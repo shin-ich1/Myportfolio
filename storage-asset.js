@@ -193,11 +193,18 @@ function cloudinaryImageDeliveryUrl(asset = {}, purpose = 'display') {
   return base.replace('/upload/', `/upload/${transform}/`);
 }
 
-function cloudinaryVideoDeliveryUrl(asset = {}) {
+function cloudinaryVideoDeliveryUrl(asset = {}, { compatible = false } = {}) {
   const base = text(asset.secureUrl || asset.url || asset.previewUrl);
   if (lower(asset.provider) !== 'cloudinary' || lower(asset.resourceType) !== 'video') return '';
   if (lower(asset.type || 'upload') !== 'upload' || !['', 'public-preview'].includes(lower(asset.access))) return '';
   if (!isManagedCloudinaryUrl(base) || !base.includes('/video/upload/')) return '';
+  // A browser's Accept/UA negotiation may be restricted inside an in-app webview.
+  // Generate an explicit H.264 MP4 only after the negotiated video cannot play.
+  // Do not expose private assets or modify original/download URL semantics.
+  if (compatible) {
+    if (/\/f_mp4,vc_h264,q_auto\//i.test(base)) return base;
+    return base.replace('/video/upload/', '/video/upload/f_mp4,vc_h264,q_auto/');
+  }
   // Preserve deliberately configured transformations. The original remains available
   // through "original"/"download", while public display negotiates a browser format.
   if (/\/(?:q_auto(?::[a-z]+)?|f_auto(?::video)?)(?:[\/,]|$)/i.test(base)) return base;
@@ -208,6 +215,7 @@ export function storageAssetUrl(value, purpose = 'display') {
   const asset = normalizeStorageAsset(value);
   if (!asset) return typeof value === 'string' ? text(value) : directUrl(value);
   const kind = lower(purpose);
+  if (kind === 'compatible-video') return cloudinaryVideoDeliveryUrl(asset, { compatible: true });
   if (kind === 'download') return text(asset.downloadUrl || asset.originalUrl || asset.url || asset.secureUrl);
   if (kind === 'original') return text(asset.originalUrl || asset.url || asset.secureUrl || asset.downloadUrl);
   if (['display', 'preview', 'card', 'detail'].includes(kind)) {

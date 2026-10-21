@@ -191,6 +191,15 @@ nav a:focus-visible {
   letter-spacing: .08em;
   animation: lan-loader 1.8s var(--ease) infinite;
 }
+.site-loader-retry {
+  padding: .65rem 1rem;
+  border: 1px solid #315371;
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.site-loader-retry[hidden] { display: none; }
 .site-loader.is-hidden { visibility: hidden; opacity: 0; pointer-events: none; }
 @keyframes lan-loader { 50% { transform: translateY(-3px); box-shadow: 0 0 64px rgba(22,136,255,.25); } }
 
@@ -1626,5 +1635,6 @@ html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .publi
 html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .public-layout-item .public-card-carousel-shell{display:flex;min-height:0;flex-direction:column}
 html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .public-layout-item .public-card-carousel-track{height:auto;min-height:0;overflow-x:auto;overflow-y:visible}
 html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .public-layout-item .public-card-carousel-track>.public-footprint-card{height:auto;min-height:0}
-html:is([data-lan-public-mode="compact"],[data-lan-public-mode="mobile"]) .public-layout-item .public-card-carousel-track>.public-media-footprint-card{height:auto;min-height:0;aspect-ratio:var(--public-media-card-ratio,4 / 3)}
+html[data-lan-public-mode="compact"] .public-layout-item .public-card-carousel-track>.public-media-footprint-card{height:auto;min-height:0;aspect-ratio:var(--public-media-card-ratio,4 / 3)}
+html[data-lan-public-mode="mobile"] .public-layout-item .editing-carousel>.public-media-footprint-card{height:calc(75vw - 2.75rem);height:calc(75cqi - 3px);min-height:0;aspect-ratio:var(--public-media-card-ratio,4 / 3)}
 

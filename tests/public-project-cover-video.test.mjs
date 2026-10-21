@@ -360,3 +360,28 @@ test("Shared image validator permits safe site-relative Project video posters wi
     "assets\\evil.jpg"
   ]) assert.equal(getSafe(source), "");
 });
+
+
+test("Project cover uses one resolved image URL for uncropped foreground and soft ambient fill", () => {
+  const frame = owner("publicMediaFrameMarkup", "publicVideoFrameMarkup");
+  const render = new Function("mediaPresentation","cleanText","escapeHtml",
+    frame + "\nreturn publicMediaFrameMarkup;"
+  )(
+    source => ({ publicCardUrl: source, publicDisplayUrl: source, publicOriginalUrl: source }),
+    value => String(value || "").trim(),
+    value => String(value || "")
+  );
+  const src = "/assets/images/new-project-screenshot.webp";
+  const markup = render(src, "Future Project", { className: "public-media-frame--project-cover", ambientBackdrop: true });
+  assert.match(markup, /public-media-frame__ambient/);
+  assert.match(markup, /aria-hidden="true"/);
+  assert.equal(markup.split(src).length - 1, 2);
+  assert.match(markup, /public-media-frame__image[^>]*alt="Future Project"/);
+  const photoMarkup = render(src, "Photo Editing", { className:"public-media-frame--cover" });
+  assert.doesNotMatch(photoMarkup, /public-media-frame__ambient/);
+  const card = owner("projectCardMediaMarkup", "projectSingleActionMarkup");
+  assert.match(card, /ambientBackdrop:\s*true/);
+  assert.match(css, /\.public-media-frame__ambient\{[^}]*object-fit:cover/);
+  assert.match(css, /\.public-media-frame__image\{[^}]*object-fit:contain/);
+  assert.match(css, /\.public-media-frame\.media-fallback>.public-media-frame__ambient\{display:none\}/);
+});

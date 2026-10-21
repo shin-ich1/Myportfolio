@@ -213,8 +213,9 @@ function cloudinaryVideoDeliveryUrl(asset = {}, { compatible = false } = {}) {
 
 export function storageAssetUrl(value, purpose = 'display') {
   const asset = normalizeStorageAsset(value);
-  if (!asset) return typeof value === 'string' ? text(value) : directUrl(value);
   const kind = lower(purpose);
+  // A generic URL must never pretend to be a safely transcodable managed video.
+  if (!asset) return kind === 'compatible-video' ? '' : typeof value === 'string' ? text(value) : directUrl(value);
   if (kind === 'compatible-video') return cloudinaryVideoDeliveryUrl(asset, { compatible: true });
   if (kind === 'download') return text(asset.downloadUrl || asset.originalUrl || asset.url || asset.secureUrl);
   if (kind === 'original') return text(asset.originalUrl || asset.url || asset.secureUrl || asset.downloadUrl);

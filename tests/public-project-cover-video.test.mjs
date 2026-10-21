@@ -548,3 +548,53 @@ test("Watch Video fallback retains native controls and retries playback on ready
   assert.match(binder, /error\?\.name\s*===\s*"NotSupportedError"/);
   assert.match(binder, /video\.addEventListener\("error",\s*retryVideoSource\)/);
 });
+
+
+test("Browser-incompatible Cloudinary auto format falls back to public H.264 MP4 rather than the untranscoded upload", () => {
+  const assetCode = readFileSync(new URL("../storage-asset.js", import.meta.url), "utf8");
+  const storageAssetUrl = new Function("URL",
+    assetCode.replaceAll("export function ", "function ") + "\nreturn storageAssetUrl;"
+  )(URL);
+  const source = {
+    provider: "cloudinary", resourceType: "video", type: "upload", access: "public-preview",
+    url: "https://res.cloudinary.com/demo/video/upload/v7/future-project.mov"
+  };
+  const expected = "https://res.cloudinary.com/demo/video/upload/f_mp4,vc_h264,q_auto/v7/future-project.mov";
+  assert.equal(storageAssetUrl(source, "compatible-video"), expected);
+  assert.equal(storageAssetUrl(source, "original"), source.url);
+  for (const access of ["admin-only", "private", "metadata-only", "public-download"]) {
+    assert.equal(storageAssetUrl({ ...source, access }, "compatible-video"), "", "Non-public videos must not be transformed or exposed");
+  }
+  assert.equal(storageAssetUrl("assets/videos/future-video.mp4", "compatible-video"), "", "Static source is not a Cloudinary transform");
+});
+
+test("Public video playback source owner supplies browser-compatible fallback for managed videos, never for private media", () => {
+  const sourceCode = owner("publicVideoPlaybackSources", "publicVideoFrameMarkup");
+  const assetCode = readFileSync(new URL("../storage-asset.js", import.meta.url), "utf8");
+  const storageAssetUrl = new Function("URL",
+    assetCode.replaceAll("export function ", "function ") + "\nreturn storageAssetUrl;"
+  )(URL);
+  const asset = {
+    provider: "cloudinary", resourceType: "video", type: "upload", access: "public-preview",
+    url: "https://res.cloudinary.com/demo/video/upload/v7/future-project.mp4"
+  };
+  const original = asset.url;
+  const auto = storageAssetUrl(asset, "display");
+  const sources = new Function("window", "mediaPresentation", "storageAssetUrl", "cleanText", "URL",
+    sourceCode + "\nreturn publicVideoPlaybackSources;"
+  )(
+    { location: { href: "https://portfolio.example/" } },
+    input => ({
+      asset: input,
+      publicDisplayUrl: storageAssetUrl(input, "display"),
+      publicOriginalUrl: storageAssetUrl(input, "original")
+    }),
+    storageAssetUrl, value => String(value || "").trim(), URL
+  );
+  const output = sources(asset);
+  assert.equal(output.url, auto);
+  assert.equal(output.fallbackUrl, "https://res.cloudinary.com/demo/video/upload/f_mp4,vc_h264,q_auto/v7/future-project.mp4");
+  assert.notEqual(output.fallbackUrl, original);
+  const local = sources("assets/videos/future-video.mp4");
+  assert.equal(local.fallbackUrl, "");
+});

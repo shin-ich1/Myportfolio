@@ -4067,7 +4067,7 @@ function projectVideoPlayerMarkup(url, poster = "") {
   return `<div class="project-video-playback"><video class="blender-player" controls playsinline preload="metadata" src="${escapeHtml(videoUrl)}"${posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : ""}>Your browser cannot play this video.</video><p class="project-video-failure" data-project-video-failure hidden>Video playback is unavailable in this browser. <a href="${escapeHtml(videoUrl)}" data-project-video-fallback target="_blank" rel="noopener noreferrer">Open video file</a></p></div>`;
 }
 
-function bindProjectVideoPlayer(root = document) {
+function bindProjectVideoPlayer(root = document, { playOnOpen = false } = {}) {
   root?.querySelectorAll?.(".project-video-playback").forEach((frame) => {
     const video = frame.querySelector("video.blender-player");
     const failure = frame.querySelector("[data-project-video-failure]");
@@ -4078,6 +4078,11 @@ function bindProjectVideoPlayer(root = document) {
     video.addEventListener("loadedmetadata", clearFailure);
     if (video.error) showFailure();
     else if (video.readyState >= 1) clearFailure();
+    if (playOnOpen && !video.error) {
+      try {
+        video.play()?.catch?.(() => {});
+      } catch {}
+    }
   });
 }
 
@@ -4098,7 +4103,7 @@ function openProjectVideoResource(projectId, requestedUrl = "") {
     ? `<iframe class="project-demo-embed" src="${escapeHtml(embed)}" title="${escapeHtml(project.title)} demo video" loading="lazy" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`
     : projectVideoPlayerMarkup(url, project.image || "");
   show(`<div class="modal-heading"><div>${icon("play")}</div><div><h2>${escapeHtml(project.title)}</h2><p>Project video</p></div></div>${media}`, "project-video-viewer");
-  if (!embed) bindProjectVideoPlayer(document.querySelector("#modal"));
+  if (!embed) bindProjectVideoPlayer(document.querySelector("#modal"), { playOnOpen: true });
 }
 
 function openProjectDetailsById(projectId) {

@@ -52,7 +52,11 @@ function browserPdfViewerSource(source = "") {
 
 const safeImageSource = (value = "") => {
   const source = cleanText(value);
-  return /^(?:data:image\/|https?:\/\/|\.?\.?\/|\/)/i.test(source) ? source : "";
+  if (/^(?:data:image\/|https?:\/\/|\.{1,2}\/|\/(?!\/))/i.test(source)) return source;
+  // Root-relative and explicit ./ paths are not the only safe local assets.
+  // Bundled covers commonly use "assets/images/..." without a leading slash.
+  if (/^[a-z0-9_~-][a-z0-9_~./%?#&=+@-]*$/i.test(source) && !source.includes("//")) return source;
+  return "";
 };
 
 

@@ -96,13 +96,14 @@ test("Existing video-source routing and custom-module owners remain unchanged", 
 
 test("Video previews are always silent/looping and preserve the cover poster on restricted phones", () => {
   const frameSource = owner("publicVideoFrameMarkup", "bindPublicMediaFrames");
-  const render = new Function("mediaPresentation", "cleanText", "safeImageSource", "escapeHtml",
+  const render = new Function("mediaPresentation", "cleanText", "safeImageSource", "escapeHtml", "publicVideoPlaybackSources",
     frameSource + "\nreturn publicVideoFrameMarkup;"
   )(
     source => ({ publicDisplayUrl: source?.url || "" }),
     value => String(value || "").trim(),
     value => String(value || ""),
-    value => String(value || "")
+    value => String(value || ""),
+    source => ({ url: source?.url || "", fallbackUrl: "" })
   );
   const markup = render({ url: "/future/a.mp4" }, "Future preview", { poster: "/future/a.jpg" });
   assert.match(markup, /autoplay muted loop/);
@@ -117,7 +118,7 @@ test("Project modal video failure feedback appears on media error, clears on met
   const binderSource = owner("bindProjectVideoPlayer", "openProjectVideoResource");
   const events = {};
   const video = {
-    error: null, readyState: 0,
+    error: null, readyState: 0, dataset: {},
     addEventListener(type, callback) { events[type] = callback; }
   };
   const message = { hidden: true };
@@ -178,7 +179,8 @@ test("Shared video frame loader explicitly attempts muted inline autoplay and do
   assert.match(binder, /video\.playsInline\s*=\s*true/);
   assert.match(binder, /video\.play\(\)/);
   assert.match(binder, /video\.addEventListener\("playing"/);
-  assert.match(binder, /video\.addEventListener\("error",\s*fail/);
+  assert.match(binder, /video\.addEventListener\("error",\s*retryVideoSource/);
+  assert.match(binder, /retryVideoSource[\s\S]*?fail\(\)/);
   assert.match(binder, /catch\([\s\S]*?showPoster\(/);
 });
 
@@ -389,10 +391,10 @@ test("Project cover uses one resolved image URL for uncropped foreground and sof
 
 test("Public video source resolution exposes original retry only for an allowed public media asset", () => {
   const resolver = owner("publicVideoPlaybackSources", "publicVideoFrameMarkup");
-  const resolve = new Function("mediaPresentation", "cleanText", "window", resolver + "\nreturn publicVideoPlaybackSources;")(
+  const resolve = new Function("mediaPresentation", "cleanText", "window", "URL", resolver + "\nreturn publicVideoPlaybackSources;")(
     asset => asset,
     value => String(value || "").trim(),
-    { location: { href: "https://portfolio.example/" } }
+    { location: { href: "https://portfolio.example/" } }, URL
   );
   const optimized = "https://res.cloudinary.com/demo/video/upload/q_auto/f_auto:video/v1/clip.mp4";
   const original = "https://res.cloudinary.com/demo/video/upload/v1/clip.mp4";

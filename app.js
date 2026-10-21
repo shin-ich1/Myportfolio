@@ -1356,18 +1356,19 @@ function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabe
   return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}">${fallback}<img class="public-media-frame__image" data-public-media-image src="${escapeHtml(url)}"${fallbackAttribute} alt="${escapeHtml(alt)}" loading="${loadingMode}" decoding="auto"${priorityAttribute}></span>`;
 }
 
-function publicVideoFrameMarkup(source, label = "Video", { className = "", autoplay = true, loading = "lazy" } = {}) {
+function publicVideoFrameMarkup(source, label = "Video", { className = "", autoplay = true, loading = "lazy", poster = "" } = {}) {
   const presentation = mediaPresentation(source, { family: "video", type: "video", access: "public-preview" });
   const url = cleanText(presentation.publicDisplayUrl);
+  const posterUrl = safeImageSource(poster);
   const safeClass = cleanText(className).replace(/[^a-zA-Z0-9_-]+/g, " ").trim();
   const classes = ["public-media-frame", "public-media-frame--video", safeClass, url ? "media-loading" : "media-fallback"].filter(Boolean).join(" ");
-  const fallback = `<span class="public-media-frame__fallback"><strong>LΛN</strong><small>${escapeHtml(label)}</small></span>`;
+  const fallback = `<span class="public-media-frame__fallback"><strong>LΛN</strong><small>${escapeHtml(label)}</small>${posterUrl ? `<img class="public-media-frame__poster" src="${escapeHtml(posterUrl)}" alt="" aria-hidden="true">` : ""}</span>`;
   if (!url) return `<span class="${classes}" data-public-media-frame>${fallback}</span>`;
   const autoplayAttrs = autoplay ? " autoplay muted loop" : " controls";
+  const posterAttr = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
   const loadingMode = loading === "eager" ? "eager" : "lazy";
-  return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}">${fallback}<video class="public-media-frame__video" data-public-media-video data-public-media-src="${escapeHtml(url)}"${autoplayAttrs} playsinline preload="metadata"></video></span>`;
+  return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}">${fallback}<video class="public-media-frame__video" data-public-media-video data-public-media-src="${escapeHtml(url)}"${autoplayAttrs} playsinline preload="metadata"${posterAttr}></video></span>`;
 }
-
 function bindPublicMediaFrames(root = document) {
   root?.querySelectorAll?.("[data-public-media-frame]").forEach((frame) => {
     if (!(frame instanceof HTMLElement) || frame.dataset.publicMediaBound === "true") return;
@@ -1455,15 +1456,15 @@ function bindPublicMediaFrames(root = document) {
 }
 
 function projectCardMediaMarkup(project = {}) {
-  const videoUrl = mediaUrl(project.demoVideo || project.raw?.demoVideo || project.raw?.video);
+  const videoSource = project.demoVideo || project.raw?.demoVideo || project.raw?.video || null;
+  const videoUrl = mediaUrl(videoSource);
   const coverSource = project.raw?.coverImage || project.raw?.image || project.raw?.thumbnail || project.image || null;
   const poster = mediaUrl(coverSource, { family: "image", type: "image", access: "public-preview" });
   if (videoUrl) {
-    return `<video class="project-card-video-preview" autoplay muted loop playsinline preload="metadata" poster="${escapeHtml(poster)}" aria-label="${escapeHtml(project.title)} silent video preview"><source src="${escapeHtml(videoUrl)}" type="video/mp4"></video>`;
+    return publicVideoFrameMarkup(videoSource, project.title, { className: "project-card-video-preview", poster });
   }
   return publicMediaFrameMarkup(coverSource, project.title, { className: "public-media-frame--cover", fallbackLabel: "Project media" });
 }
-
 function projectSingleActionMarkup(action = {}, label = "View Project", secondary = false, projectId = "") {
   const className = `btn small${secondary ? " ghost" : ""}`;
   if (action.type === "linked") {
@@ -4059,6 +4060,27 @@ function normalizedVideoEmbedUrl(value = "") {
   return "";
 }
 
+function projectVideoPlayerMarkup(url, poster = "") {
+  const videoUrl = cleanText(url);
+  const posterUrl = safeImageSource(poster);
+  if (!videoUrl) return "";
+  return `<div class="project-video-playback"><video class="blender-player" controls playsinline preload="metadata" src="${escapeHtml(videoUrl)}"${posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : ""}>Your browser cannot play this video.</video><p class="project-video-failure" data-project-video-failure hidden>Video playback is unavailable in this browser. <a href="${escapeHtml(videoUrl)}" data-project-video-fallback target="_blank" rel="noopener noreferrer">Open video file</a></p></div>`;
+}
+
+function bindProjectVideoPlayer(root = document) {
+  root?.querySelectorAll?.(".project-video-playback").forEach((frame) => {
+    const video = frame.querySelector("video.blender-player");
+    const failure = frame.querySelector("[data-project-video-failure]");
+    if (!video || !failure) return;
+    const showFailure = () => { failure.hidden = false; };
+    const clearFailure = () => { failure.hidden = true; };
+    video.addEventListener("error", showFailure);
+    video.addEventListener("loadedmetadata", clearFailure);
+    if (video.error) showFailure();
+    else if (video.readyState >= 1) clearFailure();
+  });
+}
+
 function openProjectVideoResource(projectId, requestedUrl = "") {
   const project = projectItems().find((item) => item.id === projectId);
   if (!project) return;
@@ -4074,14 +4096,9 @@ function openProjectVideoResource(projectId, requestedUrl = "") {
   const embed = normalizedVideoEmbedUrl(url) || (/\/embed\/|player\.vimeo\.com|drive\.google\.com\/file\/d\/.+\/preview/i.test(url) ? url : "");
   const media = embed
     ? `<iframe class="project-demo-embed" src="${escapeHtml(embed)}" title="${escapeHtml(project.title)} demo video" loading="lazy" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`
-    : `<video class="blender-player" controls playsinline autoplay preload="metadata" poster="${escapeHtml(project.image || "")}"><source src="${escapeHtml(url)}">Your browser cannot play this video.</video>`;
+    : projectVideoPlayerMarkup(url, project.image || "");
   show(`<div class="modal-heading"><div>${icon("play")}</div><div><h2>${escapeHtml(project.title)}</h2><p>Project video</p></div></div>${media}`, "project-video-viewer");
-  const viewer = document.querySelector("#modal video.blender-player");
-  if (viewer) {
-    viewer.muted = false;
-    viewer.volume = 1;
-    viewer.play().catch(() => {});
-  }
+  if (!embed) bindProjectVideoPlayer(document.querySelector("#modal"));
 }
 
 function openProjectDetailsById(projectId) {
@@ -4121,7 +4138,7 @@ function openProjectById(projectId) {
   const sourceUrl = mediaUrl(project.sourceFile);
   const liveUrl = cleanText(project.liveUrl);
   const media = videoUrl
-    ? `<video class="blender-player" controls playsinline preload="metadata" poster="${escapeHtml(project.image)}"><source src="${escapeHtml(videoUrl)}" type="video/mp4">Your browser cannot play this video.</video>`
+    ? projectVideoPlayerMarkup(videoUrl, project.image)
     : `<div class="full-image project-detail-cover-frame">${publicMediaFrameMarkup(raw.coverImage || raw.image || raw.thumbnail || project.image || null, project.title, { className: "public-media-frame--detail", fallbackLabel: "Project media", loading: "eager", purpose: "detail", priority: "high" })}</div>`;
   const galleryMarkup = projectDetailGalleryMarkup(raw);
   const actions = [
@@ -4135,6 +4152,7 @@ function openProjectById(projectId) {
   const projectHours = formatHours(project.projectHours);
   const description = cleanText(raw.fullDescription || raw.description || project.description);
   show(`${media}${galleryMarkup}${projectDetailHeaderMarkup(project.title, capabilityGroups, projectHours)}${projectLongDescriptionMarkup(description)}${actions ? `<div class="actions public-project-actions">${actions}</div>` : ""}`, "project-viewer");
+  if (videoUrl) bindProjectVideoPlayer(document.querySelector("#modal"));
 }
 
 function openResumeChooser() {

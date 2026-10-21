@@ -307,3 +307,30 @@ test("Canonical video optimization does not rewrite unrelated providers or priva
   assert.equal(resolve({ provider: "cloudinary", resourceType: "video", url: alreadyOptimized }), alreadyOptimized);
   assert.equal(resolve("assets/videos/local-video.mp4"), "assets/videos/local-video.mp4");
 });
+
+
+test("Loading video frames cannot be exposed by a later generic media-loading CSS rule", () => {
+  assert.match(css, /\.public-media-frame--video\.media-loading>\.public-media-frame__video\{opacity:0;visibility:hidden\}/);
+  assert.doesNotMatch(css, /\.public-media-frame\.media-loading>:is\(\.public-media-frame__image,\.public-media-frame__video\)\{opacity:1;visibility:visible\}/);
+  assert.match(css, /\.public-media-frame\.media-loading>\.public-media-frame__image\{opacity:1;visibility:visible\}/);
+});
+
+test("Project video poster picks the first publicly renderable cover, not merely a truthy inaccessible asset", () => {
+  const card = owner("projectCardMediaMarkup", "projectSingleActionMarkup");
+  const calls = [];
+  const render = new Function("mediaUrl", "publicVideoFrameMarkup", "publicMediaFrameMarkup",
+    card + "\nreturn projectCardMediaMarkup;"
+  )(
+    asset => asset?.denied ? "" : typeof asset === "string" ? asset : (asset?.url || ""),
+    (_video, _title, options) => { calls.push(options); return "VIDEO"; },
+    () => "IMAGE"
+  );
+  const result = render({
+    title: "Any future Project",
+    demoVideo: { url: "/video.mp4" },
+    raw: { coverImage: { denied: true, url: "/private.jpg" } },
+    image: "/public-cover.jpg"
+  });
+  assert.equal(result, "VIDEO");
+  assert.equal(calls[0].poster, "/public-cover.jpg");
+});

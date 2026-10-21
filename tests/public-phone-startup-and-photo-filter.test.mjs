@@ -41,7 +41,7 @@ test("Firestore startup has a bounded deadline without weakening normal refresh"
 
 test("Mobile Photo Editing cards use a definite container-based height", () => {
   const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
-  assert.match(styles, /html\[data-lan-public-mode="mobile"\] \.public-layout-item \.editing-carousel>\.public-media-footprint-card\{height:calc\(75cqi - 3px\)/);
+  assert.match(styles, /html\[data-lan-public-mode="mobile"\] \.public-layout-item \.editing-carousel>\.public-media-footprint-card\{height:calc\(75vw - 2\.75rem\);height:calc\(75cqi - 3px\)/);
   assert.match(styles, /@container public-card-carousel \(max-width:33\.75rem\)/);
 });
 

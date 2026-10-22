@@ -202,12 +202,13 @@ function cloudinaryVideoDeliveryUrl(asset = {}, { compatible = false } = {}) {
   // Generate an explicit H.264 MP4 only after the negotiated video cannot play.
   // Do not expose private assets or modify original/download URL semantics.
   if (compatible) {
-    if (/\/f_mp4,vc_h264,q_auto\//i.test(base)) return base;
+    const legacy = /\/video\/upload\/f_mp4,vc_h264(?::[a-z]+(?::[0-9.]+)?)?,q_auto\//i;
+    if (legacy.test(base)) return base.replace(legacy, '/video/upload/f_mp4,vc_h264:main:4.1,q_auto/');
     // Some existing managed references already contain our automatic delivery URL.
     // Replace that transformation instead of applying two conflicting formats.
     const automatic = /\/video\/upload\/(?:q_auto\/f_auto(?::video)?|f_auto(?::video)?\/q_auto)\//i;
-    if (automatic.test(base)) return base.replace(automatic, '/video/upload/f_mp4,vc_h264,q_auto/');
-    return base.replace('/video/upload/', '/video/upload/f_mp4,vc_h264,q_auto/');
+    if (automatic.test(base)) return base.replace(automatic, '/video/upload/f_mp4,vc_h264:main:4.1,q_auto/');
+    return base.replace('/video/upload/', '/video/upload/f_mp4,vc_h264:main:4.1,q_auto/');
   }
   // Preserve deliberately configured transformations. The original remains available
   // through "original"/"download", while public display negotiates a browser format.

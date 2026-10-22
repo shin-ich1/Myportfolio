@@ -1333,7 +1333,7 @@ function educationCardMarkup(item = {}) {
   </article>`;
 }
 
-function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabel = "Media", loading = "lazy", purpose = "card", priority = "auto", ambientBackdrop = false } = {}) {
+function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabel = "Media", loading = "lazy", purpose = "card", priority = "auto" } = {}) {
   const presentation = mediaPresentation(source, { family: "image", type: "image", access: "public-preview" });
   const deliveryPurpose = ["detail", "original"].includes(cleanText(purpose).toLowerCase()) ? cleanText(purpose).toLowerCase() : "card";
   const url = cleanText(
@@ -1358,8 +1358,7 @@ function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabe
   const loadingMode = priorityMode === "high" ? "eager" : requestedLoading;
   const fallbackAttribute = deliveryFallback ? ` data-public-media-fallback-src="${escapeHtml(deliveryFallback)}"` : "";
   const priorityAttribute = priorityMode ? ` fetchpriority="${priorityMode}"` : "";
-  const ambient = ambientBackdrop ? `<img class="public-media-frame__ambient" src="${escapeHtml(url)}" alt="" aria-hidden="true" loading="lazy" decoding="async">` : "";
-  return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}">${fallback}${ambient}<img class="public-media-frame__image" data-public-media-image src="${escapeHtml(url)}"${fallbackAttribute} alt="${escapeHtml(alt)}" loading="${loadingMode}" decoding="auto"${priorityAttribute}></span>`;
+  return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}">${fallback}<img class="public-media-frame__image" data-public-media-image src="${escapeHtml(url)}"${fallbackAttribute} alt="${escapeHtml(alt)}" loading="${loadingMode}" decoding="auto"${priorityAttribute}></span>`;
 }
 
 function publicVideoPlaybackSources(source) {
@@ -1563,7 +1562,7 @@ function projectCardMediaMarkup(project = {}) {
   if (videoUrl) {
     return publicVideoFrameMarkup(videoSource, project.title, { className: "project-card-video-preview", poster });
   }
-  return publicMediaFrameMarkup(coverSource, project.title, { className: "public-media-frame--project-cover", fallbackLabel: "Project media", ambientBackdrop: true });
+  return publicMediaFrameMarkup(coverSource, project.title, { className: "public-media-frame--cover", fallbackLabel: "Project media" });
 }
 function projectSingleActionMarkup(action = {}, label = "View Project", secondary = false, projectId = "") {
   const className = `btn small${secondary ? " ghost" : ""}`;
@@ -4219,7 +4218,7 @@ function bindProjectVideoPlayer(root = document, { playOnOpen = false } = {}) {
       clearFailure();
       if (playOnOpen && video.dataset.projectVideoFallbackTried === "true") attemptPlayback();
     });
-    if (video.error) showFailure();
+    if (video.error) retryVideoSource();
     else if (video.readyState >= 1) clearFailure();
     if (playOnOpen && !video.error) attemptPlayback();
   });

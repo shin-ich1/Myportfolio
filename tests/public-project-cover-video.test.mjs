@@ -169,7 +169,7 @@ test("Shared video frames always expose a real poster while loading on restricte
   assert.match(markup, /preload="none"/);
   const cssOwner = css.slice(css.indexOf(".public-media-frame__fallback"), css.indexOf(".card:hover .media"));
   assert.match(cssOwner, /\.public-media-frame__poster\{[^}]*z-index:\s*1/);
-  assert.match(cssOwner, /media-loading[^}]*public-media-frame__video[^}]*opacity:\s*0/);
+  assert.match(cssOwner, /media-loading[^}]*public-media-frame__video[^}]*opacity:\s*1;visibility:visible/);
   assert.match(cssOwner, /media-ready[^}]*public-media-frame__poster[^}]*opacity:\s*0/);
 });
 
@@ -611,4 +611,63 @@ test("Canonical H.264 fallback replaces a prior automatic-format transformation 
   assert.equal(resolve(asset, "compatible-video"), expected);
   assert.equal(resolve({...asset,url:expected}, "compatible-video"), expected);
   assert.equal(resolve({...asset,url:base,access:"admin-only"}, "compatible-video"), "");
+});
+
+
+test("WebKit can start muted inline preview while media is loading: video must remain visible", () => {
+  // WebKit disallows script-initiated autoplay when video is invisible via CSS.
+  // The native <video poster> stays in place until playback begins, with the
+  // separate image poster below it for unavailable-source fallback.
+  const frame = owner("publicVideoFrameMarkup", "bindPublicMediaFrames");
+  const binder = owner("bindPublicMediaFrames", "projectCardMediaMarkup");
+  assert.match(frame, /autoplay muted loop/);
+  assert.match(frame, /playsinline/);
+  assert.match(frame, /posterAttr/);
+  assert.match(binder, /video\.play\(\)/);
+  assert.match(css, /\.public-media-frame--video\.media-loading>\.public-media-frame__video\{opacity:1;visibility:visible\}/);
+  assert.doesNotMatch(css, /\.public-media-frame--video\.media-loading>\.public-media-frame__video\{[^}]*visibility:hidden/);
+});
+
+test("Watch Video uses the canonical compatible source when a CTA passes the same asset's stale original URL", () => {
+  const code = owner("openProjectVideoResource", "openProjectDetailsById");
+  const original = "https://res.cloudinary.com/demo/video/upload/v27/clip.mp4";
+  const optimized = "https://res.cloudinary.com/demo/video/upload/q_auto/f_auto:video/v27/clip.mp4";
+  const compatible = "https://res.cloudinary.com/demo/video/upload/f_mp4,vc_h264,q_auto/v27/clip.mp4";
+  const project = { id:"future", title:"Future video", demoVideo:{ url:original }, raw:{}, image:"/poster.jpg" };
+  const calls = [];
+  const open = new Function(
+    "projectItems", "cleanText", "publicVideoPlaybackSources", "mediaPresentation",
+    "normalizedVideoEmbedUrl", "projectVideoPlayerMarkup", "show",
+    "icon", "escapeHtml", "bindProjectVideoPlayer", "document", "openProjectDetailsById",
+    code + "\nreturn openProjectVideoResource;"
+  )(
+    () => [project], v=>String(v||"").trim(),
+    () => ({url:optimized,fallbackUrl:compatible}),
+    () => ({publicOriginalUrl:original,publicAllowed:true}),
+    () => "", (...args)=>{calls.push(args);return "<video></video>";},
+    () => {},()=>"",x=>x,()=>{},
+    {querySelector:()=>({})},()=>{}
+  );
+  open("future",original);
+  assert.equal(calls[0][0],optimized);
+  assert.equal(calls[0][2],compatible);
+  open("future","https://videos.example.net/different.mp4");
+  assert.equal(calls[1][0],"https://videos.example.net/different.mp4");
+  assert.equal(calls[1][2],"");
+});
+
+test("Public video embed routing rejects executable and lookalike URLs without bypassing Admin controls", () => {
+  const normalizeSource=owner("normalizedVideoEmbedUrl","projectVideoPlayerMarkup");
+  const action=owner("openProjectVideoResource","openProjectDetailsById");
+  const embed = new Function("cleanText", "window", "URL",
+    normalizeSource + "\nreturn normalizedVideoEmbedUrl;"
+  )(v=>String(v||"").trim(),{location:{href:"https://portfolio.example/"}},URL);
+  assert.equal(embed("javascript:/embed/evil"),"");
+  assert.equal(embed("https://notyoutube.com/watch?v=123"),"");
+  assert.equal(embed("https://attacker-vimeo.com/123"),"");
+  assert.equal(embed("https://youtube.com.evil.example/watch?v=123"),"");
+  assert.equal(embed("https://youtu.be/ABC123"),"https://www.youtube.com/embed/ABC123");
+  assert.equal(embed("https://player.vimeo.com/video/456"),"https://player.vimeo.com/video/456");
+  assert.doesNotMatch(action, /\/embed\/\|player\\\.vimeo\\\.com/);
+  assert.doesNotMatch(action, /new Function\(|localStorage|adminSecurity/i);
 });

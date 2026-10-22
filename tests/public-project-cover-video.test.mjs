@@ -168,7 +168,7 @@ test("Shared video frames always expose a real poster while loading on restricte
   assert.match(markup, /data-public-media-poster/);
   assert.match(markup, /preload="none"/);
   const cssOwner = css.slice(css.indexOf(".public-media-frame__fallback"), css.indexOf(".card:hover .media"));
-  assert.match(cssOwner, /\.public-media-frame__poster\{[^}]*z-index:\s*1/);
+  assert.match(cssOwner, /\.public-media-frame__poster\{[^}]*z-index:\s*3/);
   assert.match(cssOwner, /media-loading[^}]*public-media-frame__video[^}]*opacity:\s*1;visibility:visible/);
   assert.match(cssOwner, /media-ready[^}]*public-media-frame__poster[^}]*opacity:\s*0/);
 });
@@ -364,28 +364,24 @@ test("Shared image validator permits safe site-relative Project video posters wi
 });
 
 
-test("Project cover uses one resolved image URL for uncropped foreground and soft ambient fill", () => {
+test("Project screenshot covers keep the production's single uncropped image and no redundant ambient request", () => {
   const frame = owner("publicMediaFrameMarkup", "publicVideoFrameMarkup");
-  const render = new Function("mediaPresentation","cleanText","escapeHtml",
+  const render = new Function("mediaPresentation", "cleanText", "escapeHtml",
     frame + "\nreturn publicMediaFrameMarkup;"
   )(
     source => ({ publicCardUrl: source, publicDisplayUrl: source, publicOriginalUrl: source }),
     value => String(value || "").trim(),
     value => String(value || "")
   );
-  const src = "/assets/images/new-project-screenshot.webp";
-  const markup = render(src, "Future Project", { className: "public-media-frame--project-cover", ambientBackdrop: true });
-  assert.match(markup, /public-media-frame__ambient/);
-  assert.match(markup, /aria-hidden="true"/);
-  assert.equal(markup.split(src).length - 1, 2);
+  const src = "/assets/images/future-project-screenshot.webp";
+  const markup = render(src, "Future Project", { className: "public-media-frame--cover" });
+  assert.equal(markup.split(src).length - 1, 1);
+  assert.doesNotMatch(markup, /public-media-frame__ambient/);
   assert.match(markup, /public-media-frame__image[^>]*alt="Future Project"/);
-  const photoMarkup = render(src, "Photo Editing", { className:"public-media-frame--cover" });
-  assert.doesNotMatch(photoMarkup, /public-media-frame__ambient/);
   const card = owner("projectCardMediaMarkup", "projectSingleActionMarkup");
-  assert.match(card, /ambientBackdrop:\s*true/);
-  assert.match(css, /\.public-media-frame__ambient\{[^}]*object-fit:cover/);
+  assert.doesNotMatch(card, /ambientBackdrop/);
+  assert.match(card, /className: "public-media-frame--cover"/);
   assert.match(css, /\.public-media-frame__image\{[^}]*object-fit:contain/);
-  assert.match(css, /\.public-media-frame\.media-fallback>.public-media-frame__ambient\{display:none\}/);
 });
 
 
@@ -559,7 +555,7 @@ test("Browser-incompatible Cloudinary auto format falls back to public H.264 MP4
     provider: "cloudinary", resourceType: "video", type: "upload", access: "public-preview",
     url: "https://res.cloudinary.com/demo/video/upload/v7/future-project.mov"
   };
-  const expected = "https://res.cloudinary.com/demo/video/upload/f_mp4,vc_h264,q_auto/v7/future-project.mov";
+  const expected = "https://res.cloudinary.com/demo/video/upload/f_mp4,vc_h264:main:4.1,q_auto/v7/future-project.mov";
   assert.equal(storageAssetUrl(source, "compatible-video"), expected);
   assert.equal(storageAssetUrl(source, "original"), source.url);
   for (const access of ["admin-only", "private", "metadata-only", "public-download"]) {
@@ -594,7 +590,7 @@ test("Public video playback source owner supplies browser-compatible fallback fo
   );
   const output = sources(asset);
   assert.equal(output.url, auto);
-  assert.equal(output.fallbackUrl, "https://res.cloudinary.com/demo/video/upload/f_mp4,vc_h264,q_auto/v7/future-project.mp4");
+  assert.equal(output.fallbackUrl, "https://res.cloudinary.com/demo/video/upload/f_mp4,vc_h264:main:4.1,q_auto/v7/future-project.mp4");
   assert.notEqual(output.fallbackUrl, original);
   const local = sources("assets/videos/future-video.mp4");
   assert.equal(local.fallbackUrl, "");
@@ -605,7 +601,7 @@ test("Canonical H.264 fallback replaces a prior automatic-format transformation 
   const source = readFileSync(new URL("../storage-asset.js", import.meta.url), "utf8");
   const resolve = new Function("URL", source.replaceAll("export function ", "function ") + "\nreturn storageAssetUrl;")(URL);
   const base = "https://res.cloudinary.com/demo/video/upload/v8/future.mp4";
-  const expected = "https://res.cloudinary.com/demo/video/upload/f_mp4,vc_h264,q_auto/v8/future.mp4";
+  const expected = "https://res.cloudinary.com/demo/video/upload/f_mp4,vc_h264:main:4.1,q_auto/v8/future.mp4";
   const auto = "https://res.cloudinary.com/demo/video/upload/q_auto/f_auto:video/v8/future.mp4";
   const asset = {provider:"cloudinary",resourceType:"video",type:"upload",access:"public-preview",url:auto};
   assert.equal(resolve(asset, "compatible-video"), expected);
@@ -632,7 +628,7 @@ test("Watch Video uses the canonical compatible source when a CTA passes the sam
   const code = owner("openProjectVideoResource", "openProjectDetailsById");
   const original = "https://res.cloudinary.com/demo/video/upload/v27/clip.mp4";
   const optimized = "https://res.cloudinary.com/demo/video/upload/q_auto/f_auto:video/v27/clip.mp4";
-  const compatible = "https://res.cloudinary.com/demo/video/upload/f_mp4,vc_h264,q_auto/v27/clip.mp4";
+  const compatible = "https://res.cloudinary.com/demo/video/upload/f_mp4,vc_h264:main:4.1,q_auto/v27/clip.mp4";
   const project = { id:"future", title:"Future video", demoVideo:{ url:original }, raw:{}, image:"/poster.jpg" };
   const calls = [];
   const open = new Function(

@@ -1,0 +1,28 @@
+name: Isolated media compatibility regression tests
+
+on:
+  push:
+    branches:
+      - fix/media-compatibility-canonical-20261022
+
+permissions:
+  contents: read
+
+jobs:
+  media-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run complete repository test suite
+        run: node --test tests/*.test.mjs
+      - name: Syntax-check changed JS modules
+        run: |
+          node --check app.js
+          node --check storage-asset.js
+          node --check video-compatibility.js
+          node --check admin/services/storageUploadService.js
+          node --check scripts/prepare-browser-video.mjs

@@ -1,5 +1,6 @@
 import { classifyPortfolioFile } from '../../file-type-registry.js';
 import { normalizeStorageAsset } from '../../storage-asset.js';
+import { inspectBrowserVideoFile, browserVideoPreparationGuidance } from '../../video-compatibility.js';
 import {
   getStorageProvider,
   registerStorageProvider,
@@ -88,6 +89,15 @@ export async function uploadMedia(file, options = {}) {
     module: options.module || route.context.module,
     resourceType: options.resourceType || route.context.resourceType
   };
+  // Provider-neutral compatibility gate. Cloudinary can deliver a transcoded
+  // public H.264 rendition; Google Drive serves the original bytes unchanged.
+  // Reject unsupported direct-play videos before spending storage quota.
+  if (route.family === 'video' && route.access === 'public-preview') {
+    const readiness = await inspectBrowserVideoFile(file);
+    if (!readiness.compatible && route.profile.provider !== 'cloudinary') {
+      throw new Error(browserVideoPreparationGuidance(readiness));
+    }
+  }
   const raw = await route.provider.upload(file, context, onProgress);
   const normalized = normalizeStorageAsset({
     ...raw,

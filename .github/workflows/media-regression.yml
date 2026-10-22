@@ -19,62 +19,11 @@ jobs:
           node-version: '22'
       - name: Run complete repository test suite
         run: node --test tests/*.test.mjs
-      - name: Syntax-check changed JS modules
+      - name: Syntax-check changed JavaScript modules
         run: |
           node --check app.js
           node --check storage-asset.js
           node --check video-compatibility.js
           node --check admin/services/storageUploadService.js
           node --check scripts/prepare-browser-video.mjs
-
-      - name: Package final isolated source and audit (no deployment)
-        run: |
-          mkdir -p audit
-          node --test tests/*.test.mjs > audit/TEST_RESULTS.txt
-          cat > audit/CHANGELOG.txt <<'EOF'
-          Isolated branch fix/media-compatibility-canonical-20261022
-          Starting source: d83f07787f9b15dcfb209ea823f87be2e10e57d3
-          - Restore published Project cover foreground without a second ambient image request.
-          - Remove conflicting legacy CSS for shared video card, keep poster visible until playing.
-          - Retry explicit compatible rendition on an already-failed modal video.
-          - Explicit H.264 Main Profile Level 4.1 managed Cloudinary fallback, public assets only.
-          - Validate direct-play video upload compatibility for non-transcoding providers.
-          - Add generic developer-only preparation script for static MP4, preserving the original.
-          - Add 5 regression tests and a read-only GitHub Actions test workflow.
-          No Firebase Hosting/Firestore/Worker/Admin security rules deployment was performed.
-          EOF
-          cat > audit/SECURITY_AND_RUNTIME_AUDIT.txt <<'EOF'
-          SECURITY: Firestore rules, Firebase Storage rules, Worker authentication and
-          Admin authorization modules were not changed. Cloudinary delivery is still
-          restricted to eligible managed public videos. Google Drive rejects unsuitable
-          direct-stream uploads before storing them. Existing controls were not weakened.
-          Full source difference is reviewable on GitHub, branch vs d83f077.
-          RUNTIME: No real iPhone playback verification. Existing static Blender
-          MP4 still has reported H.264 High Level 6.0 and moov-at-end metadata.
-          The generic script creates an optional compatible derived asset but has
-          NOT been run against that source, nor were CMS records or production assets
-          changed. Device compatibility issue remains UNRESOLVED until separately
-          approved media preparation and real-device testing.
-          CSS/browser UI not visually re-tested on a deployed preview.
-          All runtime failures or restrictions must not be described as fixed.
-          EOF
-          python - <<'PY'
-          from pathlib import Path
-          from zipfile import ZipFile, ZIP_DEFLATED
-          source=Path('.')
-          output=Path('/tmp/LAN-portfolio-isolated-media-fix-source.zip')
-          excluded={'.git','.firebase','node_modules','.venv','__pycache__'}
-          with ZipFile(output,'w',ZIP_DEFLATED,compresslevel=6) as z:
-              for f in sorted(source.rglob('*')):
-                  if not f.is_file() or any(p in excluded for p in f.parts): continue
-                  if f.name.endswith(('.log','.pem','.p12','.pfx','.key')): continue
-                  if f.name.startswith('.env'): continue
-                  z.write(f, f.as_posix())
-          print('Prepared source ZIP:',output,'bytes',output.stat().st_size)
-          PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: LAN-portfolio-isolated-media-fix-source
-          path: /tmp/LAN-portfolio-isolated-media-fix-source.zip
-          if-no-files-found: error
-          retention-days: 7
+          node --check scripts/prepare-static-videos.mjs

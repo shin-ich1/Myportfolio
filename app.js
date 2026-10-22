@@ -4139,16 +4139,19 @@ function normalizedVideoEmbedUrl(value = "") {
   try {
     const url = new URL(raw, window.location.href);
     const host = url.hostname.toLowerCase();
+    // Only explicit HTTPS video providers may become iframes.
+    if (url.protocol !== "https:") return "";
+    const hostedBy = (domain) => host === domain || host.endsWith(`.${domain}`);
     if (host === "youtu.be") {
       const id = url.pathname.split("/").filter(Boolean)[0];
       return id ? `https://www.youtube.com/embed/${encodeURIComponent(id)}` : "";
     }
-    if (host.includes("youtube.com")) {
+    if (hostedBy("youtube.com") || hostedBy("youtube-nocookie.com")) {
       const parts = url.pathname.split("/").filter(Boolean);
       const id = url.searchParams.get("v") || (parts[0] === "shorts" || parts[0] === "embed" ? parts[1] : "");
       return id ? `https://www.youtube.com/embed/${encodeURIComponent(id)}` : "";
     }
-    if (host.includes("vimeo.com")) {
+    if (hostedBy("vimeo.com")) {
       const id = url.pathname.split("/").filter(Boolean).find((part) => /^\d+$/.test(part));
       return id ? `https://player.vimeo.com/video/${id}` : "";
     }
@@ -4226,15 +4229,32 @@ function openProjectVideoResource(projectId, requestedUrl = "") {
   const project = projectItems().find((item) => item.id === projectId);
   if (!project) return;
   const raw = project.raw || {};
-  const videoSources = publicVideoPlaybackSources(project.demoVideo || raw.demoVideo || raw.video || null);
-  const url = cleanText(requestedUrl)
+  const videoSource = project.demoVideo || raw.demoVideo || raw.video || null;
+  const videoSources = publicVideoPlaybackSources(videoSource);
+  const requested = cleanText(requestedUrl);
+  const original = mediaPresentation(videoSource, { family: "video", type: "video", access: "public-preview" }).publicOriginalUrl || "";
+  const sameMediaUrl = (left, right) => {
+    if (!left || !right) return false;
+    try {
+      return new URL(left, window.location.href).href === new URL(right, window.location.href).href;
+    } catch { return false; }
+  };
+  // A saved CTA may still carry the unoptimized URL of this same video.
+  // Prefer the canonical browser-aware delivery while retaining intentionally
+  // distinct external video actions.
+  const useCanonical = Boolean(videoSources.url) && (
+    !requested || sameMediaUrl(requested, original) ||
+    sameMediaUrl(requested, videoSources.url) ||
+    sameMediaUrl(requested, videoSources.fallbackUrl)
+  );
+  const url = (useCanonical ? videoSources.url : requested)
     || videoSources.url
     || cleanText(raw.externalVideo?.embedUrl || raw.externalVideo?.url || raw.externalVideoUrl || raw.youtubeUrl);
   if (!url) {
     openProjectDetailsById(projectId);
     return;
   }
-  const embed = normalizedVideoEmbedUrl(url) || (/\/embed\/|player\.vimeo\.com|drive\.google\.com\/file\/d\/.+\/preview/i.test(url) ? url : "");
+  const embed = normalizedVideoEmbedUrl(url);
   const media = embed
     ? `<iframe class="project-demo-embed" src="${escapeHtml(embed)}" title="${escapeHtml(project.title)} demo video" loading="lazy" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`
     : projectVideoPlayerMarkup(url, project.image || "", url === videoSources.url ? videoSources.fallbackUrl : "");

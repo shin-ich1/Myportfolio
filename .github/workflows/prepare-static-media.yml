@@ -1,0 +1,55 @@
+name: Prepare compatible static media (isolated branch)
+
+on:
+  push:
+    branches:
+      - fix/media-compatibility-canonical-20261022
+    paths:
+      - .github/workflows/prepare-static-media.yml
+      - scripts/prepare-static-videos.mjs
+      - scripts/prepare-browser-video.mjs
+      - video-compatibility.js
+      - assets/videos/**
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/fix/media-compatibility-canonical-20261022'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Ensure local media tooling
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Check isolated regression suite
+        run: node --test tests/*.test.mjs
+      - name: Prepare all static MP4s only when incompatible
+        run: node scripts/prepare-static-videos.mjs
+      - name: Save browser-ready assets to this isolated branch (never production)
+        shell: bash
+        run: |
+          test "${GITHUB_REF}" = "refs/heads/fix/media-compatibility-canonical-20261022"
+          git add -- assets/videos
+          if ! git diff --cached --quiet; then
+            git diff --cached --check
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "build: prepare compatible static MP4 assets on isolated branch"
+            git push origin HEAD:refs/heads/fix/media-compatibility-canonical-20261022
+          else
+            echo "All static MP4s already compatible; no changes to commit."
+          fi

@@ -312,7 +312,7 @@ test("Canonical video optimization does not rewrite unrelated providers or priva
 
 
 test("Loading video frames cannot be exposed by a later generic media-loading CSS rule", () => {
-  assert.match(css, /\.public-media-frame--video\.media-loading>\.public-media-frame__video\{opacity:0;visibility:hidden\}/);
+  assert.match(css, /\.public-media-frame--video\.media-loading>\.public-media-frame__video\{opacity:1;visibility:visible\}/);
   assert.doesNotMatch(css, /\.public-media-frame\.media-loading>:is\(\.public-media-frame__image,\.public-media-frame__video\)\{opacity:1;visibility:visible\}/);
   assert.match(css, /\.public-media-frame\.media-loading>\.public-media-frame__image\{opacity:1;visibility:visible\}/);
 });
@@ -638,7 +638,7 @@ test("Watch Video uses the canonical compatible source when a CTA passes the sam
   const open = new Function(
     "projectItems", "cleanText", "publicVideoPlaybackSources", "mediaPresentation",
     "normalizedVideoEmbedUrl", "projectVideoPlayerMarkup", "show",
-    "icon", "escapeHtml", "bindProjectVideoPlayer", "document", "openProjectDetailsById",
+    "icon", "escapeHtml", "bindProjectVideoPlayer", "document", "openProjectDetailsById", "window", "URL",
     code + "\nreturn openProjectVideoResource;"
   )(
     () => [project], v=>String(v||"").trim(),
@@ -646,7 +646,8 @@ test("Watch Video uses the canonical compatible source when a CTA passes the sam
     () => ({publicOriginalUrl:original,publicAllowed:true}),
     () => "", (...args)=>{calls.push(args);return "<video></video>";},
     () => {},()=>"",x=>x,()=>{},
-    {querySelector:()=>({})},()=>{}
+    {querySelector:()=>({})},()=>{},
+    {location:{href:"https://portfolio.example/"}},URL
   );
   open("future",original);
   assert.equal(calls[0][0],optimized);

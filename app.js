@@ -3577,6 +3577,10 @@ function setupProjectShowcaseCarousel() {
     return card.getBoundingClientRect().width + gap;
   };
   const maxProjectShowcaseScroll = () => Math.max(0, track.scrollWidth - track.clientWidth);
+  let lastTrackWidth = track.clientWidth;
+  let previousCardStep = cardStep();
+  let currentCardIndex = Math.max(0, Math.round(track.scrollLeft / previousCardStep));
+  let settledScrollTimer = 0;
   const updateArrows = () => {
     const maxScroll = maxProjectShowcaseScroll();
     left.hidden = track.scrollLeft <= 4 || maxScroll < 6;
@@ -3587,15 +3591,36 @@ function setupProjectShowcaseCarousel() {
     if (!step) return;
     const maxScroll = maxProjectShowcaseScroll();
     const target = Math.min(maxScroll, Math.max(0, Math.round(track.scrollLeft / step) * step));
+    currentCardIndex = Math.round(target / step);
     track.scrollTo({ left: target, behavior: "smooth" });
   };
   const refresh = () => {
+    // Preserve the selected card, not a stale pixel offset, when any container
+    // changes width. The CSS carousel still owns how many cards fit at once.
+    const nextWidth = track.clientWidth;
+    const nextStep = cardStep();
+    if (Math.abs(nextWidth - lastTrackWidth) > 1 && !isDragging && !activePointerId) {
+      const target = Math.min(maxProjectShowcaseScroll(), Math.max(0, currentCardIndex * nextStep));
+      track.scrollTo({ left: target, behavior: "instant" });
+    }
+    lastTrackWidth = nextWidth;
+    previousCardStep = nextStep;
     requestAnimationFrame(updateArrows);
   };
 
   left.addEventListener("click", () => track.scrollBy({ left: -cardStep(), behavior: "smooth" }));
   right.addEventListener("click", () => track.scrollBy({ left: cardStep(), behavior: "smooth" }));
-  track.addEventListener("scroll", updateArrows, { passive: true });
+  track.addEventListener("scroll", () => {
+    updateArrows();
+    // Keep one settled index for native swipe, wheel and smooth arrow navigation.
+    // During active movement the browser remains free to control the carousel.
+    window.clearTimeout(settledScrollTimer);
+    settledScrollTimer = window.setTimeout(() => {
+      if (!isDragging && !activePointerId) {
+        currentCardIndex = Math.max(0, Math.round(track.scrollLeft / (previousCardStep || cardStep())));
+      }
+    }, 160);
+  }, { passive: true });
   track.addEventListener("dragstart", (event) => event.preventDefault());
   track.addEventListener("click", (event) => {
     if (!suppressProjectShowcaseClick) return;

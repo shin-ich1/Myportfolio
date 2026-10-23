@@ -1442,8 +1442,24 @@ function bindPublicMediaFrames(root = document) {
       const ambient = frame.querySelector("[data-public-media-ambient]");
       const syncAmbient = () => {
         if (!ambient || !image.naturalWidth || !image.naturalHeight) return;
-        ambient.setAttribute("src", image.currentSrc || image.src);
+        const frameWidth = frame.clientWidth;
+        const frameHeight = frame.clientHeight;
+        if (!frameWidth || !frameHeight) return;
+        // Only decode the decorative layer when contain would leave visible side bars.
+        // Recheck as responsive media frames change size; the foreground never crops.
+        const imageRatio = image.naturalWidth / image.naturalHeight;
+        const frameRatio = frameWidth / frameHeight;
+        if (Math.abs(Math.log(imageRatio / frameRatio)) <= Math.log(1.08)) {
+          ambient.removeAttribute("src");
+          return;
+        }
+        if (ambient.getAttribute("src") !== (image.currentSrc || image.src)) {
+          ambient.setAttribute("src", image.currentSrc || image.src);
+        }
       };
+      if (ambient && typeof ResizeObserver === "function") {
+        new ResizeObserver(syncAmbient).observe(frame);
+      }
       const retryOriginal = () => {
         const fallbackSource = String(image.dataset.publicMediaFallbackSrc || "").trim();
         const currentSource = String(image.getAttribute("src") || "").trim();

@@ -1333,7 +1333,7 @@ function educationCardMarkup(item = {}) {
   </article>`;
 }
 
-function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabel = "Media", loading = "lazy", purpose = "card", priority = "auto" } = {}) {
+function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabel = "Media", loading = "lazy", purpose = "card", priority = "auto", fillBackdrop = false } = {}) {
   const presentation = mediaPresentation(source, { family: "image", type: "image", access: "public-preview" });
   const deliveryPurpose = ["detail", "original"].includes(cleanText(purpose).toLowerCase()) ? cleanText(purpose).toLowerCase() : "card";
   const url = cleanText(
@@ -1358,7 +1358,11 @@ function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabe
   const loadingMode = priorityMode === "high" ? "eager" : requestedLoading;
   const fallbackAttribute = deliveryFallback ? ` data-public-media-fallback-src="${escapeHtml(deliveryFallback)}"` : "";
   const priorityAttribute = priorityMode ? ` fetchpriority="${priorityMode}"` : "";
-  return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}">${fallback}<img class="public-media-frame__image" data-public-media-image src="${escapeHtml(url)}"${fallbackAttribute} alt="${escapeHtml(alt)}" loading="${loadingMode}" decoding="auto"${priorityAttribute}></span>`;
+  // Decorative fill reuses the foreground image after it loads. Screenshots stay uncropped.
+  const ambient = fillBackdrop && deliveryPurpose === "card"
+    ? '<img class="public-media-frame__ambient" data-public-media-ambient alt="" aria-hidden="true" decoding="async">'
+    : "";
+  return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}">${fallback}${ambient}<img class="public-media-frame__image" data-public-media-image src="${escapeHtml(url)}"${fallbackAttribute} alt="${escapeHtml(alt)}" loading="${loadingMode}" decoding="auto"${priorityAttribute}></span>`;
 }
 
 function publicVideoPlaybackSources(source) {
@@ -1435,6 +1439,11 @@ function bindPublicMediaFrames(root = document) {
     };
 
     if (image) {
+      const ambient = frame.querySelector("[data-public-media-ambient]");
+      const syncAmbient = () => {
+        if (!ambient || !image.naturalWidth || !image.naturalHeight) return;
+        ambient.setAttribute("src", image.currentSrc || image.src);
+      };
       const retryOriginal = () => {
         const fallbackSource = String(image.dataset.publicMediaFallbackSrc || "").trim();
         const currentSource = String(image.getAttribute("src") || "").trim();
@@ -1446,9 +1455,10 @@ function bindPublicMediaFrames(root = document) {
         return true;
       };
       image.addEventListener("error", () => { if (!retryOriginal()) fail(); });
+      image.addEventListener("load", syncAmbient);
       image.addEventListener("load", ready, { once: true });
       if (!String(image.getAttribute("src") || "").trim()) return fail();
-      if (image.complete) image.naturalWidth > 0 ? ready() : (retryOriginal() || fail());
+      if (image.complete) image.naturalWidth > 0 ? (syncAmbient(), ready()) : (retryOriginal() || fail());
       return;
     }
 
@@ -1562,7 +1572,7 @@ function projectCardMediaMarkup(project = {}) {
   if (videoUrl) {
     return publicVideoFrameMarkup(videoSource, project.title, { className: "project-card-video-preview", poster });
   }
-  return publicMediaFrameMarkup(coverSource, project.title, { className: "public-media-frame--cover", fallbackLabel: "Project media" });
+  return publicMediaFrameMarkup(coverSource, project.title, { className: "public-media-frame--cover", fallbackLabel: "Project media", fillBackdrop: true });
 }
 function projectSingleActionMarkup(action = {}, label = "View Project", secondary = false, projectId = "") {
   const className = `btn small${secondary ? " ghost" : ""}`;
@@ -1865,7 +1875,7 @@ function dynamicModuleCardMediaMarkup(section, entry, item) {
   const presentation = media.publicItem || media.publicCandidateItem || media.publicCoverItem || media.publicCoverCandidateItem || null;
   if (!presentation && !media.usePublicFallbackCover) return "";
   const fallbackLabel = media.coverField ? `${section.title || "Module"} cover` : "Image";
-  return `<div class="dynamic-module-media">${publicMediaFrameMarkup(presentation, item.title, { className: "public-media-frame--cover", fallbackLabel })}</div>`;
+  return `<div class="dynamic-module-media">${publicMediaFrameMarkup(presentation, item.title, { className: "public-media-frame--cover", fallbackLabel, fillBackdrop: true })}</div>`;
 }
 
 function dynamicModuleUsesContentBudget(section = {}, profile = "structured") {

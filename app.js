@@ -1442,6 +1442,14 @@ function bindPublicMediaFrames(root = document) {
       const ambient = frame.querySelector("[data-public-media-ambient]");
       const syncAmbient = () => {
         if (!ambient || !image.naturalWidth || !image.naturalHeight) return;
+        // One canonical image sizing decision for Project and Custom Module covers.
+        // Unlike video and gallery frames, a standalone cover can follow its
+        // source's ratio at every viewport/container size without cropping text.
+        const coverBox = frame.parentElement;
+        if (coverBox && (coverBox.classList.contains("media") || coverBox.classList.contains("dynamic-module-media"))) {
+          coverBox.style.setProperty("--public-cover-native-ratio", String(image.naturalWidth / image.naturalHeight));
+          coverBox.dataset.publicCoverRatio = "ready";
+        }
         const frameWidth = frame.clientWidth;
         const frameHeight = frame.clientHeight;
         if (!frameWidth || !frameHeight) return;

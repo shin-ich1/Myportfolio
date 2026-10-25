@@ -1370,7 +1370,7 @@ function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabe
   const ambient = fillBackdrop && deliveryPurpose === "card"
     ? '<img class="public-media-frame__ambient" data-public-media-ambient alt="" aria-hidden="true" decoding="async">'
     : "";
-  return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}">${fallback}${ambient}<img class="public-media-frame__image" data-public-media-image src="${escapeHtml(url)}"${fallbackAttribute} alt="${escapeHtml(alt)}" loading="${loadingMode}" decoding="auto"${priorityAttribute}></span>`;
+  return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}">${fallback}${ambient}<img class="public-media-frame__image" data-public-media-image src="${escapeHtml(url)}"${fallbackAttribute} alt="${escapeHtml(alt)}" loading="${loadingMode}" decoding="async"${priorityAttribute}></span>`;
 }
 
 function publicVideoPlaybackSources(source) {
@@ -4003,23 +4003,23 @@ function photoEditingDetailFacts(source = {}, role = photoEditingMediaRole(sourc
   if (techniques.length) facts.push(["Techniques", techniques.join(" · ")]);
   return facts.filter(([, value]) => value);
 }
-
 function photoEditingDetailMediaMarkup(source = {}, role = photoEditingMediaRole(source)) {
   const beforeAsset = source.beforeImage || cleanText(source.beforeImageUrl) || null;
   const afterAsset = source.afterImage || cleanText(source.afterImageUrl) || null;
   const gallery = photoGalleryMediaDescriptors(source);
 
   if (role.key === "comparison" && beforeAsset && afterAsset) {
-    return `<section class="photo-detail-media photo-detail-media--comparison" aria-label="Before and after comparison"><div class="public-comparison-pair"><figure class="public-comparison-panel">${publicMediaFrameMarkup(beforeAsset, `Before ${source.title}`, { className: "public-media-frame--detail", fallbackLabel: "Before", purpose: "detail" })}<figcaption class="public-comparison-label">BEFORE</figcaption></figure><figure class="public-comparison-panel">${publicMediaFrameMarkup(afterAsset, `After ${source.title}`, { className: "public-media-frame--detail", fallbackLabel: "After", purpose: "detail" })}<figcaption class="public-comparison-label">AFTER</figcaption></figure></div></section>`;
+    return `<section class="photo-detail-media photo-detail-media--comparison" aria-label="Before and after comparison"><div class="public-comparison-pair"><figure class="public-comparison-panel">${publicMediaFrameMarkup(beforeAsset, `Before ${source.title}`, { className: "public-media-frame--detail", fallbackLabel: "Before", purpose: "detail", loading: "eager" })}<figcaption class="public-comparison-label">BEFORE</figcaption></figure><figure class="public-comparison-panel">${publicMediaFrameMarkup(afterAsset, `After ${source.title}`, { className: "public-media-frame--detail", fallbackLabel: "After", purpose: "detail", loading: "eager" })}<figcaption class="public-comparison-label">AFTER</figcaption></figure></div></section>`;
   }
 
   if (role.key === "gallery" && gallery.length) {
-    return `<section class="photo-detail-media photo-detail-media--gallery" aria-label="${escapeHtml(role.label)}"><header class="photo-detail-section-head"><div><small>GALLERY & IMAGES</small><strong>${escapeHtml(role.label)}</strong></div><small class="photo-detail-gallery-hint">Select an image to view full size</small></header><div class="public-photo-gallery public-media-gallery" data-photo-detail-gallery data-gallery-count="${gallery.length}">${gallery.map((item, index) => `<button class="public-photo-gallery-item public-media-gallery-card" type="button" data-photo-gallery-open="${index}" data-gallery-shape="${escapeHtml(item.shape)}" data-media-width="${item.width}" data-media-height="${item.height}" aria-label="View image ${index + 1} of ${gallery.length}"><span class="public-photo-gallery-image public-media-gallery-stage">${publicMediaFrameMarkup(item.asset, `${source.title} image ${index + 1}`, { className: "public-media-frame--gallery", fallbackLabel: "Gallery image", purpose: "detail" })}</span><span class="public-photo-gallery-caption public-media-gallery-meta"><strong>Image ${String(index + 1).padStart(2, "0")}</strong><small>${escapeHtml(item.shape === "unknown" ? "Gallery image" : item.shape)}</small></span></button>`).join("")}</div></section>`;
+    return `<section class="photo-detail-media photo-detail-media--gallery" aria-label="${escapeHtml(role.label)}"><header class="photo-detail-section-head"><div><small>GALLERY & IMAGES</small><strong>${escapeHtml(role.label)}</strong></div><small class="photo-detail-gallery-hint">Select an image to view full size</small></header><div class="public-photo-gallery public-media-gallery" data-photo-detail-gallery data-gallery-count="${gallery.length}">${gallery.map((item, index) => `<button class="public-photo-gallery-item public-media-gallery-card" type="button" data-photo-gallery-open="${index}" data-gallery-shape="${escapeHtml(item.shape)}" data-media-width="${item.width}" data-media-height="${item.height}" aria-label="View image ${index + 1} of ${gallery.length}"><span class="public-photo-gallery-image public-media-gallery-stage">${publicMediaFrameMarkup(item.asset, `${source.title} image ${index + 1}`, { className: "public-media-frame--gallery", fallbackLabel: "Gallery image", purpose: "detail", loading: index === 0 ? "eager" : "lazy", priority: index === 0 ? "high" : "auto" })}</span><span class="public-photo-gallery-caption public-media-gallery-meta"><strong>Image ${String(index + 1).padStart(2, "0")}</strong><small>${escapeHtml(item.shape === "unknown" ? "Gallery image" : item.shape)}</small></span></button>`).join("")}</div></section>`;
   }
 
   const finalAsset = afterAsset || source.coverAsset || source.coverImage || cleanText(source.coverImageUrl) || beforeAsset || gallery[0]?.asset || source.singleImage || cleanText(source.singleImageUrl) || null;
-  return `<section class="photo-detail-media photo-detail-media--single" aria-label="Single image showcase"><figure class="photo-detail-single-stage">${publicMediaFrameMarkup(finalAsset, source.title, { className: "public-media-frame--detail", fallbackLabel: "Photo editing media", purpose: "detail" })}</figure></section>`;
+  return `<section class="photo-detail-media photo-detail-media--single" aria-label="Single image showcase"><figure class="photo-detail-single-stage">${publicMediaFrameMarkup(finalAsset, source.title, { className: "public-media-frame--detail", fallbackLabel: "Photo editing media", purpose: "detail", loading: "eager", priority: "high" })}</figure></section>`;
 }
+
 
 function photoEditingDetailNavigation(documentId) {
   const sources = photoItems().filter((item) => activeFilter === "All" || item.category === activeFilter);

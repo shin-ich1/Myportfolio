@@ -13,7 +13,7 @@ function owner(first, next) {
   return app.slice(start, end);
 }
 
-test("Photo Editing open viewer prioritizes its one selected full image, not a lazy thumbnail", () => {
+test("Photo Editing open viewer delegates image priority to the shared media loader", () => {
   const sources = owner("photoEditingDetailMediaMarkup", "photoEditingDetailNavigation");
   const calls = [];
   const view = new Function("cleanText", "photoGalleryMediaDescriptors", "escapeHtml", "publicMediaFrameMarkup", "photoEditingMediaRole",
@@ -29,11 +29,11 @@ test("Photo Editing open viewer prioritizes its one selected full image, not a l
   assert.match(markup, /photo-detail-single-stage/);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].options.purpose, "detail");
-  assert.equal(calls[0].options.loading, "eager", "User-opened picture should start loading immediately");
-  assert.equal(calls[0].options.priority, "high", "Selected viewer image is a critical interaction");
+  assert.equal(calls[0].options.loading, undefined, "Module markup must not override canonical visibility policy");
+  assert.equal(calls[0].options.priority, undefined, "Shared media binder owns viewer priority");
 });
 
-test("Photo Editing comparison opens both visible images without delayed lazy loads", () => {
+test("Photo Editing comparison provides two detail media frames to shared prioritization", () => {
   const calls = [];
   const view = new Function("cleanText", "photoGalleryMediaDescriptors", "escapeHtml", "publicMediaFrameMarkup", "photoEditingMediaRole",
     owner("photoEditingDetailMediaMarkup", "photoEditingDetailNavigation") + "\nreturn photoEditingDetailMediaMarkup;"
@@ -46,11 +46,11 @@ test("Photo Editing comparison opens both visible images without delayed lazy lo
   );
   view({ title: "Sample", beforeImage: "/before.png", afterImage: "/after.png" }, { key: "comparison", label: "Before & After" });
   assert.equal(calls.length, 2);
-  assert.ok(calls.every(options => options.purpose === "detail" && options.loading === "eager"),
-    "Comparison images are both visible when the modal opens");
+  assert.ok(calls.every(options => options.purpose === "detail" && options.loading === undefined),
+    "Both detail frames delegate visible loading to the same shared loader");
 });
 
-test("Photo Editing gallery loads first visible image before offscreen images", () => {
+test("Photo Editing gallery delegates viewport-based image loading to shared owner", () => {
   const calls = [];
   const gallery = ["/one.png", "/two.png", "/three.png", "/four.png"].map((asset, index) => ({ asset, index, shape: "landscape", width: 100, height: 60 }));
   const view = new Function("cleanText", "photoGalleryMediaDescriptors", "escapeHtml", "publicMediaFrameMarkup", "photoEditingMediaRole",
@@ -64,10 +64,10 @@ test("Photo Editing gallery loads first visible image before offscreen images", 
   );
   view({ title: "Samples" }, { key: "gallery", label: "Gallery · 4 images" });
   assert.equal(calls.length, 4);
-  assert.equal(calls[0].loading, "eager");
-  assert.equal(calls[0].priority, "high");
-  assert.ok(calls.slice(1).every(options => options.loading !== "eager"),
-    "Do not download all high-resolution gallery images eagerly on phones");
+  assert.ok(calls.every(options => options.purpose === "detail" && options.loading === undefined),
+    "Gallery image priority must depend on actual visibility, not the record index");
+  assert.ok(calls.every(options => options.priority === undefined),
+    "No module-specific fetch priority overrides");
 });
 
 test("Shared Public image media frame keeps a visible loading placeholder and asynchronous decoding", () => {

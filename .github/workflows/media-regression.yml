@@ -6,6 +6,7 @@ on:
       - fix/media-compatibility-canonical-20261022
       - fix/public-mobile-media-cold-load-20261025
       - fix/public-photo-media-visible-loading-20261025
+      - fix/public-shared-media-priority-20261025
 
 permissions:
   contents: read

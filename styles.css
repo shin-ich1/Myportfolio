@@ -514,6 +514,10 @@ nav a:focus-visible {
 .media { position: relative; display: block; width: 100%; height: clamp(10rem,55cqi,11.875rem); min-height:0; overflow:hidden; padding: 0; border: 0; background: var(--public-media-canvas); cursor: pointer; }
 .media > img { display: block; width: 100%; height: 100%; object-fit: contain; object-position:center; transition: transform .28s var(--ease); }
 .public-media-frame{position:relative;isolation:isolate;display:grid;width:100%;height:100%;min-width:0;min-height:0;grid-template-areas:"media";place-items:stretch;overflow:hidden;background:var(--public-media-canvas)}
+/* Reusable fit-without-crop contract for any natural-size Public detail image.
+   Its aspect is updated by the existing shared image-load owner. Both available
+   width and available height constrain the frame at all viewport sizes. */
+.public-media-frame--intrinsic{--public-media-fit-height:min(62dvh,640px);width:min(100%,calc(var(--public-media-fit-height) * var(--public-media-intrinsic-ratio,1.333333)));height:auto;min-height:0;max-height:var(--public-media-fit-height);aspect-ratio:var(--public-media-intrinsic-aspect,4 / 3)}
 .public-media-frame__fallback{z-index:0;grid-area:media;display:grid;width:100%;height:100%;min-width:0;min-height:0;place-items:center;align-content:center;gap:4px;padding:14px;background:radial-gradient(circle at 50% 35%,rgba(22,136,255,.12),transparent 48%),var(--public-media-canvas);color:var(--muted);text-align:center;opacity:0;visibility:hidden}
 .public-media-frame__fallback strong{color:var(--text);font-weight:850;letter-spacing:.14em}.public-media-frame__fallback small{font-size:.68rem;font-weight:700;letter-spacing:.04em}
 .public-media-frame__ambient{z-index:0;grid-area:media;display:block;width:100%;height:100%;min-width:0;min-height:0;object-fit:cover;object-position:center;transform:scale(1.06);filter:blur(16px) brightness(.44) saturate(1.15);opacity:0;pointer-events:none}
@@ -1015,9 +1019,10 @@ video { display: block; width: 100%; max-height: 72vh; object-fit: contain; bord
   max-width: 1040px;
   overflow: hidden;
 }
-.photo-detail-record-nav { top: 50%; z-index: 24; }
-.photo-detail-record-nav.is-prev { left: 10px; }
-.photo-detail-record-nav.is-next { right: 10px; }
+.photo-detail-record-nav-row { display:flex;align-items:center;justify-content:space-between;min-width:0;gap:12px;min-height:44px; }
+.photo-detail-record-nav { position:static;top:auto;right:auto;left:auto;z-index:24;flex:0 0 auto;transform:none; }
+.photo-detail-record-nav:hover { transform:scale(1.06); }
+.photo-detail-record-nav:active { transform:scale(.97); }
 .photo-detail-shell {
   display: grid;
   gap: 18px;
@@ -1062,7 +1067,7 @@ video { display: block; width: 100%; max-height: 72vh; object-fit: contain; bord
 .photo-detail-media--single {
   display: grid;
   place-items: center;
-  min-height: 340px;
+  min-height: 0;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -1078,7 +1083,7 @@ video { display: block; width: 100%; max-height: 72vh; object-fit: contain; bord
   margin: 0;
   place-items: center;
 }
-.photo-detail-single-stage > .public-media-frame{width:min(100%,860px);height:min(62vh,640px);min-height:18rem;border-radius:10px;box-shadow:0 18px 48px rgba(0,0,0,.28)}
+.photo-detail-single-stage > .public-media-frame{border-radius:10px;box-shadow:0 18px 48px rgba(0,0,0,.28)}
 .photo-detail-media--comparison .public-comparison-pair { margin: 0; }
 .photo-detail-media--gallery {
   display: grid;
@@ -1396,8 +1401,7 @@ html[data-lan-public-mode="mobile"] .public-comparison-pair { height:min(62dvh,5
 html[data-lan-public-mode="mobile"] .photo-detail-viewer { width:min(100%,calc(100vi - 16px)); }
 html[data-lan-public-mode="mobile"] .photo-detail-shell { gap:14px;max-height:calc(100dvh - 46px); }
 html[data-lan-public-mode="mobile"] .photo-detail-head { padding-right:42px; }
-html[data-lan-public-mode="mobile"] .photo-detail-media--single { min-height:260px;padding:10px; }
-html[data-lan-public-mode="mobile"] .photo-detail-single-stage > .public-media-frame { height:min(56dvh,520px);min-height:15rem; }
+html[data-lan-public-mode="mobile"] .photo-detail-media--single { padding:10px; }
 html[data-lan-public-mode="mobile"] .public-photo-gallery { grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
 html[data-lan-public-mode="mobile"] .site-footer { flex-direction:column;gap:8px;text-align:center; }
 

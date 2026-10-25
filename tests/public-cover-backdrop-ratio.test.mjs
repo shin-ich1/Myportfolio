@@ -43,9 +43,9 @@ function bindImage({ imageWidth = 1600, imageHeight = 900, frameWidth = 320, fra
         : selector === '[data-public-media-ambient]' ? ambient : null;
     },
   });
-  const bind = new Function('HTMLElement', 'ResizeObserver', 'window', 'document',
+  const bind = new Function('HTMLElement', 'ResizeObserver', 'window', 'document', 'prioritizePublicMediaInView',
     `${binder}\nreturn bindPublicMediaFrames;`)(FrameElement, ResizeObserverMock,
-    { clearTimeout() {} }, { documentElement: {} });
+    { clearTimeout() {} }, { documentElement: {} }, () => {});
   bind({ querySelectorAll() { return [frame]; } });
   return { ambient, frame, onResize() { assert.equal(typeof resizeCallback, 'function'); resizeCallback([]); } };
 }

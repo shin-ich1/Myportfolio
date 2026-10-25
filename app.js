@@ -42,7 +42,15 @@ const mediaPresentation = (value, options = {}) => {
   if (!value) return resolvePortfolioAssetPresentation(null, options);
   return resolvePortfolioAssetPresentation(value, { public: true, ...options });
 };
-const mediaUrl = (value, options = {}) => cleanText(mediaPresentation(value, options).publicDisplayUrl);
+const mediaUrl = (value, options = {}) => {
+  const { delivery = "display", ...presentationOptions } = options;
+  const presentation = mediaPresentation(value, presentationOptions);
+  // Use the existing delivery variant for small Public thumbnails and video posters.
+  // All other consumers keep their original display URL and access policy.
+  return cleanText(delivery === "card"
+    ? (presentation.publicCardUrl || presentation.publicDisplayUrl)
+    : presentation.publicDisplayUrl);
+};
 
 function browserPdfViewerSource(source = "") {
   const value = cleanText(source);
@@ -1584,7 +1592,7 @@ function projectCardMediaMarkup(project = {}) {
   const coverCandidates = [project.raw?.coverImage, project.raw?.coverImageUrl, project.raw?.image, project.raw?.thumbnail, project.image];
   const imagePresentation = { family: "image", type: "image", access: "public-preview" };
   const coverSource = coverCandidates.find((source) => source && mediaUrl(source, imagePresentation)) || null;
-  const poster = coverSource ? mediaUrl(coverSource, imagePresentation) : "";
+  const poster = coverSource ? mediaUrl(coverSource, { ...imagePresentation, delivery: "card" }) : "";
   if (videoUrl) {
     return publicVideoFrameMarkup(videoSource, project.title, { className: "project-card-video-preview", poster });
   }
@@ -2449,7 +2457,7 @@ function render() {
           ${content.site.email ? `<a href="mailto:${escapeHtml(content.site.email)}" aria-label="Email Rolando">${icon("mail")}</a>` : ""}
         </div>
       </div>
-      ${content.hero.image ? `<div class="hero-img"><img src="${escapeHtml(content.hero.image)}" alt="${escapeHtml(content.hero.imageAlt || "Rolando Lagmay Jr.")}"></div>` : ""}
+      ${content.hero.image ? `<div class="hero-img"><img src="${escapeHtml(content.hero.image)}" alt="${escapeHtml(content.hero.imageAlt || "Rolando Lagmay Jr.")}" loading="eager" fetchpriority="high" decoding="async"></div>` : ""}
     </section>
 
     ${publicLayout}

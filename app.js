@@ -10,6 +10,7 @@ import { resolvePublicLayoutPreset, resolvePublicOverflow, placementOrder, publi
 import { initPublicAdaptiveMode, isPublicDocumentFlowMode } from "./public-adaptive.js";
 import { resolveModuleRecordMedia, resolveModuleFieldAssetPresentation, resolvePortfolioAssetPresentation } from "./record-media.js";
 import { storageAssetUrl } from "./storage-asset.js";
+import { staticImageRendition } from "./static-image-renditions.js";
 import {
   clearVisitorConversationIdentity,
   createPrivateMessageChallenge,
@@ -40,7 +41,13 @@ const tags = (items = []) => (Array.isArray(items) ? items : [])
   .join("");
 const mediaPresentation = (value, options = {}) => {
   if (!value) return resolvePortfolioAssetPresentation(null, options);
-  return resolvePortfolioAssetPresentation(value, { public: true, ...options });
+  const presentation = resolvePortfolioAssetPresentation(value, { public: true, ...options });
+  if (presentation.family !== "image" || !presentation.publicAllowed) return presentation;
+  const card = staticImageRendition(presentation.publicCardUrl || presentation.publicDisplayUrl, "card");
+  const detail = staticImageRendition(presentation.publicDetailUrl || presentation.publicDisplayUrl, "detail");
+  if (card === presentation.publicCardUrl && detail === presentation.publicDetailUrl) return presentation;
+  // Keep original/download URLs intact for one-time fallback and high-quality access.
+  return Object.freeze({ ...presentation, publicCardUrl: card, publicDetailUrl: detail });
 };
 const mediaUrl = (value, options = {}) => {
   const { delivery = "display", ...presentationOptions } = options;
@@ -870,7 +877,11 @@ async function loadPublicPortfolioData(deadline = 0) {
     ...registry.map((module) => module.collection)
   ])];
 
-  const results = await Promise.allSettled(collectionNames.map(async (name) => [name, await loadPublicCollection(name, deadline)]));
+  // The existing capability queries do not depend on the public collections.
+  // Run them concurrently instead of creating a second network waterfall.
+  const capabilityWork = loadPublicCapabilities(deadline);
+  const collectionWork = Promise.allSettled(collectionNames.map(async (name) => [name, await loadPublicCollection(name, deadline)]));
+  const results = await collectionWork;
   const loaded = new Map();
   for (const result of results) {
     if (result.status === "fulfilled") {
@@ -917,7 +928,7 @@ async function loadPublicPortfolioData(deadline = 0) {
   const projects = (loaded.get("projects") || []).filter(isPublicProjectRecord)
     .sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));
   if (deadline && Date.now() >= deadline) throw new Error("Public portfolio data load exceeded the startup deadline.");
-  await loadPublicCapabilities(deadline);
+  await capabilityWork;
   if (deadline && Date.now() >= deadline) throw new Error("Public portfolio capabilities exceeded the startup deadline.");
   publicExperiences = rawPublicExperiences.map(normalizeExperience)
     .sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));
@@ -1438,6 +1449,16 @@ function prioritizePublicMediaInView(root = document) {
 }
 
 function bindPublicMediaFrames(root = document) {
+  // Native hero/about images are not wrapped in Public frames; share the same
+  // one-shot original fallback without additional media fetches on success.
+  root?.querySelectorAll?.("img[data-public-static-fallback]").forEach((image) => {
+    if (image.tagName !== "IMG" || image.dataset.publicStaticBound === "true") return;
+    image.dataset.publicStaticBound = "true";
+    image.addEventListener("error", () => {
+      const original = image.dataset.publicStaticFallback;
+      if (original && image.getAttribute("src") !== original) image.setAttribute("src", original);
+    }, { once: true });
+  });
   prioritizePublicMediaInView(root);
   root?.querySelectorAll?.("[data-public-media-frame]").forEach((frame) => {
     if (!(frame instanceof HTMLElement) || frame.dataset.publicMediaBound === "true") return;
@@ -2432,7 +2453,7 @@ function render() {
     publicLayoutItems.push(publicLayoutItemMarkup({ key, presentation, recordCount, layoutMode:composition.layoutMode||"auto", layoutPreset:composition.layoutPreset||"", overflowMode:composition.overflowMode||"auto", rowPairing:composition.rowPairing||"none", rowPairingExplicit:composition.rowPairingExplicit===true, rowPartnerKey:composition.rowPartnerKey||"", order:sectionOrder(key,fallbackOrder), markup }));
   };
 
-  if (aboutVisible) pushCore('about','text-section',1,100,`<article id="about" class="panel portfolio-panel about-panel"><h2>${icon("user")} About Me</h2><div class="about public-section-scroll" data-about-layout>${content.about.image ? `<div class="about-photo" data-about-photo><img src="${escapeHtml(content.about.image)}" alt="${escapeHtml(content.about.imageAlt || "Rolando Lagmay Jr.")}"></div>` : ""}<div class="about-copy"><p>${escapeHtml(content.about.text || content.about.shortText)}</p></div></div></article>`);
+  if (aboutVisible) pushCore('about','text-section',1,100,`<article id="about" class="panel portfolio-panel about-panel"><h2>${icon("user")} About Me</h2><div class="about public-section-scroll" data-about-layout>${content.about.image ? `<div class="about-photo" data-about-photo><img src="${escapeHtml(staticImageRendition(content.about.image, "card"))}" data-public-static-fallback="${escapeHtml(content.about.image)}" loading="lazy" decoding="async" alt="${escapeHtml(content.about.imageAlt || "Rolando Lagmay Jr.")}"></div>` : ""}<div class="about-copy"><p>${escapeHtml(content.about.text || content.about.shortText)}</p></div></div></article>`);
   if (experienceVisible) pushCore('experience','timeline',experiences.length,200,`<article id="experience" class="panel portfolio-panel experience-panel"><h2>${icon("briefcase-business")} Experience</h2><div class="timeline public-section-scroll">${experiences.map((item) => `<div class="timeline-item" data-experience-id="${escapeHtml(item.id || "")}"><span></span><div><div class="exp-head"><h3>${escapeHtml(item.role)}</h3><time>${escapeHtml(item.date)}</time></div>${item.company ? `<a>${escapeHtml(item.company)}</a>` : ""}<p>${escapeHtml(item.details)}</p></div></div>`).join("")}</div></article>`);
   if (projectsVisible) pushCore('projects','carousel',projects.length,300,`<section id="projects" class="panel portfolio-panel projects-section"><h2>${icon("folder-git-2")} Projects</h2><div class="project-showcase-shell public-card-carousel-shell"><button class="carousel-arrow project-showcase-arrow project-showcase-left" type="button" aria-label="Previous projects">${icon("chevron-left")}</button><div class="projects project-showcase-track public-card-carousel-track" aria-label="Project showcase">${projects.map((project) => `<article class="card public-footprint-card public-content-budget-card project-content-budget-card"><button class="media" type="button" data-open-project="${escapeHtml(project.id)}">${projectCardMediaMarkup(project)}</button><div class="card-body"><h3 class="public-content-budget-title">${escapeHtml(project.title)}</h3><p class="public-content-budget-summary">${escapeHtml(project.description)}</p><div class="tags project-capabilities public-content-budget-flex${(project.capabilities || []).length ? " has-capabilities" : ""}" data-project-capabilities data-public-budget-group="capabilities" data-project-id="${escapeHtml(project.id)}">${projectCapabilityTagsMarkup(project.capabilities || [], true)}</div><div class="actions public-content-budget-actions">${projectActionMarkup(project)}</div></div></article>`).join("")}</div><button class="carousel-arrow project-showcase-arrow project-showcase-right" type="button" aria-label="Next projects">${icon("chevron-right")}</button></div></section>`);
   if (photoEditingVisible) pushCore('photo-editing','media-gallery',photos.length,400,`<section id="photo-editing" class="panel portfolio-panel photo-portfolio-section"><h2>${icon("camera")} Photo Editing Portfolio</h2><div class="filters">${categories.map((category) => `<button class="filter ${category === activeFilter ? "active" : ""}" data-filter="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}</div><div class="editing-carousel-shell public-card-carousel-shell"><button class="carousel-arrow carousel-left" type="button" aria-label="Previous editing projects">${icon("chevron-left")}</button><div class="editing-carousel public-card-carousel-track" aria-label="Photo editing projects">${photoGalleryCardsMarkup(gallery)}</div><button class="carousel-arrow carousel-right" type="button" aria-label="Next editing projects">${icon("chevron-right")}</button></div></section>`);
@@ -2487,7 +2508,7 @@ function render() {
           ${content.site.email ? `<a href="mailto:${escapeHtml(content.site.email)}" aria-label="Email Rolando">${icon("mail")}</a>` : ""}
         </div>
       </div>
-      ${content.hero.image ? `<div class="hero-img"><img src="${escapeHtml(content.hero.image)}" alt="${escapeHtml(content.hero.imageAlt || "Rolando Lagmay Jr.")}" loading="eager" fetchpriority="high" decoding="async"></div>` : ""}
+      ${content.hero.image ? `<div class="hero-img"><img src="${escapeHtml(staticImageRendition(content.hero.image, "card"))}" data-public-static-fallback="${escapeHtml(content.hero.image)}" alt="${escapeHtml(content.hero.imageAlt || "Rolando Lagmay Jr.")}" loading="eager" fetchpriority="high" decoding="async"></div>` : ""}
     </section>
 
     ${publicLayout}

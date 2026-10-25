@@ -28,7 +28,7 @@ test("Public video card posters use the existing card rendition, not the full di
 });
 
 test("Public first-screen portrait gets browser download priority without changing its source", () => {
-  assert.match(app, /class="hero-img"><img src="\$\{escapeHtml\(content\.hero\.image\)\}"[^>]*loading="eager"[^>]*fetchpriority="high"[^>]*decoding="async"/);
+  assert.match(app, /class="hero-img"><img src="\$\{escapeHtml\(staticImageRendition\(content\.hero\.image, "card"\)\)\}"[^>]*loading="eager"[^>]*fetchpriority="high"[^>]*decoding="async"/);
 });
 
 test("Public document warms media and Firebase module origins without preloading videos", () => {

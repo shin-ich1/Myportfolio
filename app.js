@@ -879,7 +879,9 @@ async function loadPublicPortfolioData(deadline = 0) {
 
   // The existing capability queries do not depend on the public collections.
   // Run them concurrently instead of creating a second network waterfall.
-  const capabilityWork = loadPublicCapabilities(deadline);
+  // Attach rejection handling immediately so an early capability failure
+  // cannot become an unhandled promise while collection reads are in flight.
+  const capabilityWork = Promise.allSettled([loadPublicCapabilities(deadline)]);
   const collectionWork = Promise.allSettled(collectionNames.map(async (name) => [name, await loadPublicCollection(name, deadline)]));
   const results = await collectionWork;
   const loaded = new Map();
@@ -928,7 +930,8 @@ async function loadPublicPortfolioData(deadline = 0) {
   const projects = (loaded.get("projects") || []).filter(isPublicProjectRecord)
     .sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));
   if (deadline && Date.now() >= deadline) throw new Error("Public portfolio data load exceeded the startup deadline.");
-  await capabilityWork;
+  const [capabilityResult] = await capabilityWork;
+  if (capabilityResult.status === "rejected") throw capabilityResult.reason;
   if (deadline && Date.now() >= deadline) throw new Error("Public portfolio capabilities exceeded the startup deadline.");
   publicExperiences = rawPublicExperiences.map(normalizeExperience)
     .sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));

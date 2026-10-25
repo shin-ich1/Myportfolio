@@ -1,0 +1,19 @@
+{
+  "id": "/admin/",
+  "name": "LΛN Portfolio CMS",
+  "short_name": "LΛN Admin",
+  "description": "Private portfolio administration",
+  "start_url": "/admin/index.html",
+  "scope": "/admin/",
+  "display": "standalone",
+  "background_color": "#050b14",
+  "theme_color": "#050b14",
+  "icons": [
+    {
+      "src": "/assets/brand/lan-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

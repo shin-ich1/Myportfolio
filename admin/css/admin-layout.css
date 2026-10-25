@@ -208,9 +208,14 @@ html[data-lan-admin-mode="mobile"] .lan-account-chip__copy{display:none}
   .settings-control-rail .workspace-tab{min-width:0;padding-inline:.25rem}
   .settings-control-rail .settings-tab-icon{width:1.75rem;height:1.75rem}
   .settings-control-rail .workspace-tab b{display:block;min-width:0;max-width:100%;overflow:visible;font-size:.55rem;line-height:1.1;text-overflow:clip;white-space:normal}
-  .settings-radar-stage{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem;min-height:0;padding:.65rem}
-  .settings-radar-disc,.settings-radar-core,.settings-radar-link{display:none}
+  .settings-radar-stage{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:auto minmax(7.75rem,1fr) auto;gap:.4rem;min-height:16.5rem;padding:.65rem;align-items:center}
+  .settings-radar-disc,.settings-radar-core{display:block}
+  .settings-radar-link{display:none}
   .settings-radar-node,.radar-auth,.radar-firestore,.radar-cloudinary,.radar-public{position:static;width:100%;min-width:0;transform:none;padding:.45rem .5rem;border:1px solid var(--border);border-radius:.6rem;background:var(--surface-soft)}
+  .settings-radar-node.radar-auth{grid-column:1;grid-row:1}
+  .settings-radar-node.radar-firestore{grid-column:2;grid-row:1}
+  .settings-radar-node.radar-cloudinary{grid-column:1;grid-row:3}
+  .settings-radar-node.radar-public{grid-column:2;grid-row:3}
   .settings-radar-node>span:last-child{min-width:0;max-width:100%;overflow:visible}
   .settings-radar-node b,.settings-radar-node small{max-width:100%;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:break-word;word-break:normal}
   .settings-health-summary-head{flex-wrap:wrap}
@@ -784,7 +789,7 @@ html[data-lan-admin-architecture="shared"] .lan-admin-master-detail:has(>.lan-ad
   html[data-lan-admin-architecture="shared"] .settings-hero-mark{ width:3.8rem;height:3.8rem; }
   html[data-lan-admin-architecture="shared"] .settings-celestial-layer .lan-header-astronaut{width:3rem;height:3rem}
   html[data-lan-admin-architecture="shared"] .settings-radar-monitor{ grid-template-columns:1fr; }
-  html[data-lan-admin-architecture="shared"] .settings-radar-stage{ min-height:12rem; }
+  html[data-lan-admin-architecture="shared"] .settings-radar-stage{ min-height:16.5rem; }
   html[data-lan-admin-architecture="shared"] .settings-radar-summary{ border-top:1px solid var(--border);border-left:0; }
   html[data-lan-admin-architecture="shared"] .radar-auth, html[data-lan-admin-architecture="shared"] .radar-cloudinary{ left:.4rem; }html[data-lan-admin-architecture="shared"] .radar-firestore, html[data-lan-admin-architecture="shared"] .radar-public{right:.2rem}
   html[data-lan-admin-architecture="shared"] .settings-control-rail .workspace-tab{ min-width:0; padding-inline:.2rem; }

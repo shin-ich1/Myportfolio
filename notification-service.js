@@ -83,7 +83,7 @@ export async function ensurePortfolioServiceWorker() {
 }
 
 async function registerPortfolioPushNow({ audience, threadId = "", iconUrl = "", authorization = "", requestPermission = false } = {}) {
-  if (!("Notification" in window) || !("PushManager" in window)) throw new Error("Push notifications are not supported by this browser.");
+  if (!("Notification" in window) || !("PushManager" in window)) throw new Error("Push notifications are unavailable in this browser context. On iPhone/iPad, add the Admin site to your Home Screen and open it as an app, then enable notifications there. Otherwise use a Web Push-compatible browser.");
 
   let permission = Notification.permission;
   if (permission === "default" && requestPermission) permission = await Notification.requestPermission();

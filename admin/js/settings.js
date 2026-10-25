@@ -2273,6 +2273,24 @@ function telemetryRenderLiveFrame(now) {
   else telemetryChartFrame = 0;
 }
 
+function renderTelemetryStillFrame() {
+  const now = performance.now();
+  telemetryLiveStartedAt = now - TELEMETRY_PLAYBACK_DRAW_MS;
+  telemetryRenderLiveFrame(now);
+}
+
+function syncTelemetryMotionPreference() {
+  if (!telemetryLiveModel || document.hidden || document.body.dataset.settingsRoom !== "general") return;
+  if (telemetryChartFrame) window.cancelAnimationFrame(telemetryChartFrame);
+  telemetryChartFrame = 0;
+  if (settingsReducedMotion()) {
+    renderTelemetryStillFrame();
+  } else {
+    telemetryLiveStartedAt = 0;
+    telemetryChartFrame = window.requestAnimationFrame(telemetryRenderLiveFrame);
+  }
+}
+
 function clearTelemetryPlot() {
   if (telemetryChartFrame) window.cancelAnimationFrame(telemetryChartFrame);
   telemetryChartFrame = 0;
@@ -2324,7 +2342,7 @@ function animateTelemetryChart(modules = []) {
 
   telemetryEnsureLivePaths();
   applyTelemetryPrimarySeries();
-  if (settingsReducedMotion()) telemetryRenderLiveFrame(performance.now());
+  if (settingsReducedMotion()) renderTelemetryStillFrame();
   else telemetryChartFrame = window.requestAnimationFrame(telemetryRenderLiveFrame);
 }
 
@@ -3269,7 +3287,7 @@ function bindTelemetryMarketInteractions() {
     telemetryPauseAutoFollow();
     try { localStorage.setItem(TELEMETRY_PRIMARY_SERIES_KEY, series); } catch {}
     applyTelemetryPrimarySeries({ restart: true });
-    if (telemetryLiveModel && settingsReducedMotion()) telemetryRenderLiveFrame(performance.now());
+    if (telemetryLiveModel && settingsReducedMotion()) renderTelemetryStillFrame();
   }));
 
   const canvas = $("settingsTelemetryCanvas");
@@ -3546,7 +3564,8 @@ function bind() {
     if ($("themePreference")) $("themePreference").value = preference;
     applyTheme(preference);
   }));
-  $("reducedMotionPreference")?.addEventListener("change", (event) => { localStorage.setItem("lan-cms-reduced-motion", String(event.target.checked)); document.documentElement.dataset.reducedMotion = String(event.target.checked); syncAppearancePreview(); });
+  $("reducedMotionPreference")?.addEventListener("change", (event) => { localStorage.setItem("lan-cms-reduced-motion", String(event.target.checked)); document.documentElement.dataset.reducedMotion = String(event.target.checked); syncAppearancePreview(); syncTelemetryMotionPreference(); });
+  window.matchMedia?.("(prefers-reduced-motion: reduce)")?.addEventListener?.("change", syncTelemetryMotionPreference);
   $("compactModePreference")?.addEventListener("change", (event) => { localStorage.setItem("lan-cms-compact", String(event.target.checked)); document.documentElement.dataset.compact = String(event.target.checked); syncAppearancePreview(); });
   $("sidebarPortfolioStatusPreference")?.addEventListener("change", (event) => saveSidebarStatusPreference(event.target.checked));
   $("changeDashboardVisualButton")?.addEventListener("click", () => $("dashboardVisualInput")?.click());

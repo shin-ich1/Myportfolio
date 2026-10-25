@@ -197,6 +197,12 @@ async function deleteConversation() {
 function renderAdminNotificationStatus(state = {}) {
   const button = $("settingsEnableMessageNotifications");
   if (!button) return;
+  if (state.reason === "unsupported" || state.permission === "unsupported") {
+    button.textContent = "ⓘ";
+    button.title = "Notification support is unavailable in this browser context. On iPhone/iPad, open the installed Admin Home Screen app to enable Web Push.";
+    button.setAttribute("aria-label", "Notification setup instructions");
+    return;
+  }
   if (state.registered === true) {
     button.textContent = "✓";
     button.title = "Message and security notifications are registered for this trusted device";
@@ -224,6 +230,11 @@ async function hydrateAdminNotificationStatus() {
 
 async function enableAdminNotifications() {
   const button = $("settingsEnableMessageNotifications");
+  if (!("Notification" in window) || !("PushManager" in window)) {
+    renderAdminNotificationStatus({ permission: "unsupported", reason: "unsupported" });
+    window.LANNotice?.({ title: "Notification setup", message: "Notification support is unavailable in this browser context. On iPhone/iPad, add the Admin site to your Home Screen, open it as an app, then tap notifications again. On other devices use a browser with Web Push support.", tone: "info", timeout: 9500 });
+    return;
+  }
   if (button) button.disabled = true;
   try {
     const authorization = await adminAuthorizationHeader();

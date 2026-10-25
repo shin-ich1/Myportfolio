@@ -250,9 +250,9 @@ test("Shared video loader starts only near viewport, shows poster on autoplay re
     const frame = new Frame();
     const doc = { documentElement: { clientHeight: 800 }, querySelectorAll() { return [frame]; } };
     const win = { innerHeight: 800, clearTimeout() {}, setTimeout() { return 1; } };
-    const bind = new Function("document", "window", "HTMLElement", "IntersectionObserver",
+    const bind = new Function("document", "window", "HTMLElement", "IntersectionObserver", "prioritizePublicMediaInView",
       binderSource + "\nreturn bindPublicMediaFrames;"
-    )(doc, win, Frame, Observer);
+    )(doc, win, Frame, Observer, () => {});
     bind(doc);
     assert.equal(video.loadCalls || 0, 0, "Offscreen videos must not fetch");
     assert.equal(video.playCalls, 0);
@@ -511,9 +511,9 @@ test("Actual public card video retries one authorized source once and then stops
   const frame = new Frame();
   const doc = { documentElement: { clientHeight: 800 }, querySelectorAll() { return [frame]; } };
   const win = { innerHeight: 800, clearTimeout() {}, setTimeout() { return 1; } };
-  const bind = new Function("document", "window", "HTMLElement", "IntersectionObserver",
+  const bind = new Function("document", "window", "HTMLElement", "IntersectionObserver", "prioritizePublicMediaInView",
     binderSource + "\nreturn bindPublicMediaFrames;"
-  )(doc, win, Frame, Observer);
+  )(doc, win, Frame, Observer, () => {});
   bind(doc);
   assert.equal(video.loads, 0);
   observer.fire(true);

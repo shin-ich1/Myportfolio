@@ -35,6 +35,9 @@ test("Prepared variants physically exist and replace all oversized static PNG do
       const dest = resolve(renditions[kind]);
       assert.ok(existsSync(dest), "Optimized " + kind + " must exist: " + dest);
       assert.ok(statSync(dest).size > 0, "Generated file cannot be empty");
+      const bytes = readFileSync(dest);
+      assert.equal(bytes.subarray(0, 4).toString("ascii"), "RIFF", "Expected real RIFF WebP bytes");
+      assert.equal(bytes.subarray(8, 12).toString("ascii"), "WEBP", "Expected real WebP image bytes");
     }
     bytesSaved += statSync(original).size - statSync(resolve(renditions.card)).size;
   }
@@ -58,7 +61,7 @@ test("Public media presentation delegates static image card and detail delivery 
 
 test("Existing startup queries run capabilities alongside collections, not after them", () => {
   const source = app.slice(app.indexOf("async function loadPublicPortfolioData("), app.indexOf("\nasync function loadEmergencyFallback(", app.indexOf("async function loadPublicPortfolioData(")));
-  const capability = source.indexOf("const capabilityWork = loadPublicCapabilities(deadline)");
+  const capability = source.indexOf("const capabilityWork = Promise.allSettled([loadPublicCapabilities(deadline)])");
   const collections = source.indexOf("const collectionWork = Promise.allSettled(collectionNames.map(");
   const awaitCollection = source.indexOf("const results = await collectionWork");
   const awaitCapabilities = source.indexOf("await capabilityWork");
@@ -66,4 +69,39 @@ test("Existing startup queries run capabilities alongside collections, not after
   assert.ok(capability < awaitCollection && collections < awaitCollection && awaitCollection < awaitCapabilities);
   assert.equal((source.match(/loadPublicCapabilities\(deadline\)/g)||[]).length, 1, "Must not duplicate query workloads");
   assert.equal((source.match(/loadPublicCollection\(name, deadline\)/g)||[]).length, 1);
+});
+
+test("Collection reads and capability reads begin concurrently without extra calls", async () => {
+  const from = app.indexOf("async function loadPublicPortfolioData(");
+  const to = app.indexOf("  const loaded = new Map();", from);
+  assert.ok(from >= 0 && to > from);
+  // Execute the unchanged initial part of the real startup owner, before
+  // normalization (which is irrelevant to request scheduling).
+  const snippet = app.slice(from, to) + "  return results;\n}";
+  const launch = new Function(
+    "portfolioModuleRegistry", "loadedPublicCollections", "sourceMaps",
+    "loadPublicSingleton", "loadPublicCollection", "loadPublicCapabilities",
+    "normalizeServices", "applySingletonContent",
+    "let dynamicPortfolioModuleRegistry, publicFeatureSections, publicServices;\n" +
+      snippet + "\nreturn loadPublicPortfolioData;"
+  );
+  const requests = [];
+  let release;
+  const inFlight = new Promise(resolve => { release = resolve; });
+  const load = launch(
+    [], new Set(), new Map(),
+    async () => ({}),
+    async name => { requests.push("collection:" + name); await inFlight; return []; },
+    async () => { requests.push("capability"); await inFlight; },
+    () => ({}),
+    () => {}
+  );
+  const pending = load(0);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests.filter(name => name === "capability").length, 1);
+  assert.equal(requests.filter(name => name.startsWith("collection:")).length, 8);
+  release();
+  const settled = await pending;
+  assert.equal(settled.length, 8);
+  assert.ok(settled.every(result => result.status === "fulfilled"));
 });

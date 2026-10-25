@@ -7,6 +7,9 @@ const start = app.indexOf('function bindPublicMediaFrames(');
 const end = app.indexOf('\nfunction projectCardMediaMarkup(', start);
 assert.ok(start >= 0 && end > start, 'Shared image/frame binder must exist');
 const binder = app.slice(start, end);
+const geometryStart = app.indexOf('function syncPublicIntrinsicMediaFrame(');
+assert.ok(geometryStart >= 0 && geometryStart < start, 'Canonical intrinsic-media geometry must precede the shared binder');
+const geometry = app.slice(geometryStart, start);
 
 function bindImage({ imageWidth = 1600, imageHeight = 900, frameWidth = 320, frameHeight = 180 } = {}) {
   class FrameElement {}
@@ -44,7 +47,7 @@ function bindImage({ imageWidth = 1600, imageHeight = 900, frameWidth = 320, fra
     },
   });
   const bind = new Function('HTMLElement', 'ResizeObserver', 'window', 'document', 'prioritizePublicMediaInView',
-    `${binder}\nreturn bindPublicMediaFrames;`)(FrameElement, ResizeObserverMock,
+    `${geometry}\n${binder}\nreturn bindPublicMediaFrames;`)(FrameElement, ResizeObserverMock,
     { clearTimeout() {} }, { documentElement: {} }, () => {});
   bind({ querySelectorAll() { return [frame]; } });
   return { ambient, frame, onResize() { assert.equal(typeof resizeCallback, 'function'); resizeCallback([]); } };

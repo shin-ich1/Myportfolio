@@ -1355,7 +1355,7 @@ function educationCardMarkup(item = {}) {
   </article>`;
 }
 
-function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabel = "Media", loading = "lazy", purpose = "card", priority = "auto", fillBackdrop = false } = {}) {
+function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabel = "Media", loading = "lazy", purpose = "card", priority = "auto", fillBackdrop = false, sizing = "fixed" } = {}) {
   const presentation = mediaPresentation(source, { family: "image", type: "image", access: "public-preview" });
   const deliveryPurpose = ["detail", "original"].includes(cleanText(purpose).toLowerCase()) ? cleanText(purpose).toLowerCase() : "card";
   const url = cleanText(
@@ -1372,7 +1372,7 @@ function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabe
   );
   const deliveryFallback = fallbackUrl && fallbackUrl !== url ? fallbackUrl : "";
   const safeClass = cleanText(className).replace(/[^a-zA-Z0-9_-]+/g, " ").trim();
-  const classes = ["public-media-frame", safeClass, url ? "media-loading" : "media-fallback"].filter(Boolean).join(" ");
+  const classes = ["public-media-frame", sizing === "intrinsic" ? "public-media-frame--intrinsic" : "", safeClass, url ? "media-loading" : "media-fallback"].filter(Boolean).join(" ");
   const fallback = `<span class="public-media-frame__fallback"><strong>LΛN</strong><small>${escapeHtml(fallbackLabel)}</small></span>`;
   if (!url) return `<span class="${classes}" data-public-media-frame>${fallback}</span>`;
   const priorityMode = ["high", "low"].includes(cleanText(priority).toLowerCase()) ? cleanText(priority).toLowerCase() : "";
@@ -1451,6 +1451,17 @@ function prioritizePublicMediaInView(root = document) {
   });
 }
 
+function syncPublicIntrinsicMediaFrame(frame, image) {
+  // The same media owner supports responsive single-image stages in any
+  // current or future Public module without breakpoint-specific sizing.
+  if (!frame?.classList?.contains("public-media-frame--intrinsic")) return;
+  const width = Number(image?.naturalWidth);
+  const height = Number(image?.naturalHeight);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+  frame.style.setProperty("--public-media-intrinsic-aspect", `${width} / ${height}`);
+  frame.style.setProperty("--public-media-intrinsic-ratio", String(width / height));
+}
+
 function bindPublicMediaFrames(root = document) {
   // Native hero/about images are not wrapped in Public frames; share the same
   // one-shot original fallback without additional media fetches on success.
@@ -1503,6 +1514,7 @@ function bindPublicMediaFrames(root = document) {
     if (image) {
       const ambient = frame.querySelector("[data-public-media-ambient]");
       const syncAmbient = () => {
+        syncPublicIntrinsicMediaFrame(frame, image);
         if (!ambient || !image.naturalWidth || !image.naturalHeight) return;
         const frameWidth = frame.clientWidth;
         const frameHeight = frame.clientHeight;
@@ -4071,7 +4083,7 @@ function photoEditingDetailMediaMarkup(source = {}, role = photoEditingMediaRole
   }
 
   const finalAsset = afterAsset || source.coverAsset || source.coverImage || cleanText(source.coverImageUrl) || beforeAsset || gallery[0]?.asset || source.singleImage || cleanText(source.singleImageUrl) || null;
-  return `<section class="photo-detail-media photo-detail-media--single" aria-label="Single image showcase"><figure class="photo-detail-single-stage">${publicMediaFrameMarkup(finalAsset, source.title, { className: "public-media-frame--detail", fallbackLabel: "Photo editing media", purpose: "detail" })}</figure></section>`;
+  return `<section class="photo-detail-media photo-detail-media--single" aria-label="Single image showcase"><figure class="photo-detail-single-stage">${publicMediaFrameMarkup(finalAsset, source.title, { className: "public-media-frame--detail", fallbackLabel: "Photo editing media", purpose: "detail", sizing: "intrinsic" })}</figure></section>`;
 }
 
 
@@ -4110,7 +4122,10 @@ function openPhotoEditingSource(documentId) {
     : "";
 
   const recordNavigation = photoEditingDetailNavigation(source.id);
-  show(`${recordNavigation}<article class="photo-detail-shell" data-photo-detail-role="${escapeHtml(role.key)}"><header class="photo-detail-head"><div class="photo-detail-head-icon">${icon("camera")}</div><div><div class="photo-detail-kicker">PHOTO EDITING · ${escapeHtml(role.label.toUpperCase())}</div><h2>${escapeHtml(source.title)}</h2><p>${escapeHtml(source.category)}</p></div></header>${media}<div class="photo-detail-information">${factMarkup}${descriptionMarkup}${tagsMarkup}</div></article>`, "gallery-viewer photo-detail-viewer");
+  const navigation = recordNavigation
+    ? `<nav class="photo-detail-record-nav-row" aria-label="Browse photo editing samples">${recordNavigation}</nav>`
+    : "";
+  show(`<article class="photo-detail-shell" data-photo-detail-role="${escapeHtml(role.key)}"><header class="photo-detail-head"><div class="photo-detail-head-icon">${icon("camera")}</div><div><div class="photo-detail-kicker">PHOTO EDITING · ${escapeHtml(role.label.toUpperCase())}</div><h2>${escapeHtml(source.title)}</h2><p>${escapeHtml(source.category)}</p></div></header>${media}${navigation}<div class="photo-detail-information">${factMarkup}${descriptionMarkup}${tagsMarkup}</div></article>`, "gallery-viewer photo-detail-viewer");
 
   const modal = document.querySelector("#modal");
   modal?.querySelectorAll?.("[data-photo-record-nav]").forEach((button) => {

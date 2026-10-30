@@ -59,6 +59,36 @@ test("OAuth homepage visibly explains why LAN Portfolio Storage requests Google 
   assert.match(styles, /\.storage-policy-footer-summary/);
 });
 
+test("Public footer keeps the original LΛN identity, discreet Admin, and a single compact utility row", () => {
+  const start = home.indexOf('<footer class="wrap site-footer');
+  const end = home.indexOf("</footer>", start);
+  assert.ok(start > 0 && end > start, "Expected one canonical Public footer");
+  const footer = home.slice(start, end + 9);
+  assert.match(footer, /site-footer--storage/);
+  assert.match(footer, /class="site-footer-identity"/);
+  assert.match(footer, /class="brand" href="#home"/);
+  assert.match(footer, /© \\${new Date\(\)\.getFullYear\(\)}/);
+  assert.match(footer, /<nav class="site-footer-links" aria-label="Footer links">/);
+  assert.match(footer, /class="storage-policy-footer-link" href="storage-privacy\.html">Privacy Policy<\/a>/);
+  assert.match(footer, /href="#home">Back to top ↑<\/a>/);
+  assert.match(footer, /class="footer-admin-link" href="admin\/"/);
+  assert.match(footer, /class="storage-policy-footer-summary"/);
+  assert.equal((footer.match(/href="admin\/"/g) || []).length, 1);
+  assert.equal((footer.match(/href="storage-privacy\.html"/g) || []).length, 1);
+  assert.doesNotMatch(footer, /LinkedIn|Facebook|Send Email|href="#projects"|href="#about"|class="btn"/i);
+});
+
+test("Footer isolates the Google Drive disclosure from its links and stays understated across viewports", () => {
+  const footer = home.slice(home.indexOf('<footer class="wrap site-footer'), home.indexOf("</footer>", home.indexOf('<footer class="wrap site-footer')) + 9);
+  assert.ok(footer.indexOf('class="storage-policy-footer-summary"') > footer.indexOf('</nav>'),
+    "Storage notice belongs on its own line below the utility links");
+  assert.match(styles, /\.site-footer\.site-footer--storage\s*\{\s*display:\s*grid;/);
+  assert.match(styles, /\.site-footer--storage \.site-footer-links\s*\{/);
+  assert.match(styles, /\.site-footer--storage \.footer-admin-link\s*\{[^}]*opacity:\s*\.\d+/);
+  assert.match(styles, /@media\s*\(max-width:\s*720px\)[^]*?\.site-footer\.site-footer--storage\s*\{\s*grid-template-columns:\s*1fr/);
+  assert.doesNotMatch(footer, /style="/);
+});
+
 test("Privacy page styling reuses site tokens and only adds dedicated policy selectors", () => {
   assert.match(styles, /\.storage-policy-page/);
   assert.match(styles, /\.storage-policy-body/);

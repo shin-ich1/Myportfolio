@@ -35,7 +35,7 @@ test("Privacy disclosure describes actual Worker Drive scope, data, public deliv
 });
 
 test("Public homepage footer exposes privacy page without changing project and admin link owners", () => {
-  const start = home.indexOf('<footer class="wrap site-footer">');
+  const start = home.indexOf('<footer class="wrap site-footer');
   const end = home.indexOf("</footer>", start);
   assert.ok(start > 0 && end > start, "Expected single Public footer owner");
   const footer = home.slice(start, end + 9);
@@ -47,7 +47,7 @@ test("Public homepage footer exposes privacy page without changing project and a
 });
 
 test("OAuth homepage visibly explains why LAN Portfolio Storage requests Google Drive access", () => {
-  const start = home.indexOf('<footer class="wrap site-footer">');
+  const start = home.indexOf('<footer class="wrap site-footer');
   const end = home.indexOf("</footer>", start);
   assert.ok(start > 0 && end > start, "Expected the canonical homepage footer");
   const footer = home.slice(start, end + 9);

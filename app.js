@@ -2666,13 +2666,32 @@ function loadPublicMessageTurnstileApi() {
   if (publicMessageTurnstileScriptPromise) return publicMessageTurnstileScriptPromise;
   publicMessageTurnstileScriptPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
+    let settled = false;
+    const settle = (error = null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(watchdog);
+      if (error) {
+        script.remove();
+        reject(error);
+      } else resolve(window.turnstile);
+    };
+    // A blocked third-party script may never fire load or error in some browsers.
+    // Reuse this single loader owner; on timeout clear the Promise so reopening can retry.
+    const watchdog = window.setTimeout(
+      () => settle(new Error("Secure browser verification timed out while loading. Please try again.")),
+      20000
+    );
     script.src = PUBLIC_MESSAGE_TURNSTILE_SRC;
     script.async = true;
     script.defer = true;
     script.dataset.publicMessageTurnstile = "true";
-    script.addEventListener("load", () => window.turnstile?.render ? resolve(window.turnstile) : reject(new Error("Secure browser verification did not initialize.")), { once: true });
-    script.addEventListener("error", () => reject(new Error("Secure browser verification could not be loaded.")), { once: true });
-    document.head.appendChild(script);
+    script.addEventListener("load", () => window.turnstile?.render
+      ? settle()
+      : settle(new Error("Secure browser verification did not initialize.")), { once: true });
+    script.addEventListener("error", () => settle(new Error("Secure browser verification could not be loaded.")), { once: true });
+    try { document.head.appendChild(script); }
+    catch (error) { settle(error); }
   }).catch((error) => {
     publicMessageTurnstileScriptPromise = null;
     throw error;

@@ -65,3 +65,58 @@ test("verification only opens Google OAuth for explicit missing or revoked crede
   assert.doesNotMatch(owner, /const reconnectCodes = new Set/);
   assert.doesNotMatch(owner, /removeConnectedStorageProfile|disconnectStorageProfile/);
 });
+
+const worker = readFileSync(new URL("../telemetry-worker/src/index.js", import.meta.url), "utf8");
+const tokenStart = worker.indexOf("async function driveAccessToken(");
+const tokenEnd = worker.indexOf("\nfunction escapeDriveQuery(", tokenStart);
+assert.ok(tokenStart >= 0 && tokenEnd > tokenStart, "Expected single canonical Drive OAuth refresh owner");
+const createDriveAccess = new Function(
+  "kvJsonGet", "kvJsonPut", "driveTokenExchange", "driveTokenKey", "serviceError",
+  worker.slice(tokenStart, tokenEnd) + "\nreturn driveAccessToken;"
+);
+
+test("expired short-lived access token refreshes automatically without reauthorization", async () => {
+  const old = { accessToken: "expired-access-demo", accessTokenExpiresAt: Date.now() - 5000, refreshToken: "saved-refresh-demo", uid: "admin-demo" };
+  const records = [];
+  const access = createDriveAccess(
+    async () => ({ ...old }),
+    async (env, key, next) => records.push({ key, next }),
+    async (params) => {
+      assert.equal(params.grant_type, "refresh_token");
+      assert.equal(params.refresh_token, old.refreshToken);
+      return { access_token: "fresh-access-demo", expires_in: 3600 };
+    },
+    id => "demo:" + id, message => new Error(message)
+  );
+  const token = await access("original-profile", {});
+  assert.equal(token, "fresh-access-demo");
+  assert.equal(records.length, 1);
+  assert.equal(records[0].key, "demo:original-profile");
+  assert.equal(records[0].next.refreshToken, old.refreshToken, "Never overwrite the reusable refresh token");
+  assert.equal(records[0].next.uid, old.uid, "Original profile and account ownership remain");
+  assert.ok(records[0].next.accessTokenExpiresAt > Date.now());
+});
+
+test("valid access token is reused without unnecessary reconnect or writes", async () => {
+  const current = { accessToken: "still-valid-demo", accessTokenExpiresAt: Date.now() + 3600_000, refreshToken: "saved-refresh-demo" };
+  const access = createDriveAccess(
+    async () => ({ ...current }),
+    async () => { throw Error("No writes expected"); },
+    async () => { throw Error("No refresh expected"); },
+    id => id, message => new Error(message)
+  );
+  assert.equal(await access("original-profile", {}), "still-valid-demo");
+});
+
+test("revoked refresh token never mints a fake connection or deletes the storage profile", async () => {
+  const revocation = Object.assign(new Error("Google requires reauthorization"), { code: "google-drive-reconnect-required" });
+  let writes = 0;
+  const access = createDriveAccess(
+    async () => ({ accessToken: "expired-demo", accessTokenExpiresAt: 1, refreshToken: "revoked-demo", uid: "admin-demo" }),
+    async () => { writes++; },
+    async () => { throw revocation; },
+    id => id, message => new Error(message)
+  );
+  await assert.rejects(access("original-profile", {}), error => error === revocation);
+  assert.equal(writes, 0, "A revoked token must not replace stored credentials with a fake authorization");
+});

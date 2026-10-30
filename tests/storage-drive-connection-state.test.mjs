@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const settings = readFileSync(new URL("../admin/js/settings.js", import.meta.url), "utf8");
+const helperStart = settings.indexOf("const STORAGE_DRIVE_RECONNECT_CODES =");
+const helperEnd = settings.indexOf("\nfunction storageHubEscape(", helperStart);
+assert.ok(helperStart >= 0 && helperEnd > helperStart, "Expected one shared reconnect classification owner");
 const start = settings.indexOf("function storageHubProfileMarkup(");
 const end = settings.indexOf("\nasync function refreshStorageHubUsage(", start);
 assert.ok(start >= 0 && end > start, "Expected the existing canonical Storage Hub profile renderer");
@@ -10,6 +13,7 @@ assert.ok(start >= 0 && end > start, "Expected the existing canonical Storage Hu
 const render = new Function(
   "storageHubUsage", "storageProfileDefaultFamilies", "storageHubQuotaLabel",
   "storageHubEscape", "formatStorageHubBytes",
+  settings.slice(helperStart, helperEnd) + "\n" +
   settings.slice(start, end) + "\nreturn storageHubProfileMarkup;"
 )(
   new Map(), () => [], () => "Unavailable",
@@ -57,7 +61,7 @@ test("healthy storage preserves existing ready state, disabled storage remains d
 
 test("verification only opens Google OAuth for explicit missing or revoked credentials", () => {
   const owner = settings.slice(settings.indexOf("export async function testStorageProfilePublicAccess("), settings.indexOf("\nexport function openStorageProfile("));
-  assert.match(owner, /const reconnectCodes = new Set\(\["google-drive-not-connected", "google-drive-refresh-missing", "google-drive-reconnect-required"\]\)/);
-  assert.match(owner, /if \(!reconnectCodes\.has\(String\(error\?\.code \|\| ""\)\)\) throw error;/);
+  assert.match(owner, /if \(!storageHubNeedsReconnect\(error\?\.code\)\) throw error;/);
+  assert.doesNotMatch(owner, /const reconnectCodes = new Set/);
   assert.doesNotMatch(owner, /removeConnectedStorageProfile|disconnectStorageProfile/);
 });

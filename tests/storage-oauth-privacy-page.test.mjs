@@ -46,6 +46,19 @@ test("Public homepage footer exposes privacy page without changing project and a
   assert.equal((home.match(/href="storage-privacy\.html"/g) || []).length, 1);
 });
 
+test("OAuth homepage visibly explains why LAN Portfolio Storage requests Google Drive access", () => {
+  const start = home.indexOf('<footer class="wrap site-footer">');
+  const end = home.indexOf("</footer>", start);
+  assert.ok(start > 0 && end > start, "Expected the canonical homepage footer");
+  const footer = home.slice(start, end + 9);
+  assert.match(footer, /class="storage-policy-footer-summary"/);
+  assert.match(footer, /LAN Portfolio Storage uses Google Drive access to upload and manage portfolio media\./);
+  assert.match(footer, /Privacy Policy<\/a>/);
+  assert.match(footer, /href="storage-privacy\.html"/);
+  assert.doesNotMatch(footer, /style="display:none"|aria-hidden="true"[^>]*storage-policy-footer-summary/);
+  assert.match(styles, /\.storage-policy-footer-summary/);
+});
+
 test("Privacy page styling reuses site tokens and only adds dedicated policy selectors", () => {
   assert.match(styles, /\.storage-policy-page/);
   assert.match(styles, /\.storage-policy-body/);

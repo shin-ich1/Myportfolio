@@ -1674,25 +1674,37 @@ html[data-lan-public-mode="mobile"] .public-layout-item .editing-carousel>.publi
 .storage-policy-skip{position:absolute;left:12px;top:-80px;z-index:200;padding:10px 14px;border-radius:9px;background:var(--blue);color:#fff}
 .storage-policy-skip:focus{top:12px}
 .storage-policy-header{border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--panel) 90%,transparent)}
-.storage-policy-header-inner{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:70px}
+.storage-policy-header-inner{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:70px;max-width:1280px}
 .storage-policy-brand{color:var(--text);font-size:1.32rem;letter-spacing:.09em;font-weight:850;line-height:1}
 .storage-policy-back{color:var(--text-soft);font-size:.88rem;font-weight:680}
 .storage-policy-back:hover,.storage-policy-footer a:hover,.storage-policy-panel a:hover{color:var(--blue-hover)}
-.storage-policy-body{max-width:880px;padding-block:clamp(32px,5vw,64px) 50px}
+.storage-policy-body{max-width:1280px;padding-block:clamp(32px,5vw,64px) 50px}
 .storage-policy-eyebrow{margin:0 0 10px;color:var(--blue-hover);font-size:.74rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase}
 .storage-policy-body h1{margin:0;color:var(--text);font-size:clamp(2rem,5vw,3.15rem);line-height:1.13;letter-spacing:-.035em}
 .storage-policy-intro{max-width:66ch;margin:18px 0 8px;color:var(--text-soft);font-size:1.02rem;line-height:1.75}
 .storage-policy-updated{margin:0 0 28px;color:var(--muted);font-size:.78rem}
-.storage-policy-panel{overflow:hidden;padding:clamp(20px,4vw,42px);border:1px solid var(--line);border-radius:var(--radius-lg);background:linear-gradient(155deg,var(--panel-2),var(--panel));box-shadow:var(--shadow-xs)}
-.storage-policy-panel section+section{margin-top:28px;padding-top:27px;border-top:1px solid var(--line)}
+.storage-policy-panel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:clamp(16px,2vw,32px);overflow:hidden;padding:clamp(16px,3vw,32px);border:1px solid var(--line);border-radius:var(--radius-lg);background:linear-gradient(155deg,var(--panel-2),var(--panel));box-shadow:var(--shadow-xs)}
+.storage-policy-panel section{min-width:0;padding:clamp(14px,2vw,24px) clamp(10px,1.5vw,22px)}
+.storage-policy-panel section+section{margin-top:0;padding-top:clamp(14px,2vw,24px);border-top:0}
+.storage-policy-panel section:nth-child(even){border-left:1px solid var(--line)}
+.storage-policy-panel section:nth-child(n+3){border-top:1px solid var(--line)}
+.storage-policy-panel section:last-child{grid-column:1 / -1}
+.storage-policy-panel section:last-child p{max-width:90ch}
 .storage-policy-panel h2{margin:0 0 12px;color:var(--text);font-size:clamp(1.03rem,2.6vw,1.18rem);line-height:1.35}
 .storage-policy-panel p{margin:0 0 13px;color:var(--text-soft);line-height:1.75}
 .storage-policy-panel p:last-child{margin-bottom:0}
 .storage-policy-panel strong{color:var(--text)}
 .storage-policy-panel code{overflow-wrap:anywhere;padding:.1rem .3rem;border-radius:5px;background:var(--panel-3);color:var(--text);font-size:.88em}
 .storage-policy-panel a{color:var(--blue-hover);text-decoration:underline;text-underline-offset:3px}
-.storage-policy-footer{max-width:880px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:0 0 34px;color:var(--muted);font-size:.78rem}
+.storage-policy-footer{max-width:1280px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:0 0 34px;color:var(--muted);font-size:.78rem}
 
 
 
+@media(max-width:900px){
+  .storage-policy-panel{grid-template-columns:1fr}
+  .storage-policy-panel section{padding-inline:0}
+  .storage-policy-panel section+section{border-top:1px solid var(--line)}
+  .storage-policy-panel section:nth-child(even){border-left:0}
+  .storage-policy-panel section:last-child{grid-column:auto}
+}
 @media(max-width:720px){.storage-policy-header-inner{min-height:60px}.storage-policy-body{padding-block:30px 42px}.storage-policy-intro{font-size:.95rem}.storage-policy-panel{border-radius:12px}}

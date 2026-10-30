@@ -90,15 +90,15 @@ test("Footer isolates the Google Drive disclosure from its links and stays under
 });
 
 
-test("Privacy layout uses the desktop space without making paragraphs ultra-wide", () => {
+test("Privacy layout aligns to the 1480px portfolio shell while preserving readable columns", () => {
   const page = readFileSync(pageUrl, "utf8");
   assert.equal((page.match(/<section aria-labelledby="storage-policy-/g) || []).length, 7,
     "Keep the seven original policy sections and their reading order");
-  assert.match(styles, /\.storage-policy-body\s*\{\s*max-width:\s*1280px;/);
+  assert.match(styles, /\.storage-policy-body\s*\{\s*max-width:\s*1480px;/);
   assert.match(styles, /\.storage-policy-panel\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(styles, /\.storage-policy-panel\s+section:last-child\s*\{\s*grid-column:\s*1\s*\/\s*-1/);
-  assert.match(styles, /\.storage-policy-header-inner\s*\{[^}]*max-width:\s*1280px/);
-  assert.match(styles, /\.storage-policy-footer\s*\{[^}]*max-width:\s*1280px/);
+  assert.match(styles, /\.storage-policy-header-inner\s*\{[^}]*max-width:\s*1480px/);
+  assert.match(styles, /\.storage-policy-footer\s*\{[^}]*max-width:\s*1480px/);
   assert.doesNotMatch(page, /style=|<script src=|<iframe/i, "No duplicate styling or third-party page dependencies");
 });
 

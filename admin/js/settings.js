@@ -135,7 +135,7 @@ function storageHubProfileMarkup(profile = {}) {
       : connectionCheckFailed
         ? "Connection check failed"
         : !connectionHealthy
-          ? "Connection check failed"
+          ? "Reconnect required"
           : ready
         ? "Ready"
         : drive

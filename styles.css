@@ -861,6 +861,24 @@ li svg { width: 17px; color: var(--blue-hover); }
 .site-footer .brand { font-size: 1.25rem; }
 .site-footer-links{display:flex;align-items:center;gap:14px}.site-footer-links a{display:inline-flex;align-items:center;gap:5px;color:#7f90a3;text-decoration:none}.site-footer-links a:hover{color:#dfeeff}.footer-admin-link{font-size:.74rem;opacity:.72}.footer-admin-link:hover{opacity:1}.footer-admin-link svg{width:14px;height:14px}
 
+/* ---------- Public footer: compact existing links with a subtle storage disclosure ---------- */
+.site-footer.site-footer--storage{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:clamp(16px,2vw,30px);row-gap:5px;border-top:1px solid var(--line);padding-top:18px}
+.site-footer--storage .site-footer-identity{display:flex;align-items:center;gap:clamp(10px,1.5vw,22px);min-width:0}
+.site-footer--storage .site-footer-identity>span{color:var(--muted);font-size:.78rem}
+.site-footer--storage .site-footer-links{justify-content:flex-end;flex-wrap:wrap;gap:clamp(10px,1.6vw,20px)}
+.site-footer--storage .site-footer-links a{white-space:nowrap}
+.site-footer--storage .storage-policy-footer-link{color:var(--blue-hover);font-size:.78rem;font-weight:650}
+.site-footer--storage .footer-admin-link{color:var(--muted);opacity:.62;font-size:.72rem;font-weight:400}
+.site-footer--storage .footer-admin-link:hover,.site-footer--storage .footer-admin-link:focus-visible{color:var(--text-soft);opacity:1}
+.site-footer--storage .storage-policy-footer-summary{grid-column:1/-1;margin:0;color:var(--muted);font-size:.69rem;line-height:1.5}
+@media(max-width:720px){
+  .site-footer.site-footer--storage{grid-template-columns:1fr;row-gap:8px;text-align:center}
+  .site-footer--storage .site-footer-identity{justify-content:center;flex-wrap:wrap}
+  .site-footer--storage .site-footer-links{justify-content:center}
+  .site-footer--storage .storage-policy-footer-summary{text-align:center}
+}
+
+
 /* ---------- modals ---------- */
 .backdrop {
   position: fixed;
@@ -1674,7 +1692,7 @@ html[data-lan-public-mode="mobile"] .public-layout-item .editing-carousel>.publi
 .storage-policy-panel code{overflow-wrap:anywhere;padding:.1rem .3rem;border-radius:5px;background:var(--panel-3);color:var(--text);font-size:.88em}
 .storage-policy-panel a{color:var(--blue-hover);text-decoration:underline;text-underline-offset:3px}
 .storage-policy-footer{max-width:880px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:0 0 34px;color:var(--muted);font-size:.78rem}
-.site-footer-links .storage-policy-footer-summary{flex:0 1 18rem;max-width:100%;color:var(--muted);font-size:.72rem;line-height:1.4}
-.site-footer-links .storage-policy-footer-summary a{display:inline;color:var(--blue-hover);font-size:inherit;font-weight:700;text-decoration:underline;text-underline-offset:2px}
-@media(max-width:720px){.site-footer-links .storage-policy-footer-summary{flex:0 1 100%;text-align:center}}
-@media(max-width:720px){.storage-policy-header-inner{min-height:60px}.storage-policy-body{padding-block:30px 42px}.storage-policy-intro{font-size:.95rem}.storage-policy-panel{border-radius:12px}.site-footer-links:has(.storage-policy-footer-link){flex-wrap:wrap;justify-content:center}}
+
+
+
+@media(max-width:720px){.storage-policy-header-inner{min-height:60px}.storage-policy-body{padding-block:30px 42px}.storage-policy-intro{font-size:.95rem}.storage-policy-panel{border-radius:12px}}

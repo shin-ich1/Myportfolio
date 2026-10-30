@@ -97,3 +97,52 @@ test("Mobile widget's adaptive mode comes from the existing imported owner", () 
   const adaptive = readFileSync(new URL("../public-adaptive.js", import.meta.url), "utf8");
   assert.match(adaptive, /export function isPublicDocumentFlowMode\(\)/);
 });
+
+
+test("Stalled script load rejects, cleans up, and a retry resolves using the same owner", async () => {
+  const start = app.indexOf("function loadPublicMessageTurnstileApi()");
+  const end = app.indexOf("\nfunction preloadPublicMessagePuzzleImage(", start);
+  assert.ok(start >= 0 && end > start);
+  const pending = new Map(), scripts = [];
+  let serial = 0;
+  const fakeWindow = {
+    turnstile: null,
+    setTimeout(callback, delay) { const id = ++serial; pending.set(id, { callback, delay }); return id; },
+    clearTimeout(id) { pending.delete(id); }
+  };
+  const documentMock = {
+    createElement(tag) {
+      assert.equal(tag, "script");
+      const script = {
+        dataset: {}, events: {},
+        addEventListener(name, handler) { this.events[name] = handler; },
+        remove() { this.removed = true; }
+      };
+      scripts.push(script);
+      return script;
+    },
+    head: { appendChild() {} }
+  };
+  const make = new Function("window", "document", "PUBLIC_MESSAGE_TURNSTILE_SRC",
+    "let publicMessageTurnstileScriptPromise = null;\n" + app.slice(start, end) +
+    "\nreturn loadPublicMessageTurnstileApi;"
+  );
+  const load = make(fakeWindow, documentMock, "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit");
+  const stuck = load();
+  assert.equal(stuck, load(), "Concurrent visitors to the loader share a single in-flight Promise");
+  assert.equal(scripts.length, 1);
+  assert.equal(pending.size, 1);
+  const timeout = [...pending.values()][0];
+  assert.ok(timeout.delay <= 30000);
+  timeout.callback();
+  await assert.rejects(stuck, /timed out/i);
+  assert.equal(scripts[0].removed, true);
+  assert.equal(pending.size, 0);
+
+  const retried = load();
+  assert.equal(scripts.length, 2, "A failed load is never permanently cached");
+  fakeWindow.turnstile = { render() { return "test-widget"; } };
+  scripts[1].events.load();
+  assert.equal(await retried, fakeWindow.turnstile);
+  assert.equal(pending.size, 0, "Successful retry cancels its watchdog");
+});

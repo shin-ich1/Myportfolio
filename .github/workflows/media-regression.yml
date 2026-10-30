@@ -8,6 +8,7 @@ on:
       - fix/public-photo-media-visible-loading-20261025
       - fix/public-shared-media-priority-20261025
       - fix/public-static-renditions-startup-20261025
+      - fix/public-message-first-image-browser-20261030
       - fix/storage-oauth-privacy-page-20261030
 
 permissions:
@@ -26,6 +27,7 @@ jobs:
         run: node --test tests/*.test.mjs
       - name: Syntax-check changed JavaScript modules
         run: |
+          node --check tests/public-message-first-image-cross-browser.test.mjs
           node --check app.js
           node --check storage-asset.js
           node --check video-compatibility.js

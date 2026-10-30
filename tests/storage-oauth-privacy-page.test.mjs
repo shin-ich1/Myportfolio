@@ -89,6 +89,26 @@ test("Footer isolates the Google Drive disclosure from its links and stays under
   assert.doesNotMatch(footer, /style="/);
 });
 
+
+test("Privacy layout uses the desktop space without making paragraphs ultra-wide", () => {
+  const page = readFileSync(pageUrl, "utf8");
+  assert.equal((page.match(/<section aria-labelledby="storage-policy-/g) || []).length, 7,
+    "Keep the seven original policy sections and their reading order");
+  assert.match(styles, /\.storage-policy-body\s*\{\s*max-width:\s*1280px;/);
+  assert.match(styles, /\.storage-policy-panel\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(styles, /\.storage-policy-panel\s+section:last-child\s*\{\s*grid-column:\s*1\s*\/\s*-1/);
+  assert.match(styles, /\.storage-policy-header-inner\s*\{[^}]*max-width:\s*1280px/);
+  assert.match(styles, /\.storage-policy-footer\s*\{[^}]*max-width:\s*1280px/);
+  assert.doesNotMatch(page, /style=|<script src=|<iframe/i, "No duplicate styling or third-party page dependencies");
+});
+
+test("Privacy layout stays one column on phones and medium tablet widths", () => {
+  assert.match(styles, /@media\s*\(max-width:\s*900px\)\s*\{[^]*?\.storage-policy-panel\s*\{[^}]*grid-template-columns:\s*1fr/);
+  assert.match(styles, /@media\s*\(max-width:\s*900px\)\s*\{[^]*?\.storage-policy-panel\s+section:last-child\s*\{[^}]*grid-column:\s*auto/);
+  assert.match(styles, /\.storage-policy-panel\s+section\s*\{[^}]*min-width:\s*0/);
+  assert.match(styles, /\.storage-policy-panel\s+code\s*\{[^}]*overflow-wrap:\s*anywhere/);
+});
+
 test("Privacy page styling reuses site tokens and only adds dedicated policy selectors", () => {
   assert.match(styles, /\.storage-policy-page/);
   assert.match(styles, /\.storage-policy-body/);

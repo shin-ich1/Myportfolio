@@ -67,7 +67,7 @@ test("Public footer keeps the original LΛN identity, discreet Admin, and a sing
   assert.match(footer, /site-footer--storage/);
   assert.match(footer, /class="site-footer-identity"/);
   assert.match(footer, /class="brand" href="#home"/);
-  assert.match(footer, /© \\${new Date\(\)\.getFullYear\(\)}/);
+  assert.ok(footer.includes('© ${new Date().getFullYear()}'), "Keep current-year copyright in the footer");
   assert.match(footer, /<nav class="site-footer-links" aria-label="Footer links">/);
   assert.match(footer, /class="storage-policy-footer-link" href="storage-privacy\.html">Privacy Policy<\/a>/);
   assert.match(footer, /href="#home">Back to top ↑<\/a>/);

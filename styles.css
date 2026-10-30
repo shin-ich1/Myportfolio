@@ -1674,11 +1674,11 @@ html[data-lan-public-mode="mobile"] .public-layout-item .editing-carousel>.publi
 .storage-policy-skip{position:absolute;left:12px;top:-80px;z-index:200;padding:10px 14px;border-radius:9px;background:var(--blue);color:#fff}
 .storage-policy-skip:focus{top:12px}
 .storage-policy-header{border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--panel) 90%,transparent)}
-.storage-policy-header-inner{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:70px;max-width:1280px}
+.storage-policy-header-inner{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:70px;max-width:1480px}
 .storage-policy-brand{color:var(--text);font-size:1.32rem;letter-spacing:.09em;font-weight:850;line-height:1}
 .storage-policy-back{color:var(--text-soft);font-size:.88rem;font-weight:680}
 .storage-policy-back:hover,.storage-policy-footer a:hover,.storage-policy-panel a:hover{color:var(--blue-hover)}
-.storage-policy-body{max-width:1280px;padding-block:clamp(32px,5vw,64px) 50px}
+.storage-policy-body{max-width:1480px;padding-block:clamp(32px,5vw,64px) 50px}
 .storage-policy-eyebrow{margin:0 0 10px;color:var(--blue-hover);font-size:.74rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase}
 .storage-policy-body h1{margin:0;color:var(--text);font-size:clamp(2rem,5vw,3.15rem);line-height:1.13;letter-spacing:-.035em}
 .storage-policy-intro{max-width:66ch;margin:18px 0 8px;color:var(--text-soft);font-size:1.02rem;line-height:1.75}
@@ -1696,7 +1696,7 @@ html[data-lan-public-mode="mobile"] .public-layout-item .editing-carousel>.publi
 .storage-policy-panel strong{color:var(--text)}
 .storage-policy-panel code{overflow-wrap:anywhere;padding:.1rem .3rem;border-radius:5px;background:var(--panel-3);color:var(--text);font-size:.88em}
 .storage-policy-panel a{color:var(--blue-hover);text-decoration:underline;text-underline-offset:3px}
-.storage-policy-footer{max-width:1280px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:0 0 34px;color:var(--muted);font-size:.78rem}
+.storage-policy-footer{max-width:1480px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:0 0 34px;color:var(--muted);font-size:.78rem}
 
 
 

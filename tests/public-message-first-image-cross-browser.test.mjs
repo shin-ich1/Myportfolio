@@ -80,3 +80,20 @@ test("No alternate mobile-only puzzle, disabled verification, or backend proof b
   assert.match(worker, /String\(result\.action \|\| ""\) !== PRIVATE_MESSAGE_ACTION/);
   assert.match(worker, /String\(result\.hostname \|\| ""\)\.toLowerCase\(\) !== config\.host/);
 });
+
+test("Turnstile loader is bounded on browsers where the third-party script never completes", () => {
+  const start = app.indexOf("function loadPublicMessageTurnstileApi()");
+  const end = app.indexOf("\nfunction preloadPublicMessagePuzzleImage(", start);
+  assert.ok(start >= 0 && end > start);
+  const owner = app.slice(start, end);
+  assert.match(owner, /window\.setTimeout\(/, "A stalled third-party script needs a watchdog");
+  assert.match(owner, /window\.clearTimeout\(/, "Watchdog must be canceled on success or failure");
+  assert.match(owner, /script\.remove\(/, "Failed script must be replaceable on retry");
+  assert.match(owner, /publicMessageTurnstileScriptPromise = null/, "Retry uses existing single script Promise owner");
+});
+
+test("Mobile widget's adaptive mode comes from the existing imported owner", () => {
+  assert.match(app, /import\s*\{\s*initPublicAdaptiveMode,\s*isPublicDocumentFlowMode\s*\}\s*from\s*["']\.\/public-adaptive\.js["']/);
+  const adaptive = readFileSync(new URL("../public-adaptive.js", import.meta.url), "utf8");
+  assert.match(adaptive, /export function isPublicDocumentFlowMode\(\)/);
+});

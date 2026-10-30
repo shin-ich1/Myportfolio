@@ -77,6 +77,17 @@ let storageConnectState = null;
 registerStorageProvider(cloudinaryStorageProvider);
 registerStorageProvider(googleDriveStorageProvider);
 
+// Only a confirmed missing/revoked authorization requires Google sign-in.
+// Network and provider errors must not be misreported as disconnected storage.
+const STORAGE_DRIVE_RECONNECT_CODES = new Set([
+  "google-drive-not-connected",
+  "google-drive-refresh-missing",
+  "google-drive-reconnect-required"
+]);
+function storageHubNeedsReconnect(code = "") {
+  return STORAGE_DRIVE_RECONNECT_CODES.has(String(code || ""));
+}
+
 function storageHubEscape(value = "") {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 }
@@ -114,24 +125,32 @@ function storageHubProfileMarkup(profile = {}) {
   const quotaLabel = storageHubQuotaLabel(profile.id);
   const drive = profile.provider === "google-drive";
   const connectionHealthy = profile.usageSnapshot?.healthy !== false;
+  const reconnectRequired = drive && !connectionHealthy && storageHubNeedsReconnect(profile.usageSnapshot?.code);
+  const connectionCheckFailed = drive && !connectionHealthy && !reconnectRequired;
   const ready = drive ? profile.publicReady === true : profile.enabled !== false;
   const stateLabel = profile.enabled === false
     ? "Disabled"
-    : !connectionHealthy
+    : reconnectRequired
       ? "Reconnect required"
-      : ready
+      : connectionCheckFailed
+        ? "Connection check failed"
+        : !connectionHealthy
+          ? "Connection check failed"
+          : ready
         ? "Ready"
         : drive
           ? "Public access required"
           : "Connected";
-  const rootHelp = drive && !connectionHealthy
-    ? "Existing public assets remain deliverable from the shared Drive folder. Reconnect this profile to restore uploads, quota checks and management operations."
+  const rootHelp = drive && reconnectRequired
+    ? "Existing public assets remain deliverable from the shared Drive folder. Reconnect this existing profile to restore uploads and account operations."
+    : drive && connectionCheckFailed
+      ? "Google Drive could not be verified right now. A failed check does not revoke authorization or remove files. Retry the connection check before reconnecting."
     : drive && !ready
       ? "Open the managed folder, set General access to Anyone with the link · Viewer, then Test Public Access."
       : "Existing assets remain owned by this provider.";
   const managementButton = drive || profile.managementUrl ? `<button class="editor-secondary-button button-compact" data-storage-action="open" data-storage-profile="${storageHubEscape(profile.id)}" type="button">Open ${drive ? "Folder" : "Provider"}</button>` : "";
   const removeButton = profile.implicit ? "" : `<button class="editor-danger-button button-compact" data-storage-action="remove" data-storage-profile="${storageHubEscape(profile.id)}" type="button">Remove Storage</button>`;
-  const testLabel = drive ? (connectionHealthy ? "Test Public Access" : "Reconnect Google Drive") : "Test Connection";
+  const testLabel = drive ? (reconnectRequired ? "Reconnect Google Drive" : connectionHealthy ? "Test Public Access" : "Retry Connection Check") : "Test Connection";
   return `<article class="storage-hub-profile" data-storage-provider="${storageHubEscape(profile.provider)}" data-storage-profile-card="${storageHubEscape(profile.id)}"><header><span><small>${storageHubEscape(profile.provider === "google-drive" ? "Google Drive" : profile.provider)}</small><strong>${storageHubEscape(profile.label || profile.id)}</strong></span><b data-storage-ready="${ready && connectionHealthy}">${storageHubEscape(stateLabel)}</b></header><div class="storage-hub-profile-metrics"><span><small>Managed assets</small><strong>${Number(usage.assetCount) || 0}</strong></span><span><small>Tracked storage</small><strong>${storageHubEscape(formatStorageHubBytes(usage.bytes))}</strong></span><span><small>Provider quota</small><strong data-storage-quota="${storageHubEscape(profile.id)}">${storageHubEscape(quotaLabel)}</strong></span></div><p>${storageHubEscape(rootHelp)}</p><div class="storage-hub-profile-defaults"><small>Default for</small><strong>${defaults.length ? storageHubEscape(defaults.join(" · ")) : "None"}</strong></div><footer><button class="editor-secondary-button button-compact" data-storage-action="test" data-storage-profile="${storageHubEscape(profile.id)}" type="button">${testLabel}</button>${managementButton}${removeButton}</footer></article>`;
 }
 async function refreshStorageHubUsage(profiles = []) {
@@ -412,11 +431,10 @@ export async function testStorageProfilePublicAccess(profileId) {
     try {
       result = await provider.testConnection(profile);
     } catch (error) {
-      const reconnectCodes = new Set(["google-drive-not-connected", "google-drive-refresh-missing", "google-drive-reconnect-required"]);
       await persistStorageProfileVerification(profile, { healthy: false, code: error?.code, message: error?.message });
       await renderStorageHub();
       await refreshSystemHealthAfterStorageVerification();
-      if (!reconnectCodes.has(String(error?.code || ""))) throw error;
+      if (!storageHubNeedsReconnect(error?.code)) throw error;
       const started = await provider.startConnection(profile.id);
       if (!started?.authorizationUrl || !started?.state) throw error;
       storageConnectState = { profileId: profile.id, state: started.state, origin: resolveExpectedWorkerOrigin() };

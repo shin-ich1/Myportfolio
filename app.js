@@ -2528,7 +2528,7 @@ function render() {
 
     ${publicLayout}
   </main>
-  <footer class="wrap site-footer"><a class="brand" href="#home">${escapeHtml(content.site.brand || "LΛN")}</a><span>© ${new Date().getFullYear()} ${escapeHtml(content.site.name)}</span><span class="site-footer-links"><a class="storage-policy-footer-link" href="storage-privacy.html" title="LAN Portfolio Storage manages portfolio media with Google Drive; read its privacy policy">LAN Portfolio Storage · Google Drive media privacy</a><a href="#home">Back to top ↑</a><a class="footer-admin-link" href="admin/">${icon("lock-keyhole")} Admin</a></span></footer>
+  <footer class="wrap site-footer"><a class="brand" href="#home">${escapeHtml(content.site.brand || "LΛN")}</a><span>© ${new Date().getFullYear()} ${escapeHtml(content.site.name)}</span><span class="site-footer-links"><span class="storage-policy-footer-summary">LAN Portfolio Storage uses Google Drive access to upload and manage portfolio media. <a class="storage-policy-footer-link" href="storage-privacy.html">Privacy Policy</a></span><a href="#home">Back to top ↑</a><a class="footer-admin-link" href="admin/">${icon("lock-keyhole")} Admin</a></span></footer>
   <button class="public-message-launcher" id="publicMessageLauncher" type="button" aria-label="Open private message" title="Private message">${icon("message-circle")}<span class="public-message-launcher-dot" aria-hidden="true"></span></button><div id="modal"></div>`;
 
   initPublicAdaptiveMode();

@@ -2548,6 +2548,8 @@ let publicMessagePuzzleChallenge = null;
 let publicMessagePuzzleAnswer = 0;
 let publicMessagePendingSubmission = null;
 let publicMessagePuzzleResizeObserver = null;
+let publicMessagePuzzleResizeFallbackCleanup = null;
+let publicMessageTurnstileCancel = null;
 let publicMessagePuzzleWarmupPromise = null;
 let publicMessagePuzzleWarmup = null;
 const PUBLIC_MESSAGE_PUZZLE_WARMUP_MAX_AGE_MS = 2 * 60 * 1000;
@@ -2702,11 +2704,16 @@ function publicMessagePuzzleWarmupFresh() {
 async function warmPublicMessagePuzzleChallenge() {
   if (publicMessagePuzzleWarmupFresh()) return publicMessagePuzzleWarmup;
   if (publicMessagePuzzleWarmupPromise) return publicMessagePuzzleWarmupPromise;
+  // Start Turnstile downloading in parallel. Its failure is surfaced when the
+  // visitor needs to verify, without making a cached image wait for the script.
+  loadPublicMessageTurnstileApi().catch(() => {});
   publicMessagePuzzleWarmupPromise = (async () => {
-    const [challenge, turnstile] = await Promise.all([createPrivateMessageChallenge(), loadPublicMessageTurnstileApi()]);
+    // Preload the challenge image independently of third-party Turnstile script readiness.
+    // Restricted browsers may delay the script; its failure must not delay the image.
+    const challenge = await createPrivateMessageChallenge();
     if (!challenge?.challengeId || !challenge?.siteKey) throw new Error("Secure human verification is not configured.");
     await preloadPublicMessagePuzzleImage(challenge);
-    publicMessagePuzzleWarmup = { challenge, turnstile, preparedAt: Date.now() };
+    publicMessagePuzzleWarmup = { challenge, preparedAt: Date.now() };
     return publicMessagePuzzleWarmup;
   })().finally(() => { publicMessagePuzzleWarmupPromise = null; });
   return publicMessagePuzzleWarmupPromise;
@@ -2722,13 +2729,21 @@ async function takePublicMessagePuzzleWarmup() {
   return prepared;
 }
 
+function stopPublicMessagePuzzleGeometryWatch() {
+  publicMessagePuzzleResizeObserver?.disconnect();
+  publicMessagePuzzleResizeObserver = null;
+  publicMessagePuzzleResizeFallbackCleanup?.();
+  publicMessagePuzzleResizeFallbackCleanup = null;
+}
+
 function destroyPublicMessagePuzzleVerification() {
+  publicMessageTurnstileCancel?.();
+  publicMessageTurnstileCancel = null;
   publicMessagePuzzleChallenge = null;
   publicMessagePuzzleAnswer = 0;
   publicMessagePendingSubmission = null;
   discardPublicMessagePuzzleWarmup();
-  publicMessagePuzzleResizeObserver?.disconnect();
-  publicMessagePuzzleResizeObserver = null;
+  stopPublicMessagePuzzleGeometryWatch();
   if (publicMessageTurnstileWidgetId != null && window.turnstile?.remove) window.turnstile.remove(publicMessageTurnstileWidgetId);
   publicMessageTurnstileWidgetId = null;
 }
@@ -2806,12 +2821,13 @@ function syncPublicMessagePuzzleGeometry() {
 }
 
 function closePublicMessagePuzzleVerification({ preserveSubmission = false } = {}) {
+  publicMessageTurnstileCancel?.();
+  publicMessageTurnstileCancel = null;
   const layer = document.querySelector("[data-public-puzzle-layer]");
   if (layer) layer.hidden = true;
   publicMessagePuzzleChallenge = null;
   publicMessagePuzzleAnswer = 0;
-  publicMessagePuzzleResizeObserver?.disconnect();
-  publicMessagePuzzleResizeObserver = null;
+  stopPublicMessagePuzzleGeometryWatch();
   if (!preserveSubmission) publicMessagePendingSubmission = null;
   if (publicMessageTurnstileWidgetId != null && window.turnstile?.remove) window.turnstile.remove(publicMessageTurnstileWidgetId);
   publicMessageTurnstileWidgetId = null;
@@ -2828,6 +2844,9 @@ async function loadPublicMessagePuzzleChallenge() {
   const slot = layer?.querySelector("[data-public-turnstile-slot]");
   if (!layer || !scene || !image || !pieceImage || !slider || !slot) return;
 
+  publicMessageTurnstileCancel?.();
+  publicMessageTurnstileCancel = null;
+  stopPublicMessagePuzzleGeometryWatch();
   publicMessagePuzzleChallenge = null;
   publicMessagePuzzleAnswer = 0;
   slider.disabled = true;
@@ -2840,23 +2859,50 @@ async function loadPublicMessagePuzzleChallenge() {
   try {
     const prepared = await takePublicMessagePuzzleWarmup();
     const challenge = prepared?.challenge;
-    const turnstile = prepared?.turnstile || await loadPublicMessageTurnstileApi();
     if (!challenge?.challengeId || !challenge?.siteKey) throw new Error("Secure human verification is not configured.");
     publicMessagePuzzleChallenge = challenge;
     publicMessagePuzzleAnswer = 0;
     await loadPublicMessagePuzzleImage(image, pieceImage, scene, challenge);
     setPublicMessagePuzzleSlider(slider, 0);
     syncPublicMessagePuzzleGeometry();
-    publicMessagePuzzleResizeObserver?.disconnect();
-    publicMessagePuzzleResizeObserver = new ResizeObserver(syncPublicMessagePuzzleGeometry);
-    publicMessagePuzzleResizeObserver.observe(scene);
+    if (typeof ResizeObserver === "function") {
+      publicMessagePuzzleResizeObserver = new ResizeObserver(syncPublicMessagePuzzleGeometry);
+      publicMessagePuzzleResizeObserver.observe(scene);
+    } else {
+      // Older WebViews still receive geometry updates without a second layout owner.
+      window.addEventListener("resize", syncPublicMessagePuzzleGeometry, { passive: true });
+      publicMessagePuzzleResizeFallbackCleanup = () => window.removeEventListener("resize", syncPublicMessagePuzzleGeometry);
+    }
+
+    // Load verification after the image is visible; validation remains mandatory.
+    if (status) status.textContent = "Preparing secure browser verification…";
+    const turnstile = await loadPublicMessageTurnstileApi();
 
     let pendingTurnstileResolve = null;
     let pendingTurnstileReject = null;
+    let turnstileWatchdog = 0;
+    const settleTurnstile = (error, token = "") => {
+      if (!pendingTurnstileResolve && !pendingTurnstileReject) return;
+      const resolve = pendingTurnstileResolve;
+      const reject = pendingTurnstileReject;
+      pendingTurnstileResolve = null;
+      pendingTurnstileReject = null;
+      window.clearTimeout(turnstileWatchdog);
+      turnstileWatchdog = 0;
+      publicMessageTurnstileCancel = null;
+      if (error) reject?.(error);
+      else resolve?.(cleanText(token));
+    };
     const runTurnstile = () => new Promise((resolve, reject) => {
       pendingTurnstileResolve = resolve;
       pendingTurnstileReject = reject;
-      turnstile.execute(publicMessageTurnstileWidgetId);
+      publicMessageTurnstileCancel = () => settleTurnstile(new Error("Verification canceled."));
+      turnstileWatchdog = window.setTimeout(
+        () => settleTurnstile(new Error("Secure browser verification took too long. Please try again.")),
+        60000
+      );
+      try { turnstile.execute(publicMessageTurnstileWidgetId); }
+      catch (error) { settleTurnstile(error); }
     });
     publicMessageTurnstileWidgetId = turnstile.render(slot, {
       sitekey: challenge.siteKey,
@@ -2865,10 +2911,10 @@ async function loadPublicMessagePuzzleChallenge() {
       appearance: "interaction-only",
       execution: "execute",
       action: challenge.action || "portfolio_message_create",
-      callback: (token) => { pendingTurnstileResolve?.(cleanText(token)); pendingTurnstileResolve = null; pendingTurnstileReject = null; },
-      "expired-callback": () => { pendingTurnstileReject?.(new Error("Secure browser verification expired.")); pendingTurnstileResolve = null; pendingTurnstileReject = null; },
-      "error-callback": () => { pendingTurnstileReject?.(new Error("Secure browser verification could not complete.")); pendingTurnstileResolve = null; pendingTurnstileReject = null; },
-      "timeout-callback": () => { pendingTurnstileReject?.(new Error("Secure browser verification timed out.")); pendingTurnstileResolve = null; pendingTurnstileReject = null; }
+      callback: (token) => settleTurnstile(null, token),
+      "expired-callback": () => { settleTurnstile(new Error("Secure browser verification expired.")); return true; },
+      "error-callback": () => { settleTurnstile(new Error("Secure browser verification could not complete.")); return true; },
+      "timeout-callback": () => { settleTurnstile(new Error("Secure browser verification timed out.")); return true; }
     });
 
     const resetSamePuzzle = (message = "Try the same puzzle again.", retryChallenge = null) => {
@@ -2914,6 +2960,10 @@ async function loadPublicMessagePuzzleChallenge() {
         await sendPendingPublicMessage(verified.verificationToken);
       } catch (error) {
         if (status) { status.textContent = error?.message || "Secure verification could not complete. Please try again."; status.className = "public-message-puzzle-status is-error"; }
+        // Reuse the same server challenge, but never reuse a stale Turnstile token.
+        if (publicMessageTurnstileWidgetId != null) {
+          try { turnstile.reset?.(publicMessageTurnstileWidgetId); } catch {}
+        }
         slider.disabled = false;
         if (label) label.textContent = "Slide to complete the puzzle";
       }

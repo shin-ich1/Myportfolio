@@ -8,6 +8,7 @@ on:
       - fix/public-photo-media-visible-loading-20261025
       - fix/public-shared-media-priority-20261025
       - fix/public-static-renditions-startup-20261025
+      - fix/public-message-puzzle-browser-reliability-20261030
 
 permissions:
   contents: read

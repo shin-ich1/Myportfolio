@@ -30,6 +30,14 @@ jobs:
       - name: Verify repository security and Public Message contract tests
         run: |
           node --test tests/public-message-expired-puzzle-recovery.test.mjs tests/production-public-security-integration.test.mjs tests/production-candidate-contract.test.mjs tests/public-turnstile-mobile-regression.test.mjs tests/public-turnstile-lifecycle-regression.test.mjs
+      - name: Full available non-emulator test suite (no live endpoints)
+        shell: bash
+        run: |
+          mapfile -t files < <(find tests -maxdepth 1 -name '*.test.mjs' \
+            ! -name 'firestore-backup-restore-emulator.test.mjs' \
+            ! -name 'firestore-security-emulator.test.mjs' | sort)
+          echo "Running ${#files[@]} test files; Firestore emulator-only suites not run here"
+          LAN_TEST_CHROME=/usr/bin/google-chrome node --test "${files[@]}"
       - name: Syntax check Public Message owner
         run: |
           node --check app.js

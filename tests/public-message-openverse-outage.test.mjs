@@ -69,9 +69,9 @@ test("Openverse HTTP 502/503 cannot block Public Message puzzle when a licensed 
   const fixture = workerHarness(async () => ({ok:false, status:502}));
   const image = await bound(fixture.chooseOpenversePuzzleImage({}, "visitor-1"));
   assert.ok(image, "An offline fallback is required when upstream search fails");
-  assert.match(image.sourceUrl, /^https:\/\//);
-  assert.ok(["cc0", "pdm"].includes(image.license), "Fallback must satisfy existing Public Domain/CC0 license policy");
-  assert.match(image.landingUrl, /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/);
+  assert.equal(image.sourceUrl, "", "Offline art must not rely on a remote image host");
+  assert.equal(image.license, "original", "Emergency vector is original artwork, not a mislabelled third-party photo");
+  assert.ok(Number.isInteger(image.localArtworkId), "Image is generated locally by the Worker");
   assert.ok(image.width >= 960 && image.height >= 540, "Fallback must preserve puzzle image quality");
   assert.ok(fixture.fetchCalls >= 1, "Regression reproduces a real upstream search failure");
   const before = fixture.fetchCalls;
@@ -88,7 +88,7 @@ test("A never-settling Openverse fetch must be aborted and use a fallback", asyn
     }, {once:true});
   }));
   const image = await bound(fixture.chooseOpenversePuzzleImage({}, "visitor-3"));
-  assert.ok(image && image.sourceUrl.startsWith("https://"), "Upstream hang must not leave puzzle preparing forever");
+  assert.ok(image && Number.isInteger(image.localArtworkId), "Upstream hang must use locally generated image");
   assert.ok(aborted > 0, "Worker must actually abort slow upstream requests");
 });
 
@@ -114,7 +114,7 @@ test("An outage must have a self-contained same-Worker landscape image when imag
     assert.match(svg, /<svg\b[^>]*viewBox="0 0 960 540"/);
     assert.match(svg, /<linearGradient/);
     assert.match(svg, /<path/);
-    assert.doesNotMatch(svg, /<script|<foreignObject|https?:\/\//i, "Fallback SVG must have no executable or remote content");
+    assert.doesNotMatch(svg.replace("http://www.w3.org/2000/svg",""), /<script|<foreignObject|https?:\/\//i, "Fallback SVG must have no executable or remote content");
   }
   assert.match(src, /Content-Type": "image\/svg\+xml"/, "Worker must deliver the generated fallback on the secured puzzle image route");
   assert.match(src, /if \(image\.localArtworkId != null\)/, "No extra external fetch before serving fallback");

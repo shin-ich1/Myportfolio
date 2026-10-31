@@ -62,3 +62,20 @@ Existing historical overlapping drafts: PR #36 and PR #11; canonical pieces reco
 3. Verify full challenge solve, server-side verification and Public Message delivery plus Admin inbox receipt with a safe test message.
 4. Inspect browser Console/Network timings for `/messages/security/challenge`, image endpoint and Turnstile script. Measure first-image performance versus the current production reference before claiming a performance gain.
 5. Revalidate latest GitHub/production baseline, reconcile dependent PR branches, run full tests, audit final diff, and obtain **separate explicit approval** for merge and production deployment.
+
+
+## Isolated real-browser smoke verification (2026-10-31)
+
+The owner approved a test-only browser harness. Rather than creating another Firebase project or accessing existing staging security records, added \`tests/public-message-browser-smoke.html\` plus an offline \`tests/puzzle-browser-fixture.svg\`. Both are ignored by Firebase Hosting through the existing \`tests/**\` deployment exclusion.
+
+The fixture fetches the **actual branch \`app.js\` text** from its own local web server and executes extracted canonical image preloader, warmup, image-renderer, responsive Turnstile-size expression, and script loader with local test-only values. It never performs real challenge, Turnstile, Firebase or production message network calls.
+
+- Passing CI run: https://github.com/shin-ich1/Myportfolio/actions/runs/41162605472
+- **106/106 Node tests passed** (0 failed/skipped).
+- **Actual headless Chromium** smoke test passed at requested window sizes **375 × 812**, **430 × 932**, **1440 × 900**.
+- Checks in each run: actual SVG fixture loads and paints into an image element despite an unresolved mock Turnstile Promise, responsive compact/flexible selection from canonical source, script-load watchdog, script cancellation on timeout, and successful retry.
+- CI syntax checks passed. No changes made to application behavior or security controls as part of this test harness.
+- This is browser-executed simulation, **not** a proof that live Cloudflare Turnstile challenge rendering, actual iPhone Safari, Android WebView, Facebook/Messenger/Instagram/TikTok in-app browser, Google API image fetch, or delivery to the Admin inbox succeeds.
+- A passing local fixture gives no reliable latency number for the Openverse/production image path. A controlled runtime test with authorized nonproduction credentials and a compatible Turnstile host remains required for a complete release signoff.
+
+No production hosting/Worker deploy, merge, Cloudflare settings, Google Drive, Firebase records or private-message writes were performed.

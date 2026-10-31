@@ -17,8 +17,8 @@ function gitBlobSha(path){
 test('Frozen Public structural sources and exact-reviewed message security assets are pinned',()=>{
   const frozen={
     'index.html':'ba6b29cd5d2a84286850022f9f7ef075df5a73a5',
-    'app.js':'5cad8585b26e41f6020e396b12707a8786a1db0b', // one authorized expired-puzzle recovery within audited Public owner
-    'styles.css':'4c53ce386c1a9630f01f1f1b316903b6805b0bdb', // reviewed Turnstile slot and canonical grid-row overlap correction
+    'app.js':'e128191cbc158dfb87417db8e81430f87aefc3c8', // audited expiry fix and form-level image retry UX
+    'styles.css':'c501127a56458d3fb35eaf760e0b6f050af3c965', // reviewed Turnstile grid, hidden redundant footer and scrollbar
     'public-adaptive.js':'62ec14a5cde2655ce199f5e00085db884b9bcead',
     'public-layout-contract.js':'4c21875d832b06cafad0bebc0ee09b467cbd4ca8',
     'public-section-eligibility.js':'4304cc5a2c2c4d2b6b93a0fd8e49d15044dbe748'

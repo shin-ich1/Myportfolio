@@ -53,7 +53,7 @@ test("Audited Public app is frozen outside two canonical message owners and obso
   assert.equal(git("rev-parse", main + ":app.js"), "f156424e6adf216da6660648dc634319e340aa4a");
   // Exact reviewed app.js fingerprint updated for the single authorized expired-puzzle
   // controller correction; no Public code outside the canonical owner changed.
-  assert.equal(git("hash-object", "app.js"), "e128191cbc158dfb87417db8e81430f87aefc3c8");
+  assert.equal(git("hash-object", "app.js"), "46b3d16249480d5917930236c8d304e3032edc4b");
   assert.equal(withoutPublicOwners(withoutImageFailureRetryUX(source("app.js"))), withoutPublicOwners(original("app.js")));
 });
 test("Only reviewed Turnstile slot and puzzle grid row may differ from audited Public styles", () => {

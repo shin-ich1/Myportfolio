@@ -55,9 +55,13 @@ jobs:
         if: github.ref_name == 'fix/public-message-openverse-outage-20261031'
         shell: bash
         run: |
-          for file in 'Landscape-3773899_1280.jpg' 'Chitkul.JPG' 'Yosemite_valley_and_half_dome_from_glacier_point.jpg' 'Aerial_view_of_the_Clackamas_Wild_and_Scenic_River_(48009760882).jpg'; do
-            echo "Checking Wikimedia Commons fallback: $file"
-            mime=$(curl --silent --show-error --location --max-time 15 --output /dev/null --write-out '%{http_code} %{content_type}' "https://commons.wikimedia.org/wiki/Special:FilePath/$file?width=1024")
+          for path in \
+            '7/72/Landscape-3773899_1280.jpg/1024px-Landscape-3773899_1280.jpg' \
+            '4/4e/Chitkul.JPG/1024px-Chitkul.JPG' \
+            '6/6b/Yosemite_valley_and_half_dome_from_glacier_point.jpg/1024px-Yosemite_valley_and_half_dome_from_glacier_point.jpg' \
+            '9/9a/Aerial_view_of_the_Clackamas_Wild_and_Scenic_River_%2848009760882%29.jpg/1024px-Aerial_view_of_the_Clackamas_Wild_and_Scenic_River_%2848009760882%29.jpg'; do
+            echo "Checking direct Wikimedia photo CDN: $path"
+            mime=$(curl --silent --show-error --location --max-time 15 --output /dev/null --write-out '%{http_code} %{content_type}' "https://upload.wikimedia.org/wikipedia/commons/thumb/$path")
             case "$mime" in
               "200 image/"*) echo "PASS: fallback image is reachable ($mime)" ;;
               *) echo "FAIL: fallback image unavailable ($mime)"; exit 1 ;;

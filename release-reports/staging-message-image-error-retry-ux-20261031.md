@@ -21,13 +21,13 @@ This was NOT evidence of a server HTTP 429 rate limit. The canonical `loadPublic
 - The existing typed name and message remain in the same form; no automatic send or message creation occurs.
 - On countdown expiry, the Send button is restored and the visitor may explicitly initiate a **new** secure puzzle. Server Turnstile and one-use challenge/proof requirements are unchanged.
 - An intentional wrong answer with a valid image still uses the server's canonical retry/rotation, with a brief visible `Try again — target moved` slider label.
-- The redundant clipped footer status is now **visually hidden but retained for `aria-live` screen readers**. The puzzle card's scrollbar is visually hidden but wheel/touch/keyboard scrolling remains enabled to access expanded Turnstile on smaller screens. The previous `grid-auto-rows:max-content` CSS overlap fix remains intact.
+- The redundant clipped footer status is now **visually hidden but retained for `aria-live` screen readers**. The puzzle card's scrollbar is visually hidden but wheel/touch/keyboard scrolling remains enabled to access expanded Turnstile on smaller screens. The visible slider label now says **Complete browser check below** whenever Cloudflare requires a manual interaction, so the hidden scrollbar does not hide the required action. The previous `grid-auto-rows:max-content` CSS overlap fix remains intact.
 
 ## Regression before and after
 - New targeted test first failed on original source because no form-level image error recovery owner existed: [expected RED CI run 41182117938](https://github.com/shin-ich1/Myportfolio/actions/runs/41182117938).
 - Automated fixture tests cover image-load failure closing the puzzle, disabled Send button, local 10-second countdown and expiry, 429 server deadline, modal unmount/timer cleanup, accessible footer, retry label and guarded form submit.
 - Adjacent existing canonical puzzle tests still verify expired 410 retry, wrong answer, three wrong-answer image replacement, valid proof, and fail-closed state when replacement cannot load.
-- Latest [passing CI run 41182650989](https://github.com/shin-ich1/Myportfolio/actions/runs/41182650989): **6/6 new UX tests; 4/4 real-CSS Chromium desktop/mobile/compact/landscape geometry tests; 31/31 targeted messaging/security tests; 258/258 total available non-emulator Node tests across 44 test files.** JavaScript syntax checks passed. These counts overlap; do not add them as separate independent tests.
+- Latest [passing CI run 41182882556](https://github.com/shin-ich1/Myportfolio/actions/runs/41182882556): **6/6 new UX tests; 4/4 real-CSS Chromium desktop/mobile/compact/landscape geometry tests; 32/32 targeted messaging/security tests; 259/259 total available non-emulator Node tests across 44 test files.** JavaScript syntax checks passed. These counts overlap; do not add them as separate independent tests.
 - **Not run**: two Firestore emulator-only suites requiring a separately isolated emulator. Real Turnstile and end-to-end browser flows remain unverified after this code-only fix.
 - Existing exact blob SHA and audited-source structural guards updated narrowly to permit only reviewed canonical retry UX and visually hidden footer/scrollbar; no general security exclusions.
 
@@ -35,7 +35,7 @@ This was NOT evidence of a server HTTP 429 rate limit. The canonical `loadPublic
 - `app.js`: form-level retry state and countdown in the existing message owner, failure close, 429 handling, retry submit guard, timer lifecycle, concise retry label.
 - `styles.css`: visually hide clipped footer and scrollbar in existing puzzle CSS; preserve scrolling and status live region.
 - `tests/public-message-image-failure-retry-ui.test.mjs`: new failing-then-passing functional UX tests.
-- `tests/public-message-expired-puzzle-recovery.test.mjs`: update canonical fake DOM to include new close/countdown path and confirm 429 behavior; does not remove previous assertions.
+- `tests/public-message-expired-puzzle-recovery.test.mjs`: update canonical fake DOM to include new close/countdown path confirm 429 behavior, and verify the visible manual Cloudflare instruction; does not remove previous assertions.
 - `tests/public-turnstile-overlay-browser.test.mjs`: retain real browser scene/slider/widget separation checks while accounting for explicitly sr-only footer; still verify widget remains within card scroll content.
 - `tests/production-public-security-integration.test.mjs`: strict SHA pins and exact-change scoped normalization, no weakened server security assertion.
 - `tests/production-candidate-contract.test.mjs`: strict reviewed app and stylesheet SHA updates.

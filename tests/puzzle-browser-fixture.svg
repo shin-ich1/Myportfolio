@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" role="img" aria-label="Isolated landscape test fixture">
+<defs><linearGradient id="g" x2="0.8" y2="1"><stop stop-color="#145f83"/><stop offset="1" stop-color="#082534"/></linearGradient></defs>
+<rect width="960" height="540" fill="url(#g)"/>
+<circle cx="745" cy="128" r="68" fill="#f6cc8a" opacity=".9"/>
+<path d="M0 360 L190 215 385 368 570 200 820 360 960 268 V540 H0Z" fill="#25778b"/>
+<path d="M0 447 220 343 425 478 655 318 960 459 V540 H0Z" fill="#0b445f"/>
+</svg>

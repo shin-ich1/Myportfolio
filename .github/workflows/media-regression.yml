@@ -8,6 +8,7 @@ on:
       - fix/public-photo-media-visible-loading-20261025
       - fix/public-shared-media-priority-20261025
       - fix/public-static-renditions-startup-20261025
+      - fix/public-message-first-image-browser-20261030
       - fix/storage-oauth-privacy-page-20261030
 
 permissions:
@@ -24,8 +25,34 @@ jobs:
           node-version: '22'
       - name: Run complete repository test suite
         run: node --test tests/*.test.mjs
+      - name: Headless Chrome Public Message image/browser smoke test (isolated)
+        if: github.ref_name == 'fix/public-message-first-image-browser-20261030'
+        shell: bash
+        run: |
+          python3 -m http.server 9137 --bind 127.0.0.1 >/tmp/message-browser-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..25}; do
+            if curl --silent --fail http://127.0.0.1:9137/tests/public-message-browser-smoke.html >/dev/null; then break; fi
+            sleep 0.2
+          done
+          chrome=$(command -v google-chrome || command -v chromium || true)
+          test -n "$chrome" || { echo "Google Chrome not available on runner"; exit 1; }
+          for viewport in 375,812 430,932 1440,900; do
+            echo "Checking Chrome viewport $viewport"
+            timeout 40s "$chrome" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --force-device-scale-factor=1 --window-size="$viewport" --virtual-time-budget=12000 --dump-dom http://127.0.0.1:9137/tests/public-message-browser-smoke.html > /tmp/message-browser-result.html 2>/tmp/message-browser-chrome.log
+            if ! grep -q 'data-result="pass"' /tmp/message-browser-result.html; then
+              echo "Isolated browser smoke test failed or did not finish at $viewport:"
+              sed -n '/<pre id="results"/,/<\/pre>/p' /tmp/message-browser-result.html | head -70
+              tail -20 /tmp/message-browser-chrome.log || true
+              exit 1
+            fi
+            echo "PASS: canonical image loading and blocked-script retry at $viewport"
+          done
+
       - name: Syntax-check changed JavaScript modules
         run: |
+          node --check tests/public-message-first-image-cross-browser.test.mjs
           node --check app.js
           node --check storage-asset.js
           node --check video-compatibility.js

@@ -21,13 +21,12 @@ Isolated branch: `fix/public-message-openverse-outage-20261031`, based on existi
 All fallback images retain creator/title/landing-page metadata and only use existing `cc0` or `pdm` license values:
 1. CC0 snowy mountains by troubletrace ux: https://commons.wikimedia.org/wiki/File:Landscape-3773899_1280.jpg
 2. Public-domain Chitkul photo by Prolaykundu: https://commons.wikimedia.org/wiki/File:Chitkul.JPG
-3. Public-domain aerial Clackamas River by U.S. Bureau of Land Management: https://commons.wikimedia.org/wiki/File:Aerial_view_of_the_Clackamas_Wild_and_Scenic_River_(48009760882).jpg
-4. Public-domain Yosemite Valley photo by Jon Sullivan: https://commons.wikimedia.org/wiki/File:Yosemite_valley_and_half_dome_from_glacier_point.jpg
+3. Public-domain Yosemite Valley photo by Jon Sullivan: https://commons.wikimedia.org/wiki/File:Yosemite_valley_and_half_dome_from_glacier_point.jpg
 
 ## Reproduced regression and successful test evidence
 - **Red baseline** on original PR #40 Worker code (no fallback/abort): https://github.com/shin-ich1/Myportfolio/actions/runs/41164929962; **107/109 passed, 2 expected failures**: non-OK Openverse results stop challenge; never-settling search blocks beyond the test deadline. The third test confirms fail-closed behavior.
 - **Green branch**: https://github.com/shin-ich1/Myportfolio/actions/runs/41164811623; **109/109 passed**, browser DOM simulation on Chromium at **375×812, 430×932, 1440×900** passed; three checked Wikimedia image redirect endpoints returned **200 image/jpeg**; JS syntax checks passed.
-- CI workflow now also checks all four fallback photo URLs (see subsequent final run).
+- CI workflow checks the three selected fallback photo URLs; the other Wikimedia candidate was excluded after its fourth rapid request returned HTTP 429 during external probing. A direct-thumbnail URL experiment was rejected after a 400 response from the CDN. Neither unverified alternative remains in the final source.
 - The Chromium simulation uses an offline fixture and stub Turnstile/Worker calls; it is **not** end-to-end production browser verification. Curl reachability from GitHub runner is not proof of fetch from a Cloudflare Worker region.
 
 ## Changed files

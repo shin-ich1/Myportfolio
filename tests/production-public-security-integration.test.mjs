@@ -18,6 +18,25 @@ const withoutFunction = (sourceText, start, stop, label) => {
   assert.equal(sourceText.indexOf(start, i + 1), -1);
   return sourceText.slice(0, i) + "[AUDITED " + label + "]" + sourceText.slice(j);
 };
+// Normalize only the explicitly reviewed start-form retry UX additions; the
+// exact full-file SHA above still forbids any other unreviewed source drift.
+const withoutImageFailureRetryUX = sourceText => {
+  let text = sourceText;
+  const patches = [
+    ["let publicMessageRetryTimerId = null;\nlet publicMessageRetryUntil = 0;\n", ""],
+    ["  stopPublicMessageRetryCountdown();\n  publicMessagePuzzleChallenge = null;", "  publicMessagePuzzleChallenge = null;"],
+    ["  if (publicMessageRetryUntil > Date.now()) return;\n", ""]
+  ];
+  for (const [before, after] of patches) {
+    assert.equal(text.split(before).length, 2, "Exactly one approved retry-UX change required");
+    text = text.replace(before, after);
+  }
+  const begin = text.indexOf("function stopPublicMessageRetryCountdown() {");
+  const end = text.indexOf("function closePublicMessagePuzzleVerification(", begin);
+  assert.ok(begin > 0 && end > begin, "Exactly one canonical retry timer must precede puzzle close");
+  assert.equal(text.indexOf("function stopPublicMessageRetryCountdown() {", begin + 1), -1);
+  return text.slice(0, begin) + text.slice(end);
+};
 const withoutPublicOwners = text => {
   let result = text.replace(/^  getPrivateVisitorThread,\n/m, ""); // obsolete consumer removed
   result = withoutFunction(result, "async function loadPublicMessagePuzzleChallenge() {", "\nasync function openPublicMessagePuzzleVerification(", "Turnstile verifier");
@@ -34,18 +53,29 @@ test("Audited Public app is frozen outside two canonical message owners and obso
   assert.equal(git("rev-parse", main + ":app.js"), "f156424e6adf216da6660648dc634319e340aa4a");
   // Exact reviewed app.js fingerprint updated for the single authorized expired-puzzle
   // controller correction; no Public code outside the canonical owner changed.
-  assert.equal(git("hash-object", "app.js"), "5cad8585b26e41f6020e396b12707a8786a1db0b");
-  assert.equal(withoutPublicOwners(source("app.js")), withoutPublicOwners(original("app.js")));
+  assert.equal(git("hash-object", "app.js"), "e128191cbc158dfb87417db8e81430f87aefc3c8");
+  assert.equal(withoutPublicOwners(withoutImageFailureRetryUX(source("app.js"))), withoutPublicOwners(original("app.js")));
 });
 test("Only reviewed Turnstile slot and puzzle grid row may differ from audited Public styles", () => {
   assert.equal(git("rev-parse", main + ":styles.css"), "ec2f4078616f7435a5c9cc1a646fa44eb9db5f4c");
-  assert.equal(git("hash-object", "styles.css"), "4c53ce386c1a9630f01f1f1b316903b6805b0bdb");
+  assert.equal(git("hash-object", "styles.css"), "c501127a56458d3fb35eaf760e0b6f050af3c965");
   const patch = "grid-auto-rows:max-content;";
-  const reviewed = withoutTurnstileSlot(source("styles.css"));
+  let reviewed = withoutTurnstileSlot(source("styles.css"));
   assert.equal(reviewed.split(patch).length, 2, "Exactly one reviewed canonical grid-row correction");
   const owner = ".public-message-puzzle-card{--public-puzzle-progress:0%;display:grid;";
   assert.ok(reviewed.includes(owner + patch), "Grid-row correction must be at canonical puzzle card owner");
-  assert.equal(reviewed.replace(owner + patch, owner), withoutTurnstileSlot(original("styles.css")));
+  reviewed = reviewed.replace(owner + patch, owner);
+  const scopedChanges = [
+    ["overflow:auto;scrollbar-width:none}.public-message-puzzle-card::-webkit-scrollbar{display:none}",
+      "overflow:auto}"],
+    [".public-message-puzzle-foot{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}",
+      ".public-message-puzzle-foot{display:grid;min-width:0}"]
+  ];
+  for (const [before, after] of scopedChanges) {
+    assert.equal(reviewed.split(before).length, 2, "Exactly one reviewed hidden-status/scrollbar owner");
+    reviewed = reviewed.replace(before, after);
+  }
+  assert.equal(reviewed, withoutTurnstileSlot(original("styles.css")));
 });
 test("Public messaging Firestore module preserves all other canonical functions", () => {
   assert.equal(git("rev-parse", main + ":message-service.js"), "764a353722a63067b0335f80c17c09fbbfc00a06");

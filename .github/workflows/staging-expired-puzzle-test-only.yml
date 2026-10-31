@@ -1,0 +1,23 @@
+name: Staging-only expired puzzle regression (NO DEPLOY)
+
+on:
+  push:
+    branches:
+      - fix/staging-message-expired-puzzle-only-20261031
+
+permissions:
+  contents: read
+
+jobs:
+  staging-puzzle-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run complete available repository test suite (no deploy)
+        run: node --test tests/*.test.mjs
+      - name: Syntax check canonical Public Message frontend
+        run: node --check app.js

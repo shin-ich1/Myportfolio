@@ -76,8 +76,16 @@ for (const scenario of cases) {
       "Puzzle scene must be above slider, not behind it: " + JSON.stringify(result));
     assert.ok(result.slider.bottom <= result.widget.top + 1,
       "Slider must be above expanded Turnstile: " + JSON.stringify(result));
-    assert.ok(result.widget.bottom <= result.foot.top + 1,
-      "Expanded Turnstile must not cover status/footer: " + JSON.stringify(result));
+    // When the redundant live-status text is intentionally screen-reader-only,
+    // it is out of the grid; still demand the actual Turnstile stays within
+    // the scrollable card and never overlaps the scene or slider.
+    if (result.foot.width < 2 && result.foot.height < 2) {
+      assert.ok(result.widget.bottom <= result.card.top + result.card.scrollHeight + 3,
+        "Expanded Turnstile must remain within scrollable card content: " + JSON.stringify(result));
+    } else {
+      assert.ok(result.widget.bottom <= result.foot.top + 1,
+        "Expanded Turnstile must not cover visible status/footer: " + JSON.stringify(result));
+    }
     assert.ok(Math.abs(result.scene.height - result.scene.width * 9 / 16) < 3,
       "Puzzle image aspect ratio must be preserved while Turnstile expands: " + JSON.stringify(result));
     assert.ok(result.card.scrollHeight >= result.card.clientHeight,

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 // Run the actual canonical app.js puzzle controller with fake DOM/network.
 // No Cloudflare, Firestore, credentials, localhost Worker, or private messages.
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
-const start = app.indexOf("async function loadPublicMessagePuzzleChallenge()");
+const start = app.indexOf("function stopPublicMessageRetryCountdown()");
 const end = app.indexOf("\nasync function openPublicMessagePuzzleVerification(", start);
 assert.ok(start >= 0 && end > start, "One canonical Public Message puzzle owner");
 const controller = app.slice(start, end);
@@ -25,6 +25,8 @@ function createBrowserPuzzle({
     closest: () => ({ style: { setProperty() {} } })
   };
   const status = { textContent: "", className: "" };
+  const formStatus = { textContent: "", className:"", isConnected:true };
+  const button = { disabled:false, isConnected:true };
   const label = { textContent: "" };
   const style = { removeProperty() {}, setProperty() {} };
   const scene = { style };
@@ -43,11 +45,12 @@ function createBrowserPuzzle({
     ["[data-public-puzzle-status]", status],
     ["[data-public-turnstile-slot]", {parentElement:{getBoundingClientRect:()=>({width:350})}}]
   ]);
-  const layer = { querySelector: selector => nodes.get(selector) || null };
-  const document = { querySelector: selector => selector === "[data-public-puzzle-layer]" ? layer : null };
+  const layer = { hidden:false, querySelector: selector => nodes.get(selector) || null };
+  const document = { querySelector: selector => ({ "[data-public-puzzle-layer]":layer, "[data-public-message-send]":button, "[data-public-message-status]":formStatus }[selector] || null) };
   const window = {
     turnstile, addEventListener() {}, removeEventListener() {},
-    setTimeout() { return 1; }, clearTimeout() {}
+    setTimeout() { return 1; }, clearTimeout() {},
+    setInterval() { return 2; }, clearInterval() {}
   };
   const deps = {
     document, window, ResizeObserver: class { observe() {} disconnect() {} },
@@ -81,11 +84,13 @@ function createBrowserPuzzle({
     "let publicMessagePuzzleChallenge = null, publicMessagePuzzleAnswer = 0;\n" +
     "let publicMessageTurnstileCancel = null, publicMessageTurnstileWidgetId = null;\n" +
     "let publicMessagePuzzleResizeObserver = null, publicMessagePuzzleResizeFallbackCleanup = null;\n" +
+    "let publicMessagePendingSubmission = null, publicMessageRetryUntil = 0, publicMessageRetryTimerId = null;\n" +
     controller +
     "\nreturn {load:loadPublicMessagePuzzleChallenge, currentChallenge:()=>publicMessagePuzzleChallenge?.challengeId || null};");
   const api=factory(...keys.map(k=>deps[k]));
   return {
-    ...api, slider, status, label,
+    ...api, slider, status, label, layer, formStatus, button,
+    showInteractiveCheck() { widgetOptions?.["before-interactive-callback"]?.(); },
     get created() { return created; },
     get sent() { return sent; },
     get verificationCalls(){return verificationCalls;},
@@ -119,6 +124,7 @@ test("If expired challenge replacement fails, slider remains disabled and invali
   await view.slider.onchange();
   assert.equal(view.created,2);
   assert.equal(view.currentChallenge(),null);
+  assert.equal(view.layer.hidden,true,"Failed replacement must close the unusable puzzle");
   assert.equal(view.slider.disabled,true,"No slider until a valid fresh challenge is available");
   assert.match(view.status.textContent,/unavailable|expired|try again/i);
   assert.equal(view.sent,0);
@@ -168,4 +174,28 @@ test("A successful server verification proof is still mandatory for message crea
   view.slider.value="40";
   await view.slider.onchange();
   assert.equal(view.sent,1,"Only canonical secure server proof calls message creation");
+});
+
+test("An authoritative 429 response closes verification and displays the server retryAt in the message form", async () => {
+  const retryAt=new Date(Date.now()+90_000).toISOString();
+  const view=createBrowserPuzzle({verify:async()=>{throw Object.assign(new Error("Slow down"),{
+    status:429,code:"message-rate-window",retryAt
+  });}});
+  await view.load();
+  view.slider.value="18";
+  await view.slider.onchange();
+  assert.equal(view.layer.hidden,true);
+  assert.equal(view.slider.disabled,true);
+  assert.equal(view.button.disabled,true);
+  assert.match(view.formStatus.textContent,/Too many verification requests/);
+  assert.match(view.formStatus.textContent,/9\d?s/);
+  assert.equal(view.sent,0);
+});
+
+test("A manual Turnstile prompt visibly tells visitors to scroll for the browser check", async () => {
+  const view=createBrowserPuzzle({verify:async()=>({outcome:"retry",challenge:{targetPercent:50}})});
+  await view.load();
+  view.showInteractiveCheck();
+  assert.match(view.label.textContent,/browser check below/i);
+  assert.equal(view.sent,0);
 });

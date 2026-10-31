@@ -2354,6 +2354,8 @@ let publicMessagePendingSubmission = null;
 let publicMessagePuzzleResizeObserver = null;
 let publicMessagePuzzleWarmupPromise = null;
 let publicMessagePuzzleWarmup = null;
+let publicMessageRetryTimerId = null;
+let publicMessageRetryUntil = 0;
 const PUBLIC_MESSAGE_PUZZLE_WARMUP_MAX_AGE_MS = 2 * 60 * 1000;
 const PUBLIC_MESSAGE_PUZZLE_NEXT_WARMUP_DELAY_MS = 120;
 
@@ -2527,6 +2529,7 @@ async function takePublicMessagePuzzleWarmup() {
 }
 
 function destroyPublicMessagePuzzleVerification() {
+  stopPublicMessageRetryCountdown();
   publicMessagePuzzleChallenge = null;
   publicMessagePuzzleAnswer = 0;
   publicMessagePendingSubmission = null;
@@ -2607,6 +2610,49 @@ function syncPublicMessagePuzzleGeometry() {
   pieceImage.style.height = `${rect.height}px`;
   pieceImage.style.left = `${-targetLeft}px`;
   pieceImage.style.top = `${-top}px`;
+}
+
+function stopPublicMessageRetryCountdown() {
+  if (publicMessageRetryTimerId != null) window.clearInterval(publicMessageRetryTimerId);
+  publicMessageRetryTimerId = null;
+  publicMessageRetryUntil = 0;
+}
+
+function beginPublicMessageRetryCountdown(error) {
+  const button = document.querySelector("[data-public-message-send]");
+  const status = document.querySelector("[data-public-message-status]");
+  if (!button || !status) return;
+  stopPublicMessageRetryCountdown();
+
+  // The Worker owns actual 429 rate-limit timing. An image-load failure has
+  // no server retryAt, so this is only a short local retry delay—not a claim
+  // that the server has lifted a rate limit.
+  const now = Date.now();
+  const serverRetryAt = error?.status === 429 ? Date.parse(String(error?.retryAt || "")) : NaN;
+  const hasServerLimit = Number.isFinite(serverRetryAt) && serverRetryAt > now;
+  publicMessageRetryUntil = hasServerLimit ? serverRetryAt : now + 10_000;
+
+  const update = () => {
+    if (!button.isConnected || !status.isConnected) {
+      stopPublicMessageRetryCountdown();
+      return;
+    }
+    const remaining = Math.max(0, Math.ceil((publicMessageRetryUntil - Date.now()) / 1000));
+    if (remaining) {
+      button.disabled = true;
+      status.className = "public-message-status-error";
+      status.textContent = hasServerLimit
+        ? `Too many verification requests. Retry in ${remaining}s.`
+        : `Verification image unavailable. Retry verification in ${remaining}s.`;
+      return;
+    }
+    stopPublicMessageRetryCountdown();
+    button.disabled = false;
+    status.className = "";
+    status.textContent = "You can try sending your message again.";
+  };
+  update();
+  if (publicMessageRetryUntil > 0) publicMessageRetryTimerId = window.setInterval(update, 1000);
 }
 
 function closePublicMessagePuzzleVerification({ preserveSubmission = false } = {}) {
@@ -2730,6 +2776,10 @@ async function loadPublicMessagePuzzleChallenge() {
         if (!slider.disabled && status) status.textContent = "Browser check ready. Slide the puzzle to continue.";
       },
       "before-interactive-callback": () => {
+        // The long status below the puzzle is accessible but visually hidden.
+        // Keep the required manual Cloudflare interaction discoverable when
+        // the visitor must scroll inside a compact puzzle card.
+        if (label) label.textContent = "Complete browser check below";
         if (status) status.textContent = slider.disabled
           ? "Complete the Cloudflare check below to finish verification."
           : "Complete the Cloudflare check below, then slide the puzzle.";
@@ -2756,7 +2806,7 @@ async function loadPublicMessagePuzzleChallenge() {
       setPublicMessagePuzzleSlider(slider, 0);
       syncPublicMessagePuzzleGeometry();
       slider.disabled = false;
-      if (label) label.textContent = "Slide to complete the puzzle";
+      if (label) label.textContent = "Try again — target moved";
       if (status) { status.textContent = message; status.className = "public-message-puzzle-status is-error"; }
     };
 
@@ -2790,6 +2840,13 @@ async function loadPublicMessagePuzzleChallenge() {
         if (status) { status.textContent = "Verified. Sending your message…"; status.className = "public-message-puzzle-status is-success"; }
         await sendPendingPublicMessage(verified.verificationToken);
       } catch (error) {
+        if (error?.status === 429) {
+          // The Worker supplies the actual retryAt when a rate window is active.
+          // Do not keep a spent/blocked verification proof in the puzzle.
+          closePublicMessagePuzzleVerification();
+          beginPublicMessageRetryCountdown(error);
+          return;
+        }
         if (error?.code === "message-puzzle-expired" && error?.status === 410) {
           // Server-deleted challenges can never be retried. Only the existing
           // challenge loader may restore a usable slider with a fresh proof.
@@ -2821,6 +2878,12 @@ async function loadPublicMessagePuzzleChallenge() {
     slider.disabled = true;
     if (label) label.textContent = "Verification unavailable";
     if (status) { status.textContent = error?.message || "Secure human verification is unavailable."; status.className = "public-message-puzzle-status is-error"; }
+    // Do not leave an image-less puzzle and unusable slider on screen.
+    // Preserve form fields by closing only the puzzle layer, not its form.
+    if (!layer.hidden) {
+      closePublicMessagePuzzleVerification();
+      beginPublicMessageRetryCountdown(error);
+    }
   }
 }
 
@@ -3030,6 +3093,7 @@ async function submitPublicMessage(event) {
   event?.preventDefault?.();
   const form = event?.currentTarget;
   if (!form) return;
+  if (publicMessageRetryUntil > Date.now()) return;
   const status = form.querySelector("[data-public-message-status]");
   const data = new FormData(form);
   const name = cleanText(data.get("name"));

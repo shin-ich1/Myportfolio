@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Isolated Public Message browser smoke test</title>
+  <style>
+    body { background:#07111e; color:#e6f2ff; font:16px system-ui,sans-serif; margin:2rem auto; max-width:38rem; padding:0 1rem }
+    .scene { width:min(100%,27rem); aspect-ratio:16/9; overflow:hidden; border:1px solid #67b8ff; border-radius:12px }
+    .scene img { display:block; width:100%; height:100%; object-fit:cover }
+    pre { white-space:pre-wrap; font-size:.8rem; }
+  </style>
+</head>
+<body data-result="running">
+<h1>Public Message puzzle — isolated browser test</h1>
+<p>Tests extracted production puzzle helpers with a local illustration and simulated verification only. No live services, secrets or messages.</p>
+<div class="scene" id="scene"><img id="first-image" alt="Isolated test landscape"></div>
+<pre id="results">Starting…</pre>
+<script>
+(async () => {
+  const lines = [];
+  const result = document.querySelector('#results');
+  function check(ok, description) {
+    if (!ok) throw new Error(description);
+    lines.push('PASS: ' + description);
+  }
+  try {
+    const response = await fetch('../app.js', {cache:'no-store'});
+    check(response.ok, 'PR branch app.js is reachable locally');
+    const app = await response.text();
+    const slice = (a, b) => {
+      const start = app.indexOf(a);
+      const end = app.indexOf(b, start + a.length);
+      if (start < 0 || end <= start) throw new Error('Expected canonical source owner: ' + a);
+      return app.slice(start,end);
+    };
+    const preloadCode = slice('function preloadPublicMessagePuzzleImage(', '\nfunction discardPublicMessagePuzzleWarmup(');
+    const warmCode = slice('function publicMessagePuzzleWarmupFresh()', '\nasync function takePublicMessagePuzzleWarmup()');
+    const imageCode = slice('function loadPublicMessagePuzzleImage(', '\nfunction setPublicMessagePuzzleSlider(');
+    const scriptCode = slice('function loadPublicMessageTurnstileApi()', '\nfunction preloadPublicMessagePuzzleImage(');
+    const sourceUrl = new URL('puzzle-browser-fixture.svg', location.href).href;
+    const challenge = {
+      challengeId:'isolated-browser-test',
+      siteKey:'isolated-test-not-real',
+      image:{url:sourceUrl,width:960,height:540}
+    };
+    let turnstileReady;
+    const blockedTurnstile = new Promise(resolve => { turnstileReady=resolve; });
+    const factory = new Function('createPrivateMessageChallenge', 'loadPublicMessageTurnstileApi', 'publicMessagePuzzleImageUrl',
+      'syncPublicMessagePuzzleAspect', 'PUBLIC_MESSAGE_PUZZLE_WARMUP_MAX_AGE_MS',
+      'let publicMessagePuzzleWarmupPromise=null, publicMessagePuzzleWarmup=null;\n' +
+      preloadCode + '\n' + warmCode + '\n' + imageCode +
+      '\nreturn { warmPublicMessagePuzzleChallenge, loadPublicMessagePuzzleImage };');
+    const api = factory(
+      async () => challenge,
+      () => blockedTurnstile,
+      data => data?.image?.url || '',
+      (scene, image, metadata) => scene.style.setProperty('--public-puzzle-aspect',
+        String((image.naturalWidth || metadata.width)/(image.naturalHeight || metadata.height))),
+      120000
+    );
+    // The external verification script intentionally never resolves.
+    // A correct first-image path must not wait for it.
+    const start = performance.now();
+    const warm = await Promise.race([
+      api.warmPublicMessagePuzzleChallenge(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('First image blocked by Turnstile script')), 2500))
+    ]);
+    const preloadedAt = performance.now()-start;
+    check(warm?.challenge?.challengeId === challenge.challengeId, 'First image preload finishes while verification script is blocked');
+    const img = document.querySelector('#first-image');
+    const piece = document.createElement('img');
+    await api.loadPublicMessagePuzzleImage(img, piece, document.querySelector('#scene'), challenge);
+    check(img.complete && img.naturalWidth === 960, 'Actual Chromium image element rendered the first image');
+    check(img.getBoundingClientRect().width > 0, 'First image visible at current viewport');
+    check(document.querySelector('#scene').style.getPropertyValue('--public-puzzle-aspect') !== '', 'Puzzle image geometry updated');
+
+    const puzzleOwner = slice('async function loadPublicMessagePuzzleChallenge()', '\nasync function openPublicMessagePuzzleVerification(');
+    const match = puzzleOwner.match(/size:\s*(isPublicDocumentFlowMode\(\)\s*\|\|\s*slot\.parentElement\.getBoundingClientRect\(\)\.width\s*<\s*300\s*\?\s*"compact"\s*:\s*"flexible")/);
+    check(Boolean(match), 'Widget sizing comes from the canonical puzzle implementation');
+    const chooseSize = new Function('isPublicDocumentFlowMode','slot','return '+match[1]+';');
+    check(chooseSize(()=>true,{parentElement:{getBoundingClientRect:()=>({width:330})}})==='compact','Mobile uses compact verification widget');
+    check(chooseSize(()=>false,{parentElement:{getBoundingClientRect:()=>({width:270})}})==='compact','Narrow parent uses compact verification widget');
+    check(chooseSize(()=>false,{parentElement:{getBoundingClientRect:()=>({width:370})}})==='flexible','Wide desktop retains flexible widget');
+
+    // Simulate a blocked external script without ever fetching external resources.
+    const timers = new Map(), scripts = [];
+    let nextId = 0;
+    const fakeWindow = {
+      turnstile:null,
+      setTimeout(fn,ms){ const id=++nextId; timers.set(id,{fn,ms}); return id; },
+      clearTimeout(id){ timers.delete(id); }
+    };
+    const fakeDoc = {
+      createElement(){
+        const script={ dataset:{}, handlers:{}, addEventListener(event,fn){this.handlers[event]=fn;}, remove(){this.removed=true;} };
+        scripts.push(script); return script;
+      },
+      head:{appendChild(){}}
+    };
+    const loadScript = new Function('window','document','PUBLIC_MESSAGE_TURNSTILE_SRC',
+      'let publicMessageTurnstileScriptPromise=null;\n' + scriptCode +
+      '\nreturn loadPublicMessageTurnstileApi;')(fakeWindow, fakeDoc, 'https://invalid.example/test-script.js');
+    const stalled = loadScript();
+    check(timers.size===1, 'Blocked script has a bounded watchdog');
+    [...timers.values()][0].fn();
+    await stalled.then(()=>{throw new Error('Stalled script unexpectedly resolved');}, e=>check(/timed out/i.test(e.message),'Stalled script fails safely'));
+    check(scripts[0].removed && timers.size===0,'Failed external script is cleaned up');
+    const retried = loadScript();
+    fakeWindow.turnstile = {render(){}};
+    scripts[1].handlers.load();
+    await retried;
+    check(timers.size===0,'Retry successfully initializes the same loader');
+    turnstileReady(fakeWindow.turnstile);
+    lines.push('Local first-image preload: '+preloadedAt.toFixed(1)+' ms (fixture only)');
+    result.textContent=lines.join('\n');
+    document.body.dataset.result='pass';
+  } catch(error) {
+    result.textContent=lines.concat('FAIL: '+(error?.stack || error)).join('\n');
+    document.body.dataset.result='fail';
+  }
+})();
+</script>
+</body>
+</html>

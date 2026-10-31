@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 // Run the actual canonical app.js puzzle controller with fake DOM/network.
 // No Cloudflare, Firestore, credentials, localhost Worker, or private messages.
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
-const start = app.indexOf("async function loadPublicMessagePuzzleChallenge()");
+const start = app.indexOf("function stopPublicMessageRetryCountdown()");
 const end = app.indexOf("\nasync function openPublicMessagePuzzleVerification(", start);
 assert.ok(start >= 0 && end > start, "One canonical Public Message puzzle owner");
 const controller = app.slice(start, end);
@@ -43,7 +43,7 @@ function createBrowserPuzzle({
     ["[data-public-puzzle-status]", status],
     ["[data-public-turnstile-slot]", {parentElement:{getBoundingClientRect:()=>({width:350})}}]
   ]);
-  const layer = { querySelector: selector => nodes.get(selector) || null };
+  const layer = { hidden:false, querySelector: selector => nodes.get(selector) || null };
   const document = { querySelector: selector => selector === "[data-public-puzzle-layer]" ? layer : null };
   const window = {
     turnstile, addEventListener() {}, removeEventListener() {},
@@ -81,11 +81,12 @@ function createBrowserPuzzle({
     "let publicMessagePuzzleChallenge = null, publicMessagePuzzleAnswer = 0;\n" +
     "let publicMessageTurnstileCancel = null, publicMessageTurnstileWidgetId = null;\n" +
     "let publicMessagePuzzleResizeObserver = null, publicMessagePuzzleResizeFallbackCleanup = null;\n" +
+    "let publicMessagePendingSubmission = null, publicMessageRetryUntil = 0, publicMessageRetryTimerId = null;\n" +
     controller +
     "\nreturn {load:loadPublicMessagePuzzleChallenge, currentChallenge:()=>publicMessagePuzzleChallenge?.challengeId || null};");
   const api=factory(...keys.map(k=>deps[k]));
   return {
-    ...api, slider, status, label,
+    ...api, slider, status, label, layer,
     get created() { return created; },
     get sent() { return sent; },
     get verificationCalls(){return verificationCalls;},
@@ -119,6 +120,7 @@ test("If expired challenge replacement fails, slider remains disabled and invali
   await view.slider.onchange();
   assert.equal(view.created,2);
   assert.equal(view.currentChallenge(),null);
+  assert.equal(view.layer.hidden,true,"Failed replacement must close the unusable puzzle");
   assert.equal(view.slider.disabled,true,"No slider until a valid fresh challenge is available");
   assert.match(view.status.textContent,/unavailable|expired|try again/i);
   assert.equal(view.sent,0);

@@ -49,3 +49,12 @@ Repo: `shin-ich1/Myportfolio`. Isolated branch: `fix/public-message-openverse-ou
 4. Final release baseline and rollback plan. **Separate owner approval is required for merging or deploying LIVE hosting/Worker**.
 
 **No claim that production messaging is fixed.**
+
+## Staging-only preparation (2026-10-31, approved; NOT deployed)
+- Owner authorized use/update of existing `lan-portfolio-staging` Worker for **staging-only** testing. No authorization to change the LIVE `lan-cloudinary-telemetry` Worker or LIVE Firebase Hosting.
+- Owner's Cloudflare dashboard screenshot showed staging Worker `FIREBASE_PROJECT_ID=lan-portfolio-staging`, encrypted staging Firebase service-account credentials, staging Turnstile key/secret, `LAN_STAGING_PORTFOLIO_MESSAGES` and `LAN_STAGING_STORAGE_OAUTH` KV and its own `SECURITY_COORDINATOR`.
+- Recovered the **historical** staging-only namespace IDs from `scripts/staging-targets.json` in `fix/staging-turnstile-variable-preservation-20261011`. Restored staging Wrangler config in `telemetry-worker/wrangler.staging.jsonc` with `keep_vars: true`, `preview_urls: false`, staging-specific KV/DO bindings and only `FIREBASE_PROJECT_ID` plain var. No staging secrets copied into GitHub.
+- Added `tests/staging-worker-release-preflight.test.mjs` to reject production worker name, Firebase project, KV reuse, missing `keep_vars`, accidentally re-enabled preview URLs and committed secrets. This check **cannot verify actual remote namespace IDs/remote source version**.
+- `node --test tests/*.test.mjs` **112/112 pass**, Chrome smoke passes at 375×812, 430×932, 1440×900, and Wrangler `deploy --dry-run --config telemetry-worker/wrangler.staging.jsonc` succeeds with **no cloud deployment**: https://github.com/shin-ich1/Myportfolio/actions/runs/41168644115.
+- **Release blocker before staging deployment:** confirm the exact remote Staging Worker version/bindings/source baseline (latest owner screenshot displays `a3f7d379` manually deployed roughly 16 days earlier). The archived manifest is not proof that the IDs are unchanged. Must preserve existing staging security sessions, inbox records, secrets, observability and rollback/version information.
+- The current Chat connection cannot deploy to Cloudflare or directly inspect Cloudflare account metadata. Production Wrangler config `telemetry-worker/wrangler.jsonc` is NOT a safe staging deployment target. Do not run ordinary `wrangler deploy` without explicit staging configuration and metadata verification.

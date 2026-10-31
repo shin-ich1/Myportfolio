@@ -55,7 +55,7 @@ jobs:
         if: github.ref_name == 'fix/public-message-openverse-outage-20261031'
         shell: bash
         run: |
-          for file in 'Landscape-3773899_1280.jpg' 'Chitkul.JPG' 'Yosemite_valley_and_half_dome_from_glacier_point.jpg'; do
+          for file in 'Landscape-3773899_1280.jpg' 'Chitkul.JPG' 'Yosemite_valley_and_half_dome_from_glacier_point.jpg' 'Aerial_view_of_the_Clackamas_Wild_and_Scenic_River_(48009760882).jpg'; do
             echo "Checking Wikimedia Commons fallback: $file"
             mime=$(curl --silent --show-error --location --max-time 15 --output /dev/null --write-out '%{http_code} %{content_type}' "https://commons.wikimedia.org/wiki/Special:FilePath/$file?width=1024")
             case "$mime" in

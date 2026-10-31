@@ -42,6 +42,23 @@ jobs:
           exit 1
       - name: Exercise local Worker challenge generation and real image delivery
         run: node tests/message-worker-runtime-smoke.mjs
+      - name: Diagnose external image fetching inside isolated workerd
+        if: always()
+        shell: bash
+        run: |
+          npx --yes --package=wrangler@4.156.0 wrangler dev --local \
+            --config tests/wrangler-message-image-probe.jsonc \
+            --ip 127.0.0.1 --port 8789 \
+            --persist-to /tmp/lan-msg-probe > /tmp/lan-msg-probe.log 2>&1 &
+          probe_pid=$!
+          trap 'kill "$probe_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..20}; do
+            if curl -sS --fail --max-time 2 http://127.0.0.1:8789/ready >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl --silent --show-error --max-time 50 http://127.0.0.1:8789/probe || true
+          echo
+          tail -35 /tmp/lan-msg-probe.log || true
       - name: Always inspect runtime logs and stop local server
         if: always()
         shell: bash

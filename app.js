@@ -2776,6 +2776,10 @@ async function loadPublicMessagePuzzleChallenge() {
         if (!slider.disabled && status) status.textContent = "Browser check ready. Slide the puzzle to continue.";
       },
       "before-interactive-callback": () => {
+        // The long status below the puzzle is accessible but visually hidden.
+        // Keep the required manual Cloudflare interaction discoverable when
+        // the visitor must scroll inside a compact puzzle card.
+        if (label) label.textContent = "Complete browser check below";
         if (status) status.textContent = slider.disabled
           ? "Complete the Cloudflare check below to finish verification."
           : "Complete the Cloudflare check below, then slide the puzzle.";

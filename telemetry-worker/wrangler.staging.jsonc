@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lan-portfolio-staging",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-15",
+  "preview_urls": false,
+  "keep_vars": true,
+  "observability": { "enabled": true, "logs": { "enabled": true } },
+  "kv_namespaces": [
+    { "binding": "PORTFOLIO_MESSAGES", "id": "2802de517de743a6b4b2d1620b097bf7" },
+    { "binding": "STORAGE_OAUTH", "id": "8cdeb79f52944659a71101381f041152" }
+  ],
+  "vars": {
+    "FIREBASE_PROJECT_ID": "lan-portfolio-staging"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "SECURITY_COORDINATOR", "class_name": "SecurityCoordinator" }
+    ]
+  },
+  "exports": {
+    "SecurityCoordinator": { "type": "durable-object", "storage": "sqlite" }
+  }
+}

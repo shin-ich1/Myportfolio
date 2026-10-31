@@ -1426,6 +1426,32 @@ const MESSAGE_PUZZLE_READY_POOL_TTL_SECONDS = 6 * 60 * 60;
 const MESSAGE_PUZZLE_READY_POOL_TARGET = 8;
 const MESSAGE_PUZZLE_READY_POOL_SEARCHES = 3;
 const MESSAGE_PUZZLE_READY_POOL_PRIME_BATCH = 4;
+const MESSAGE_PUZZLE_OPENVERSE_SEARCH_TIMEOUT_MS = 5000;
+const MESSAGE_PUZZLE_IMAGE_FETCH_TIMEOUT_MS = 3500;
+// A small public-domain photo catalog keeps the puzzle usable during search
+// outages. Server-side geometry, origin binding, rate limits, and Turnstile
+// remain required. Image rights and attributions are in the release report.
+const MESSAGE_PUZZLE_PUBLIC_DOMAIN_FALLBACK = Object.freeze([
+  { file:"Landscape-3773899_1280.jpg", title:"Snowy mountain landscape", creator:"troubletrace ux", license:"cc0", width:1280, height:853 },
+  { file:"Chitkul.JPG", title:"Chitkul mountain valley", creator:"Prolaykundu", license:"pdm", width:1280, height:720 },
+  { file:"Aerial_view_of_the_Clackamas_Wild_and_Scenic_River_(48009760882).jpg", title:"Clackamas River aerial landscape", creator:"Bureau of Land Management", license:"pdm", width:1280, height:720 },
+  { file:"Yosemite_valley_and_half_dome_from_glacier_point.jpg", title:"Yosemite Valley and Half Dome", creator:"Jon Sullivan", license:"pdm", width:1280, height:960 }
+]);
+const MESSAGE_PUZZLE_FALLBACK_CACHE_TTL_SECONDS = 120;
+function publicDomainPuzzleFallbackPool() {
+  return MESSAGE_PUZZLE_PUBLIC_DOMAIN_FALLBACK.map((item) => {
+    const file = encodeURIComponent(item.file);
+    const sourceUrl = "https://commons.wikimedia.org/wiki/Special:FilePath/" + file + "?width=1024";
+    return {
+      id: "commons-pdm-" + item.file.replace(/[^A-Za-z0-9_-]/g, "_"),
+      sourceUrl, previewUrl: sourceUrl,
+      landingUrl: "https://commons.wikimedia.org/wiki/File:" + file,
+      title:item.title, creator:item.creator, license:item.license, licenseVersion:"",
+      width:item.width, height:item.height, qualityScore:item.width*item.height,
+      source:"Wikimedia Commons"
+    };
+  });
+}
 const MESSAGE_PUZZLE_IMAGE_QUERIES = Object.freeze([
   "landscape photography",
   "nature photography",
@@ -1648,7 +1674,7 @@ async function loadOpenversePuzzleImagePool(env, queryIndex, page) {
   url.searchParams.set("page_size", String(MESSAGE_PUZZLE_IMAGE_PAGE_SIZE));
   url.searchParams.set("aspect_ratio", "wide");
   url.searchParams.set("size", "large");
-  const response = await fetch(url.href, { headers: { Accept: "application/json" } });
+  const response = await fetch(url.href, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(MESSAGE_PUZZLE_OPENVERSE_SEARCH_TIMEOUT_MS) });
   if (!response.ok) {
     throw serviceError("Verification image service is temporarily unavailable.", { status: 503, code: "message-puzzle-image-search", source: "openverse" });
   }
@@ -1709,7 +1735,20 @@ async function readyOpenversePuzzleImagePool(env, { refresh = false } = {}) {
     if (Array.isArray(cached) && cached.length) return cached;
   }
   if (!messagePuzzleReadyPoolPromise) {
-    messagePuzzleReadyPoolPromise = buildReadyOpenversePuzzleImagePool(env).finally(() => { messagePuzzleReadyPoolPromise = null; });
+    messagePuzzleReadyPoolPromise = (async () => {
+      try {
+        return await buildReadyOpenversePuzzleImagePool(env);
+      } catch {
+        // Use the existing KV ready-pool owner for a short-lived outage
+        // fallback. Every candidate is still checked by primePuzzleImage;
+        // unavailable images cannot create verification proofs.
+        const fallback = publicDomainPuzzleFallbackPool();
+        await store.put(privateMessageReadyImagePoolKey(), JSON.stringify(fallback), {
+          expirationTtl: MESSAGE_PUZZLE_FALLBACK_CACHE_TTL_SECONDS
+        });
+        return fallback;
+      }
+    })().finally(() => { messagePuzzleReadyPoolPromise = null; });
   }
   return messagePuzzleReadyPoolPromise;
 }
@@ -1722,6 +1761,8 @@ async function chooseOpenversePuzzleImage(env, binding) {
 
   for (let pass = 0; pass < 2; pass += 1) {
     const pool = await readyOpenversePuzzleImagePool(env, { refresh: pass > 0 });
+    // Retrying the same static catalog cannot fix an outage and only stalls.
+    if (pass > 0 && pool[0]?.source === "Wikimedia Commons") break;
     const unseen = pool.filter((image) => !recentIds.has(image.id));
     const candidates = [...(unseen.length ? unseen : pool)];
     while (candidates.length) {
@@ -1750,7 +1791,8 @@ async function fetchPuzzleImageCandidate(image = {}) {
   for (const candidate of candidates) {
     const response = await fetch(candidate, {
       headers: { Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8" },
-      redirect: "follow"
+      redirect: "follow",
+      signal: AbortSignal.timeout(MESSAGE_PUZZLE_IMAGE_FETCH_TIMEOUT_MS)
     }).catch(() => null);
     const contentType = String(response?.headers?.get("Content-Type") || "").toLowerCase();
     if (response?.ok && contentType.startsWith("image/")) return { response, url: candidate };
@@ -1880,7 +1922,7 @@ async function handleMessagePuzzleChallenge(request, env) {
         landingUrl: image.landingUrl,
         width: image.width,
         height: image.height,
-        source: "Openverse"
+        source: image.source || "Openverse"
       },
       siteKey: turnstile.siteKey,
       action: PRIVATE_MESSAGE_ACTION,

@@ -37,6 +37,12 @@ const run = async () => {
   assert.match(image.headers.get("content-type")||"",/^image\//i,"must deliver actual image bytes");
   const bytes=await image.arrayBuffer();
   assert.ok(bytes.byteLength>1024,"image payload must be nonempty and usable");
+  if (payload.image.source === "LAN Portfolio") {
+    assert.match(image.headers.get("content-type")||"", /image\/svg\+xml/);
+    const markup = new TextDecoder().decode(bytes);
+    assert.match(markup, /<svg[^>]*viewBox="0 0 960 540"/);
+    assert.doesNotMatch(markup, /<script|<foreignObject/i);
+  }
   console.log("PASS: real puzzle image endpoint returned "+bytes.byteLength+" bytes, "+image.headers.get("content-type"));
   console.log("PASS: message sending not attempted; no LIVE or staging Firebase calls.");
 };

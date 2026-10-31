@@ -1,0 +1,6 @@
+{
+  "name":"lan-message-image-diagnostic-local-only",
+  "main":"message-image-probe-worker.mjs",
+  "compatibility_date":"2026-08-15",
+  "vars":{"MODE":"TEST_ONLY_NO_CREDENTIALS"}
+}

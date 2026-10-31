@@ -27,7 +27,7 @@ jobs:
       - name: Run complete repository test suite
         run: node --test tests/*.test.mjs
       - name: Headless Chrome Public Message image/browser smoke test (isolated)
-        if: github.ref_name == 'fix/public-message-first-image-browser-20261030'
+        if: github.ref_name == 'fix/public-message-first-image-browser-20261030' || github.ref_name == 'fix/public-message-openverse-outage-20261031'
         shell: bash
         run: |
           python3 -m http.server 9137 --bind 127.0.0.1 >/tmp/message-browser-http.log 2>&1 &
@@ -51,10 +51,24 @@ jobs:
             echo "PASS: canonical image loading and blocked-script retry at $viewport"
           done
 
+      - name: Verify independently hosted public-domain fallback image URLs
+        if: github.ref_name == 'fix/public-message-openverse-outage-20261031'
+        shell: bash
+        run: |
+          for file in 'Landscape-3773899_1280.jpg' 'Chitkul.JPG' 'Yosemite_valley_and_half_dome_from_glacier_point.jpg'; do
+            echo "Checking Wikimedia Commons fallback: $file"
+            mime=$(curl --silent --show-error --location --max-time 15 --output /dev/null --write-out '%{http_code} %{content_type}' "https://commons.wikimedia.org/wiki/Special:FilePath/$file?width=1024")
+            case "$mime" in
+              "200 image/"*) echo "PASS: fallback image is reachable ($mime)" ;;
+              *) echo "FAIL: fallback image unavailable ($mime)"; exit 1 ;;
+            esac
+          done
       - name: Syntax-check changed JavaScript modules
         run: |
           node --check tests/public-message-first-image-cross-browser.test.mjs
           node --check app.js
+          node --check telemetry-worker/src/index.js
+          node --check tests/public-message-openverse-outage.test.mjs
           node --check storage-asset.js
           node --check video-compatibility.js
           node --check admin/services/storageUploadService.js

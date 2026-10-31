@@ -38,6 +38,11 @@ jobs:
                   status=ex.code
                   allowed=ex.headers.get("Access-Control-Allow-Origin","")
                   body=b""
+                  print("Safe HTTP diagnostic:", "status",ex.code,
+                    "content-type",ex.headers.get("Content-Type","unknown"),
+                    "cf-mitigated",ex.headers.get("CF-Mitigated","none"),
+                    "auth-challenge-present",bool(ex.headers.get("WWW-Authenticate")),
+                    "redirect-present",bool(ex.headers.get("Location")))
               except Exception:
                   raise AssertionError("Staging Worker public endpoint unavailable")
               return status,allowed,body

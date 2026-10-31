@@ -1,0 +1,63 @@
+name: Staging Worker public health + origin isolation (READ ONLY)
+
+on:
+  push:
+    branches:
+      - fix/public-message-openverse-outage-20261031
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-staging-preflight:
+    if: github.repository == 'shin-ich1/Myportfolio'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read public staging health and confirm production-origin denial (no secrets or writes)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import urllib.request
+          import urllib.error
+
+          host = "https://lan-portfolio-staging.lagmayr2.workers.dev"
+          def request(path, method, origin=None):
+              headers={"Accept":"application/json"}
+              if origin:
+                  headers.update({"Origin":origin,"Access-Control-Request-Method":"POST"})
+              req=urllib.request.Request(host+path,headers=headers,method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=12) as response:
+                      status=response.status
+                      allowed=response.headers.get("Access-Control-Allow-Origin","")
+                      body=response.read(1500) if method=="GET" else b""
+              except urllib.error.HTTPError as ex:
+                  status=ex.code
+                  allowed=ex.headers.get("Access-Control-Allow-Origin","")
+                  body=b""
+              except Exception:
+                  raise AssertionError("Staging Worker public endpoint unavailable")
+              return status,allowed,body
+
+          status,_,body=request("/health","GET")
+          print("Staging health HTTP",status)
+          assert status==200,"Staging Worker health must respond HTTP 200"
+          health=json.loads(body)
+          assert health.get("ok") is True and health.get("service")=="lan-cloudinary-telemetry","Unexpected staging Worker implementation"
+          for flag in ["firebaseConfigured","securityCoordinatorConfigured","messagePushConfigured","storageOAuthConfigured","messageSecurityConfigured"]:
+              value=health.get(flag)
+              print(flag, "present" if value is True else "missing")
+              assert value is True,"Staging missing required capability: "+flag
+          staging="https://lan-portfolio-staging.web.app"
+          status,allowed,_=request("/messages/security/challenge","OPTIONS",staging)
+          print("Staging-origin OPTIONS HTTP",status,"CORS matches:",allowed==staging)
+          assert status==204 and allowed==staging,"Staging hosting must be an allowed Origin"
+          production="https://rolando-portfolio-3f1a3.web.app"
+          status,allowed,_=request("/messages/security/challenge","OPTIONS",production)
+          print("LIVE-origin OPTIONS HTTP",status,"CORS omitted:",not allowed)
+          assert status==403 and not allowed,"Staging Worker must deny LIVE hosting origins"
+          print("PASS: public-only staging health and origin isolation. No user, message, deployment, or data mutation.")
+          PY

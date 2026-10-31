@@ -1,0 +1,23 @@
+{
+  "$schema": "../telemetry-worker/node_modules/wrangler/config-schema.json",
+  "name": "lan-message-runtime-smoke-only",
+  "main": "../telemetry-worker/src/index.js",
+  "compatibility_date": "2026-08-15",
+  "kv_namespaces": [
+    { "binding": "STORAGE_OAUTH", "id": "00000000000000000000000000000001" },
+    { "binding": "PORTFOLIO_MESSAGES", "id": "00000000000000000000000000000002" }
+  ],
+  "vars": {
+    "FIREBASE_PROJECT_ID": "lan-message-smoke-dummy-project",
+    "FIREBASE_SERVICE_ACCOUNT_EMAIL": "no-real-account@example.invalid",
+    "FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY": "TEST_ONLY_THIS_IS_NOT_A_PRIVATE_KEY"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "SECURITY_COORDINATOR", "class_name": "SecurityCoordinator" }
+    ]
+  },
+  "exports": {
+    "SecurityCoordinator": { "type": "durable-object", "storage": "sqlite" }
+  }
+}

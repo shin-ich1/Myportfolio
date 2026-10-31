@@ -7,6 +7,11 @@ const first = src.indexOf("async function loadOpenversePuzzleImagePool(");
 const last = src.indexOf("\nfunction puzzleImageCacheKey(", first);
 assert.ok(first >= 0 && last > first, "Use the existing canonical Openverse image selection implementation");
 const canonical = src.slice(first, last);
+const fallbackStart = src.indexOf("const MESSAGE_PUZZLE_OPENVERSE_SEARCH_TIMEOUT_MS =");
+const fallbackEnd = fallbackStart >= 0 ? src.indexOf("const MESSAGE_PUZZLE_IMAGE_QUERIES =", fallbackStart) : -1;
+const fallbackOwner = fallbackStart >= 0 && fallbackEnd > fallbackStart
+  ? src.slice(fallbackStart, fallbackEnd) : "";
+
 
 function workerHarness(fetchStub, { prime } = {}) {
   const records = new Map();
@@ -47,6 +52,7 @@ function workerHarness(fetchStub, { prime } = {}) {
     'const privateMessageReadyImagePoolKey = () => "ready-v2";',
     'const safeExternalHttpUrl = (value) => { try { const url = new URL(value); return /^https?:$/.test(url.protocol) ? url.href : ""; } catch { return ""; } };',
     "const normalizeOpenversePuzzleImage = (item) => item;",
+    fallbackOwner,
     canonical,
     "return { chooseOpenversePuzzleImage, readyOpenversePuzzleImagePool };"
   ].join("\n");

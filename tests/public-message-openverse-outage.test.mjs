@@ -99,3 +99,23 @@ test("If no external image can be fetched, fail closed without minting an unveri
   await assert.rejects(bound(fixture.chooseOpenversePuzzleImage({}, "visitor-4")),
     /image|unavailable|prepared/i);
 });
+
+
+test("An outage must have a self-contained same-Worker landscape image when image hosts reject server fetches", () => {
+  // This was reproduced with actual workerd: all tested Commons/upload endpoints
+  // returned 403, even though host-runner curl returned 200.
+  const begin = src.indexOf("function renderOfflinePuzzleLandscapeSvg(");
+  const end = src.indexOf("\nfunction builtInPuzzleFallbackPool(", begin);
+  assert.ok(begin > 0 && end > begin, "Canonical Worker must own a bundled emergency landscape renderer");
+  const owner = src.slice(begin, end);
+  const render = new Function(owner + "\nreturn renderOfflinePuzzleLandscapeSvg;")();
+  for (const variant of [0, 1, 2]) {
+    const svg = render(variant);
+    assert.match(svg, /<svg\b[^>]*viewBox="0 0 960 540"/);
+    assert.match(svg, /<linearGradient/);
+    assert.match(svg, /<path/);
+    assert.doesNotMatch(svg, /<script|<foreignObject|https?:\/\//i, "Fallback SVG must have no executable or remote content");
+  }
+  assert.match(src, /Content-Type": "image\/svg\+xml"/, "Worker must deliver the generated fallback on the secured puzzle image route");
+  assert.match(src, /if \(image\.localArtworkId != null\)/, "No extra external fetch before serving fallback");
+});

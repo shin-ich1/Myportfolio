@@ -10,6 +10,7 @@ on:
       - fix/public-static-renditions-startup-20261025
       - fix/public-message-first-image-browser-20261030
       - fix/public-message-openverse-outage-20261031
+      - fix/public-message-expired-puzzle-recovery-20261031
       - fix/storage-oauth-privacy-page-20261030
 
 permissions:

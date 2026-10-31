@@ -9,6 +9,7 @@ on:
       - fix/public-shared-media-priority-20261025
       - fix/public-static-renditions-startup-20261025
       - fix/public-message-first-image-browser-20261030
+      - fix/public-message-openverse-outage-20261031
       - fix/storage-oauth-privacy-page-20261030
 
 permissions:
@@ -26,7 +27,7 @@ jobs:
       - name: Run complete repository test suite
         run: node --test tests/*.test.mjs
       - name: Headless Chrome Public Message image/browser smoke test (isolated)
-        if: github.ref_name == 'fix/public-message-first-image-browser-20261030'
+        if: github.ref_name == 'fix/public-message-first-image-browser-20261030' || github.ref_name == 'fix/public-message-openverse-outage-20261031'
         shell: bash
         run: |
           python3 -m http.server 9137 --bind 127.0.0.1 >/tmp/message-browser-http.log 2>&1 &
@@ -50,10 +51,22 @@ jobs:
             echo "PASS: canonical image loading and blocked-script retry at $viewport"
           done
 
+      - name: Dry-run staging-only Worker build (never deploy)
+        if: github.ref_name == 'fix/public-message-openverse-outage-20261031'
+        shell: bash
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          npx --yes --package=wrangler@4.156.0 wrangler deploy --dry-run \
+            --config telemetry-worker/wrangler.staging.jsonc \
+            --outdir /tmp/lan-staging-worker-dry-run
+
       - name: Syntax-check changed JavaScript modules
         run: |
           node --check tests/public-message-first-image-cross-browser.test.mjs
           node --check app.js
+          node --check telemetry-worker/src/index.js
+          node --check tests/public-message-openverse-outage.test.mjs
           node --check storage-asset.js
           node --check video-compatibility.js
           node --check admin/services/storageUploadService.js

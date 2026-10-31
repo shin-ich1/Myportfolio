@@ -1,0 +1,72 @@
+name: Isolated Public Message Worker runtime smoke
+
+on:
+  push:
+    branches:
+      - fix/public-message-openverse-outage-20261031
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-message-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CI: "true"
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Start local-only Worker with dummy Firebase project and isolated KV/DO
+        shell: bash
+        run: |
+          mkdir -p /tmp/lan-msg-smoke
+          npx --yes --package=wrangler@4.156.0 wrangler dev --local \
+            --config tests/wrangler-message-runtime-smoke.jsonc \
+            --ip 127.0.0.1 --port 8788 \
+            --persist-to /tmp/lan-msg-smoke > /tmp/lan-msg-smoke-worker.log 2>&1 &
+          echo $! > /tmp/lan-msg-smoke.pid
+          for attempt in {1..75}; do
+            if curl -fsS --max-time 2 http://127.0.0.1:8788/health > /tmp/lan-msg-smoke-health.json 2>/dev/null; then
+              echo "Local Worker ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Local Worker failed to start:"
+          tail -100 /tmp/lan-msg-smoke-worker.log
+          exit 1
+      - name: Exercise local Worker challenge generation and real image delivery
+        run: node tests/message-worker-runtime-smoke.mjs
+      - name: Force first-party fallback via isolated local KV and verify actual SVG response
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const text = fs.readFileSync("telemetry-worker/src/index.js","utf8");
+          const start = text.indexOf("function builtInPuzzleFallbackPool(");
+          const end = text.indexOf("const MESSAGE_PUZZLE_IMAGE_QUERIES =",start);
+          if(start < 0 || end < start) throw Error("Canonical image fallback owner missing");
+          const values = new Function(text.slice(start,end)+";return builtInPuzzleFallbackPool();")();
+          if(values.length < 2 || values.some(x => !Number.isInteger(x.localArtworkId))) throw Error("Invalid first-party fallback catalog");
+          fs.writeFileSync("/tmp/lan-msg-fallback.json",JSON.stringify(values));
+          NODE
+          npx --yes --package=wrangler@4.156.0 wrangler kv key put 'message:puzzle-ready-pool:v2' \
+            --path=/tmp/lan-msg-fallback.json --binding=PORTFOLIO_MESSAGES --local \
+            --config=tests/wrangler-message-runtime-smoke.jsonc \
+            --persist-to=/tmp/lan-msg-smoke
+          EXPECT_IMAGE_SOURCE='LAN Portfolio' node tests/message-worker-runtime-smoke.mjs
+      - name: Always inspect runtime logs and stop local server
+        if: always()
+        shell: bash
+        run: |
+          if test -f /tmp/lan-msg-smoke-worker.log; then
+            tail -80 /tmp/lan-msg-smoke-worker.log
+          fi
+          if test -f /tmp/lan-msg-smoke.pid; then
+            kill "$(cat /tmp/lan-msg-smoke.pid)" 2>/dev/null || true
+          fi

@@ -1432,16 +1432,15 @@ const MESSAGE_PUZZLE_IMAGE_FETCH_TIMEOUT_MS = 3500;
 // outages. Server-side geometry, origin binding, rate limits, and Turnstile
 // remain required. Image rights and attributions are in the release report.
 const MESSAGE_PUZZLE_PUBLIC_DOMAIN_FALLBACK = Object.freeze([
-  { file:"Landscape-3773899_1280.jpg", thumbPath:"7/72", title:"Snowy mountain landscape", creator:"troubletrace ux", license:"cc0", width:1280, height:853 },
-  { file:"Chitkul.JPG", thumbPath:"4/4e", title:"Chitkul mountain valley", creator:"Prolaykundu", license:"pdm", width:1280, height:720 },
-  { file:"Aerial_view_of_the_Clackamas_Wild_and_Scenic_River_(48009760882).jpg", thumbPath:"9/9a", title:"Clackamas River aerial landscape", creator:"Bureau of Land Management", license:"pdm", width:1280, height:720 },
-  { file:"Yosemite_valley_and_half_dome_from_glacier_point.jpg", thumbPath:"6/6b", title:"Yosemite Valley and Half Dome", creator:"Jon Sullivan", license:"pdm", width:1280, height:960 }
+  { file:"Landscape-3773899_1280.jpg", title:"Snowy mountain landscape", creator:"troubletrace ux", license:"cc0", width:1280, height:853 },
+  { file:"Chitkul.JPG", title:"Chitkul mountain valley", creator:"Prolaykundu", license:"pdm", width:1280, height:720 },
+  { file:"Yosemite_valley_and_half_dome_from_glacier_point.jpg", title:"Yosemite Valley and Half Dome", creator:"Jon Sullivan", license:"pdm", width:1280, height:960 }
 ]);
 const MESSAGE_PUZZLE_FALLBACK_CACHE_TTL_SECONDS = 120;
 function publicDomainPuzzleFallbackPool() {
   return MESSAGE_PUZZLE_PUBLIC_DOMAIN_FALLBACK.map((item) => {
     const file = encodeURIComponent(item.file);
-    const sourceUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/" + item.thumbPath + "/" + file + "/1024px-" + file;
+    const sourceUrl = "https://commons.wikimedia.org/wiki/Special:FilePath/" + file + "?width=1024";
     return {
       id: "commons-pdm-" + item.file.replace(/[^A-Za-z0-9_-]/g, "_"),
       sourceUrl, previewUrl: sourceUrl,

@@ -31,7 +31,7 @@ function workerHarness(fetchStub, { prime } = {}) {
     store, fetch: (...args) => { fetchCalls++; return fetchStub(...args); },
     AbortSignal: fastAbortSignal,
     primePuzzleImage: prime || (async (image) => ({ ...image, deliveryUrl:image.sourceUrl })),
-    randomInteger: (min) => min
+    randomInteger: (() => { let step = 0; return (min, max) => min + ((step++) % (max - min + 1)); })()
   };
   const helpers = [
     "const { store, fetch, AbortSignal, primePuzzleImage, randomInteger } = f;",

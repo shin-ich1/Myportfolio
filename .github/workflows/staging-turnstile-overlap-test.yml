@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fix/staging-turnstile-puzzle-overlap-20261031
+      - fix/staging-public-message-retry-ux-20261031
 
 permissions:
   contents: read
@@ -23,6 +24,8 @@ jobs:
         run: |
           command -v google-chrome
           google-chrome --version
+      - name: Image failure retry and countdown UX
+        run: node --test tests/public-message-image-failure-retry-ui.test.mjs
       - name: Chromium real-CSS Turnstile slot layout regression
         env:
           LAN_TEST_CHROME: /usr/bin/google-chrome

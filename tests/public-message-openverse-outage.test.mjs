@@ -38,6 +38,7 @@ function workerHarness(fetchStub, { prime } = {}) {
     'const MESSAGE_PUZZLE_IMAGE_QUERIES = ["landscape photography","nature photography","mountain landscape photography"];',
     "const MESSAGE_PUZZLE_IMAGE_PAGE_SIZE = 20;",
     "const MESSAGE_PUZZLE_IMAGE_POOL_TTL_SECONDS = 21600;",
+    "const MESSAGE_PUZZLE_IMAGE_HISTORY_TTL_SECONDS = 3600;",
     "const MESSAGE_PUZZLE_READY_POOL_TTL_SECONDS = 21600;",
     "const MESSAGE_PUZZLE_READY_POOL_SEARCHES = 3;",
     "const MESSAGE_PUZZLE_QUALITY_SELECTION_LIMIT = 18;",

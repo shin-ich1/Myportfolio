@@ -1,0 +1,38 @@
+name: Staging-only expired puzzle regression (NO DEPLOY)
+
+on:
+  push:
+    branches:
+      - fix/staging-message-expired-puzzle-only-20261031
+
+permissions:
+  contents: read
+
+jobs:
+  staging-puzzle-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Targeted expired puzzle, message atomicity and audited Public-owner tests
+        run: |
+          node --test \
+            tests/public-message-expired-puzzle-recovery.test.mjs \
+            tests/public-message-atomicity.test.mjs \
+            tests/public-message-load-regression.test.mjs \
+            tests/production-public-security-integration.test.mjs
+      - name: Full available non-emulator Node test suite (emulator-only tests require separate local Firestore)
+        shell: bash
+        run: |
+          mapfile -t files < <(find tests -maxdepth 1 -name '*.test.mjs' \
+            ! -name 'firestore-backup-restore-emulator.test.mjs' \
+            ! -name 'firestore-security-emulator.test.mjs' | sort)
+          echo "Running ${#files[@]} non-emulator test files; two Firestore emulator-only suites are not run here"
+          node --test "${files[@]}"
+      - name: Syntax check canonical Public Message frontend
+        run: node --check app.js

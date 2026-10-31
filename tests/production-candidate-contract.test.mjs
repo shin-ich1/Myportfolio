@@ -17,7 +17,7 @@ function gitBlobSha(path){
 test('Frozen Public structural sources and exact-reviewed message security assets are pinned',()=>{
   const frozen={
     'index.html':'ba6b29cd5d2a84286850022f9f7ef075df5a73a5',
-    'app.js':'127feef273a51d450bf0d280b0d98bc648cd2bbf',
+    'app.js':'5cad8585b26e41f6020e396b12707a8786a1db0b', // one authorized expired-puzzle recovery within audited Public owner
     'styles.css':'0b051406a79279b6801ef71adeefa88dcaa46cba', // reviewed single Turnstile slot CSS change
     'public-adaptive.js':'62ec14a5cde2655ce199f5e00085db884b9bcead',
     'public-layout-contract.js':'4c21875d832b06cafad0bebc0ee09b467cbd4ca8',

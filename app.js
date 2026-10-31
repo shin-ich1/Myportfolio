@@ -2982,8 +2982,23 @@ async function loadPublicMessagePuzzleChallenge() {
         if (status) { status.textContent = "Verified. Sending your message…"; status.className = "public-message-puzzle-status is-success"; }
         await sendPendingPublicMessage(verified.verificationToken);
       } catch (error) {
+        if (error?.code === "message-puzzle-expired" && error?.status === 410) {
+          // The server permanently invalidated this challenge. Never unlock
+          // a slider for its old ID or reuse its Turnstile proof; only the
+          // canonical challenge loader may enable a freshly prepared puzzle.
+          publicMessagePuzzleChallenge = null;
+          slider.disabled = true;
+          if (label) label.textContent = "Preparing a new puzzle…";
+          if (status) {
+            status.textContent = "Verification puzzle expired. Loading a new puzzle…";
+            status.className = "public-message-puzzle-status is-error";
+          }
+          await loadPublicMessagePuzzleChallenge();
+          return;
+        }
         if (status) { status.textContent = error?.message || "Secure verification could not complete. Please try again."; status.className = "public-message-puzzle-status is-error"; }
-        // Reuse the same server challenge, but never reuse a stale Turnstile token.
+        // Reuse the same server challenge for recoverable errors, but never
+        // reuse a stale Turnstile token or mint an unchecked server proof.
         if (publicMessageTurnstileWidgetId != null) {
           try { turnstile.reset?.(publicMessageTurnstileWidgetId); } catch {}
         }

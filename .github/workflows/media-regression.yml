@@ -10,6 +10,7 @@ on:
       - fix/public-static-renditions-startup-20261025
       - fix/public-message-first-image-browser-20261030
       - fix/public-message-openverse-outage-20261031
+      - fix/public-message-expired-puzzle-recovery-20261031
       - fix/storage-oauth-privacy-page-20261030
 
 permissions:
@@ -27,7 +28,7 @@ jobs:
       - name: Run complete repository test suite
         run: node --test tests/*.test.mjs
       - name: Headless Chrome Public Message image/browser smoke test (isolated)
-        if: github.ref_name == 'fix/public-message-first-image-browser-20261030' || github.ref_name == 'fix/public-message-openverse-outage-20261031'
+        if: github.ref_name == 'fix/public-message-first-image-browser-20261030' || github.ref_name == 'fix/public-message-openverse-outage-20261031' || github.ref_name == 'fix/public-message-expired-puzzle-recovery-20261031'
         shell: bash
         run: |
           python3 -m http.server 9137 --bind 127.0.0.1 >/tmp/message-browser-http.log 2>&1 &

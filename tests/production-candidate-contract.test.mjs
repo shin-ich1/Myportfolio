@@ -18,12 +18,12 @@ test('Frozen Public structural sources and exact-reviewed message security asset
   const frozen={
     'index.html':'ba6b29cd5d2a84286850022f9f7ef075df5a73a5',
     'app.js':'5cad8585b26e41f6020e396b12707a8786a1db0b', // one authorized expired-puzzle recovery within audited Public owner
-    'styles.css':'0b051406a79279b6801ef71adeefa88dcaa46cba', // reviewed single Turnstile slot CSS change
+    'styles.css':'4c53ce386c1a9630f01f1f1b316903b6805b0bdb', // reviewed Turnstile slot and canonical grid-row overlap correction
     'public-adaptive.js':'62ec14a5cde2655ce199f5e00085db884b9bcead',
     'public-layout-contract.js':'4c21875d832b06cafad0bebc0ee09b467cbd4ca8',
     'public-section-eligibility.js':'4304cc5a2c2c4d2b6b93a0fd8e49d15044dbe748'
   };
-  // app.js pins the source-only canonical Messenger correction; styles.css pins the deployed PR13 bytes.
+  // app.js pins the canonical Messenger correction; styles.css pins the exact reviewed slot and grid-row fix.
   // Their allowed difference from audited main is verified function-by-function
   // by tests/production-public-security-integration.test.mjs (mandatory CI).
   assert.equal(gitBlobSha('message-service.js'),'fbbe71500e856d0c553edf689bc2c293fbbc5079',

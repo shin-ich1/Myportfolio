@@ -37,10 +37,15 @@ test("Audited Public app is frozen outside two canonical message owners and obso
   assert.equal(git("hash-object", "app.js"), "5cad8585b26e41f6020e396b12707a8786a1db0b");
   assert.equal(withoutPublicOwners(source("app.js")), withoutPublicOwners(original("app.js")));
 });
-test("Existing Turnstile CSS slot is the sole change to audited Public styles", () => {
+test("Only reviewed Turnstile slot and puzzle grid row may differ from audited Public styles", () => {
   assert.equal(git("rev-parse", main + ":styles.css"), "ec2f4078616f7435a5c9cc1a646fa44eb9db5f4c");
-  assert.equal(git("hash-object", "styles.css"), "0b051406a79279b6801ef71adeefa88dcaa46cba");
-  assert.equal(withoutTurnstileSlot(source("styles.css")), withoutTurnstileSlot(original("styles.css")));
+  assert.equal(git("hash-object", "styles.css"), "4c53ce386c1a9630f01f1f1b316903b6805b0bdb");
+  const patch = "grid-auto-rows:max-content;";
+  const reviewed = withoutTurnstileSlot(source("styles.css"));
+  assert.equal(reviewed.split(patch).length, 2, "Exactly one reviewed canonical grid-row correction");
+  const owner = ".public-message-puzzle-card{--public-puzzle-progress:0%;display:grid;";
+  assert.ok(reviewed.includes(owner + patch), "Grid-row correction must be at canonical puzzle card owner");
+  assert.equal(reviewed.replace(owner + patch, owner), withoutTurnstileSlot(original("styles.css")));
 });
 test("Public messaging Firestore module preserves all other canonical functions", () => {
   assert.equal(git("rev-parse", main + ":message-service.js"), "764a353722a63067b0335f80c17c09fbbfc00a06");

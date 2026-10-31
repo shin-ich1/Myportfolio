@@ -1,0 +1,44 @@
+name: Staging puzzle Turnstile overlap Chromium regression (NO DEPLOY)
+
+on:
+  push:
+    branches:
+      - fix/staging-turnstile-puzzle-overlap-20261031
+
+permissions:
+  contents: read
+
+jobs:
+  browser-layout-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Identify system Chrome (no external CAPTCHA or Firestore calls)
+        run: |
+          command -v google-chrome
+          google-chrome --version
+      - name: Chromium real-CSS Turnstile slot layout regression
+        env:
+          LAN_TEST_CHROME: /usr/bin/google-chrome
+        run: node --test tests/public-turnstile-overlay-browser.test.mjs
+      - name: Verify repository security and Public Message contract tests
+        run: |
+          node --test tests/public-message-expired-puzzle-recovery.test.mjs tests/production-public-security-integration.test.mjs tests/production-candidate-contract.test.mjs tests/public-turnstile-mobile-regression.test.mjs tests/public-turnstile-lifecycle-regression.test.mjs
+      - name: Full available non-emulator test suite (no live endpoints)
+        shell: bash
+        run: |
+          mapfile -t files < <(find tests -maxdepth 1 -name '*.test.mjs' \
+            ! -name 'firestore-backup-restore-emulator.test.mjs' \
+            ! -name 'firestore-security-emulator.test.mjs' | sort)
+          echo "Running ${#files[@]} test files; Firestore emulator-only suites not run here"
+          LAN_TEST_CHROME=/usr/bin/google-chrome node --test "${files[@]}"
+      - name: Syntax check Public Message owner
+        run: |
+          node --check app.js
+          node --check tests/public-turnstile-overlay-browser.test.mjs

@@ -25,6 +25,8 @@ function createBrowserPuzzle({
     closest: () => ({ style: { setProperty() {} } })
   };
   const status = { textContent: "", className: "" };
+  const formStatus = { textContent: "", className:"", isConnected:true };
+  const button = { disabled:false, isConnected:true };
   const label = { textContent: "" };
   const style = { removeProperty() {}, setProperty() {} };
   const scene = { style };
@@ -44,10 +46,11 @@ function createBrowserPuzzle({
     ["[data-public-turnstile-slot]", {parentElement:{getBoundingClientRect:()=>({width:350})}}]
   ]);
   const layer = { hidden:false, querySelector: selector => nodes.get(selector) || null };
-  const document = { querySelector: selector => selector === "[data-public-puzzle-layer]" ? layer : null };
+  const document = { querySelector: selector => ({ "[data-public-puzzle-layer]":layer, "[data-public-message-send]":button, "[data-public-message-status]":formStatus }[selector] || null) };
   const window = {
     turnstile, addEventListener() {}, removeEventListener() {},
-    setTimeout() { return 1; }, clearTimeout() {}
+    setTimeout() { return 1; }, clearTimeout() {},
+    setInterval() { return 2; }, clearInterval() {}
   };
   const deps = {
     document, window, ResizeObserver: class { observe() {} disconnect() {} },
@@ -86,7 +89,7 @@ function createBrowserPuzzle({
     "\nreturn {load:loadPublicMessagePuzzleChallenge, currentChallenge:()=>publicMessagePuzzleChallenge?.challengeId || null};");
   const api=factory(...keys.map(k=>deps[k]));
   return {
-    ...api, slider, status, label, layer,
+    ...api, slider, status, label, layer, formStatus, button,
     get created() { return created; },
     get sent() { return sent; },
     get verificationCalls(){return verificationCalls;},
@@ -170,4 +173,20 @@ test("A successful server verification proof is still mandatory for message crea
   view.slider.value="40";
   await view.slider.onchange();
   assert.equal(view.sent,1,"Only canonical secure server proof calls message creation");
+});
+
+test("An authoritative 429 response closes verification and displays the server retryAt in the message form", async () => {
+  const retryAt=new Date(Date.now()+90_000).toISOString();
+  const view=createBrowserPuzzle({verify:async()=>{throw Object.assign(new Error("Slow down"),{
+    status:429,code:"message-rate-window",retryAt
+  });}});
+  await view.load();
+  view.slider.value="18";
+  await view.slider.onchange();
+  assert.equal(view.layer.hidden,true);
+  assert.equal(view.slider.disabled,true);
+  assert.equal(view.button.disabled,true);
+  assert.match(view.formStatus.textContent,/Too many verification requests/);
+  assert.match(view.formStatus.textContent,/9\d?s/);
+  assert.equal(view.sent,0);
 });

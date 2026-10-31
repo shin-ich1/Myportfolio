@@ -2790,6 +2790,22 @@ async function loadPublicMessagePuzzleChallenge() {
         if (status) { status.textContent = "Verified. Sending your message…"; status.className = "public-message-puzzle-status is-success"; }
         await sendPendingPublicMessage(verified.verificationToken);
       } catch (error) {
+        if (error?.code === "message-puzzle-expired" && error?.status === 410) {
+          // Server-deleted challenges can never be retried. Only the existing
+          // challenge loader may restore a usable slider with a fresh proof.
+          publicMessagePuzzleChallenge = null;
+          slider.disabled = true;
+          completedTurnstileToken = "";
+          completedTurnstileAt = 0;
+          completedTurnstileError = null;
+          if (label) label.textContent = "Preparing a new puzzle…";
+          if (status) {
+            status.textContent = "Verification puzzle expired. Loading a new puzzle…";
+            status.className = "public-message-puzzle-status is-error";
+          }
+          await loadPublicMessagePuzzleChallenge();
+          return;
+        }
         // Resetting discards any prior browser proof; this does not bypass Siteverify.
         completedTurnstileToken = "";
         completedTurnstileAt = 0;

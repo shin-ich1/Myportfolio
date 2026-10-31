@@ -42,23 +42,24 @@ jobs:
           exit 1
       - name: Exercise local Worker challenge generation and real image delivery
         run: node tests/message-worker-runtime-smoke.mjs
-      - name: Diagnose external image fetching inside isolated workerd
-        if: always()
+      - name: Force first-party fallback via isolated local KV and verify actual SVG response
         shell: bash
         run: |
-          npx --yes --package=wrangler@4.156.0 wrangler dev --local \
-            --config tests/wrangler-message-image-probe.jsonc \
-            --ip 127.0.0.1 --port 8789 \
-            --persist-to /tmp/lan-msg-probe > /tmp/lan-msg-probe.log 2>&1 &
-          probe_pid=$!
-          trap 'kill "$probe_pid" 2>/dev/null || true' EXIT
-          for attempt in {1..20}; do
-            if curl -sS --fail --max-time 2 http://127.0.0.1:8789/ready >/dev/null 2>&1; then break; fi
-            sleep 1
-          done
-          curl --silent --show-error --max-time 50 http://127.0.0.1:8789/probe || true
-          echo
-          tail -35 /tmp/lan-msg-probe.log || true
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const text = fs.readFileSync("telemetry-worker/src/index.js","utf8");
+          const start = text.indexOf("function builtInPuzzleFallbackPool(");
+          const end = text.indexOf("const MESSAGE_PUZZLE_IMAGE_QUERIES =",start);
+          if(start < 0 || end < start) throw Error("Canonical image fallback owner missing");
+          const values = new Function(text.slice(start,end)+";return builtInPuzzleFallbackPool();")();
+          if(values.length < 2 || values.some(x => !Number.isInteger(x.localArtworkId))) throw Error("Invalid first-party fallback catalog");
+          fs.writeFileSync("/tmp/lan-msg-fallback.json",JSON.stringify(values));
+          NODE
+          npx --yes --package=wrangler@4.156.0 wrangler kv key put 'message:puzzle-ready-pool:v2' \
+            --path=/tmp/lan-msg-fallback.json --binding=PORTFOLIO_MESSAGES --local \
+            --config=tests/wrangler-message-runtime-smoke.jsonc \
+            --persist-to=/tmp/lan-msg-smoke
+          EXPECT_IMAGE_SOURCE='LAN Portfolio' node tests/message-worker-runtime-smoke.mjs
       - name: Always inspect runtime logs and stop local server
         if: always()
         shell: bash

@@ -51,6 +51,16 @@ jobs:
             echo "PASS: canonical image loading and blocked-script retry at $viewport"
           done
 
+      - name: Dry-run staging-only Worker build (never deploy)
+        if: github.ref_name == 'fix/public-message-openverse-outage-20261031'
+        shell: bash
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          npx --yes --package=wrangler@4.156.0 wrangler deploy --dry-run \
+            --config telemetry-worker/wrangler.staging.jsonc \
+            --outdir /tmp/lan-staging-worker-dry-run
+
       - name: Syntax-check changed JavaScript modules
         run: |
           node --check tests/public-message-first-image-cross-browser.test.mjs

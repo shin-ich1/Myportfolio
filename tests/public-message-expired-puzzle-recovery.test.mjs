@@ -90,6 +90,7 @@ function createBrowserPuzzle({
   const api=factory(...keys.map(k=>deps[k]));
   return {
     ...api, slider, status, label, layer, formStatus, button,
+    showInteractiveCheck() { widgetOptions?.["before-interactive-callback"]?.(); },
     get created() { return created; },
     get sent() { return sent; },
     get verificationCalls(){return verificationCalls;},
@@ -188,5 +189,13 @@ test("An authoritative 429 response closes verification and displays the server 
   assert.equal(view.button.disabled,true);
   assert.match(view.formStatus.textContent,/Too many verification requests/);
   assert.match(view.formStatus.textContent,/9\d?s/);
+  assert.equal(view.sent,0);
+});
+
+test("A manual Turnstile prompt visibly tells visitors to scroll for the browser check", async () => {
+  const view=createBrowserPuzzle({verify:async()=>({outcome:"retry",challenge:{targetPercent:50}})});
+  await view.load();
+  view.showInteractiveCheck();
+  assert.match(view.label.textContent,/browser check below/i);
   assert.equal(view.sent,0);
 });

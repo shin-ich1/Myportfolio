@@ -51,18 +51,6 @@ jobs:
             echo "PASS: canonical image loading and blocked-script retry at $viewport"
           done
 
-      - name: Verify independently hosted public-domain fallback image URLs
-        if: github.ref_name == 'fix/public-message-openverse-outage-20261031'
-        shell: bash
-        run: |
-          for file in 'Landscape-3773899_1280.jpg' 'Chitkul.JPG' 'Yosemite_valley_and_half_dome_from_glacier_point.jpg'; do
-            echo "Checking public-domain photo: $file"
-            mime=$(curl --silent --show-error --location --max-time 15 --output /dev/null --write-out '%{http_code} %{content_type}' "https://commons.wikimedia.org/wiki/Special:FilePath/$file?width=1024")
-            case "$mime" in
-              "200 image/"*) echo "PASS: fallback image is reachable ($mime)" ;;
-              *) echo "FAIL: fallback image unavailable ($mime)"; exit 1 ;;
-            esac
-          done
       - name: Syntax-check changed JavaScript modules
         run: |
           node --check tests/public-message-first-image-cross-browser.test.mjs

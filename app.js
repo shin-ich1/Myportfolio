@@ -2836,6 +2836,13 @@ async function loadPublicMessagePuzzleChallenge() {
         if (status) { status.textContent = "Verified. Sending your message…"; status.className = "public-message-puzzle-status is-success"; }
         await sendPendingPublicMessage(verified.verificationToken);
       } catch (error) {
+        if (error?.status === 429) {
+          // The Worker supplies the actual retryAt when a rate window is active.
+          // Do not keep a spent/blocked verification proof in the puzzle.
+          closePublicMessagePuzzleVerification();
+          beginPublicMessageRetryCountdown(error);
+          return;
+        }
         if (error?.code === "message-puzzle-expired" && error?.status === 410) {
           // Server-deleted challenges can never be retried. Only the existing
           // challenge loader may restore a usable slider with a fresh proof.

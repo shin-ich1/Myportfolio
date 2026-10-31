@@ -25,6 +25,7 @@ const run = async () => {
   assert.match(payload.challengeId,/^[a-zA-Z0-9_-]{24}$/);
   assert.match(payload.siteKey,/^1x00000000000000000000AA$/,"official Turnstile localhost test site key");
   assert.ok(["LAN Portfolio","Openverse"].includes(payload.image.source),"Only canonical Openverse or built-in Worker image");
+  if (process.env.EXPECT_IMAGE_SOURCE) assert.equal(payload.image.source, process.env.EXPECT_IMAGE_SOURCE, "Forcing isolated fallback pool must use the locally generated image");
   assert.equal(payload.image.url,localWorker+"/messages/security/challenge/"+payload.challengeId+"/image");
   console.log("PASS: real challenge created through local Worker with source "+payload.image.source+" in "+(Date.now()-began)+" ms");
 

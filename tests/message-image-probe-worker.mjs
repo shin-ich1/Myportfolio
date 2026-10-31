@@ -5,6 +5,7 @@ const originals=[
   ["yosemite","Yosemite_valley_and_half_dome_from_glacier_point.jpg","6/6b"]
 ];
 export default { async fetch(request) {
+  if (new URL(request.url).pathname === "/ready") return new Response("ok");
   if (new URL(request.url).pathname !== "/probe") return new Response("Not found",{status:404});
   const responses=[];
   for (const [name,file,hash] of originals) {

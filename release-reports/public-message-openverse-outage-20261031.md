@@ -1,42 +1,51 @@
-# Public Message Openverse search outage — 2026-10-31
+# Public Message puzzle outage — root cause, isolated fix and runtime tests (2026-10-31)
 
-## Status
-**Implemented and automated-test verified; NOT deployed, merged, or fully runtime-verified.**
+## Release status
+**Source fix implemented; source tests and isolated real-Worker challenge/image runtime tests passed. NOT merged, NOT deployed, NOT verified against actual production messaging delivery.**
 
-Repository: `shin-ich1/Myportfolio`.
-Isolated branch: `fix/public-message-openverse-outage-20261031`, based on existing verified PR #40 head `5691624f33f59e4190040b756ee85087581888b6`; known-good LIVE Hosting source is `bf959a647b18a75b0826de0bbdcbef9bccc68e22`. Keep PR #40 browser loading improvements as a single ancestor, not competing feature owners.
+Repo: `shin-ich1/Myportfolio`. Isolated branch: `fix/public-message-openverse-outage-20261031`, based on frontend PR #40 at `5691624f33f59e4190040b756ee85087581888b6`. Known-good LIVE Firebase Hosting source is `bf959a647b18a75b0826de0bbdcbef9bccc68e22`. Both frontend and backend fixes must be reconciled before any separately authorized release.
 
-## Confirmed root-cause evidence
-- Owner supplied LIVE Chrome Network screenshots from `rolando-portfolio-3f1a3.web.app`: multiple `/messages/security/challenge` requests were pending for roughly **1.1–1.4 minutes**, then HTTP **503**; a later challenge succeeded with **201**, and its image arrived in about **723 ms**.
-- 503 response JSON included `"code":"message-puzzle-image-search"`. Canonical Worker `loadOpenversePuzzleImagePool` throws this exact code only when Openverse `GET /v1/images/` returns non-OK. A stalled search had no explicit fetch deadline.
-- Open upstream incident: https://github.com/WordPress/openverse/issues/5649 (opened October 20; corroborated October 30). Other clients report uncached search requests timing out or returning 502. **The screenshot does not expose the upstream HTTP status**, so do not claim this LIVE request necessarily received a 502 upstream.
+## Observed LIVE failure and exact cause
+- Owner-provided Chrome Network evidence: `/messages/security/challenge` returned **503** after roughly 1.1–1.4 minutes; other attempts succeeded with **201**; an actual puzzle image returned 200 in about **723 ms** when the challenge succeeded.
+- Owner-provided 503 JSON error code was **`message-puzzle-image-search`**. Its canonical Worker owner is `loadOpenversePuzzleImagePool`, which requests the external Openverse image search API before returning the challenge.
+- An independently reported [Openverse upstream incident](https://github.com/WordPress/openverse/issues/5649) describes uncached search hangs and occasional 502 responses (October 20–30). The owner screenshot does **not** disclose the upstream HTTP status; only the Worker's 503 is confirmed.
+- Original application required waiting for Turnstile script alongside image challenge; browser-side first-image improvements are covered by predecessor PR #40 and remain untouched here.
 
-## Canonical correction — Worker only
-- `telemetry-worker/src/index.js`: retain existing Openverse/KV/Cache API owners and implement a 5-second deadline on Openverse searches, 3.5-second deadline per candidate image fetch, and a 2-minute cached fallback when searching cannot produce a ready image pool.
-- Fallback uses existing browser-friendly Worker image endpoint, existing caching and image validation, and a **small fixed catalog of genuine public-domain/CC0 photographic landscapes**, published independently on Wikimedia Commons. A successful challenge must still have an actually retrievable image, not just metadata.
-- The Openverse pool resumes automatically after the short fallback TTL when upstream recovers. Do not repeatedly request a failed pool on every visitor challenge.
-- Server-side puzzle answer, nonce, cryptographic proof, anti-replay binding, rate limits, Turnstile Siteverify and hostname/action validation, Firebase Admin, Firestore rules, OAuth, Public/Admin styling and content are untouched. Fail closed if all photos are unavailable.
+## Root-cause-specific correction
+- Canonical file: `telemetry-worker/src/index.js`. Bound Openverse search requests to **5 seconds** and external photo fetches to **3.5 seconds**, preserving existing shared ready-image pool, KV and Worker Cache semantics.
+- On Openverse pool failure, cache a small **120-second first-party emergency landscape pool** in the existing canonical KV namespace.
+- The final emergency image is an **original, deterministic, self-contained SVG generated and served on the existing secured Worker challenge-image route**, no Wikimedia/photo host, no extra external API, no new puzzle or verification owner.
+- Original artwork is labeled `LAN Portfolio` / `original` and generated without scripts, user content or remote image URLs. The normal Openverse photo system remains the preferred source. SVG artwork appears **only if the Openverse photo-ready pool fails**.
+- Server-owned puzzle geometry, challenge TTL and origin binding, IP/UA binding, rate limits, Durable Object challenge state, challenge answer verification, anti-replay nonce, Turnstile token verification and hostname/action checks remain in place. Firestore, Admin, Google Drive, Firebase hosting config and existing layouts are unchanged.
 
-## Public-domain fallback image provenance
-All fallback images retain creator/title/landing-page metadata and only use existing `cc0` or `pdm` license values:
-1. CC0 snowy mountains by troubletrace ux: https://commons.wikimedia.org/wiki/File:Landscape-3773899_1280.jpg
-2. Public-domain Chitkul photo by Prolaykundu: https://commons.wikimedia.org/wiki/File:Chitkul.JPG
-3. Public-domain Yosemite Valley photo by Jon Sullivan: https://commons.wikimedia.org/wiki/File:Yosemite_valley_and_half_dome_from_glacier_point.jpg
+## Why the originally proposed Wikimedia fallback was removed
+- Three Wikimedia photo redirects answered HTTP 200 to ordinary GitHub-host `curl` checks, but the **same requests from an actual local Cloudflare Workerd runtime** returned **403** (including direct upload URLs), so they were NOT dependable.
+- Original isolated Worker runtime run reproduced **503 `message-puzzle-image-unavailable`**, despite passing 109/109 mocked tests. See https://github.com/shin-ich1/Myportfolio/actions/runs/41165852843.
+- Workerd 403 diagnostic: https://github.com/shin-ich1/Myportfolio/actions/runs/41165971729. Diagnostic-only files and third-party fallback were removed from final source.
 
-## Reproduced regression and successful test evidence
-- **Red baseline** on original PR #40 Worker code (no fallback/abort): https://github.com/shin-ich1/Myportfolio/actions/runs/41164929962; **107/109 passed, 2 expected failures**: non-OK Openverse results stop challenge; never-settling search blocks beyond the test deadline. The third test confirms fail-closed behavior.
-- **Green branch**: https://github.com/shin-ich1/Myportfolio/actions/runs/41164811623; **109/109 passed**, browser DOM simulation on Chromium at **375×812, 430×932, 1440×900** passed; three checked Wikimedia image redirect endpoints returned **200 image/jpeg**; JS syntax checks passed.
-- CI workflow checks the three selected fallback photo URLs; the other Wikimedia candidate was excluded after its fourth rapid request returned HTTP 429 during external probing. A direct-thumbnail URL experiment was rejected after a 400 response from the CDN. Neither unverified alternative remains in the final source.
-- The Chromium simulation uses an offline fixture and stub Turnstile/Worker calls; it is **not** end-to-end production browser verification. Curl reachability from GitHub runner is not proof of fetch from a Cloudflare Worker region.
+## Evidence and actual tests
+- **Expected-red regression against original source:** https://github.com/shin-ich1/Myportfolio/actions/runs/41164929962 — **107/109 passed**, two targeted failures for 502 and indefinitely blocked Openverse search.
+- A separate regression added after the Workerd 403 evidence ensures the final fallback image is self-contained and served by canonical Worker route.
+- **Green source tests:** complete Node suite; original Chrome DOM smoke tests at **375×812, 430×932, 1440×900** using an offline fixture. This is Chromium-only and is not real Safari or in-app browser verification.
+- **Green actual isolated local Cloudflare Workerd runtime** using Wrangler 4.156.0, dummy project ID, dummy credentials, local KV and Durable Object storage, and official localhost Turnstile test site key: https://github.com/shin-ich1/Myportfolio/actions/runs/41166276705.
+  - Normal Openverse puzzle `POST /messages/security/challenge` → **201**, `GET .../image` → **200 image/jpeg**. Sample time **9,142 ms** (another passing run sampled 5,400 ms). These are observational, not performance guarantees.
+  - After seeding the real generated-art catalog into **isolated local KV only**, new challenge `201` in **27 ms**, real first-party image `200 image/svg+xml` with 6,996 bytes. SVG was inspected for safe structure.
+  - No real Firebase, Firestore or message-send endpoint was called, no private message or data was created, and no production settings changed.
+- Every GitHub Actions job is test-only, contains no deploy or merge step.
 
-## Changed files
-- `telemetry-worker/src/index.js`: canonical outage resilience and fallback, no duplicate verification owners.
-- `tests/public-message-openverse-outage.test.mjs`: upstream 502, hung fetch with abort, source-license/cache and fail-closed regressions.
-- `.github/workflows/media-regression.yml`: run tests on isolated branch, worker syntax and Chromium smoke test, validate fallback URLs; no release/deploy step.
-- `release-reports/public-message-openverse-outage-20261031.md`: evidence, audit and limitations.
+## Files and scope
+- `telemetry-worker/src/index.js` — single canonical source owner for Openverse outage fallback and image route.
+- `tests/public-message-openverse-outage.test.mjs` — target regressions, fail-closed rule, original artwork/HTML-independent SVG safety.
+- `tests/message-worker-runtime-smoke.mjs` — real local Workerd challenge and image flow checks; **never** sends a message.
+- `tests/wrangler-message-runtime-smoke.jsonc` — fully isolated local-only Worker/KV/DO with explicit dummy values, **not production secrets**.
+- `.github/workflows/message-worker-runtime-smoke.yml` — local Workerd smoke, forced local KV fallback, no deployment.
+- `.github/workflows/media-regression.yml` — full Node and Chromium checks on isolated branch.
+- `release-reports/public-message-openverse-outage-20261031.md` — this record.
 
-## Runtime signoff required before deployment
-1. With explicit owner authorization and **nonproduction** Worker/Firebase credentials, verify challenge response under Openverse failure, verify SVG/photo delivery and slider, solve Turnstile, send an isolated message, and confirm Admin receipt without touching existing LIVE messages.
-2. Test on actual iOS Safari and Android Chrome, then representative in-app browsers. Test normal cold-path and fallback latency from Worker; do not claim exact speed until measured.
-3. Verify upstream response timings, no new network errors, and unchanged Admin/Public responsive layout.
-4. Confirm latest deploy baseline, tests and final diff. Obtain **separate explicit production deployment approval**; no production deployment performed during this investigation/implementation.
+## Unverified / release blockers
+1. Live Cloudflare Worker request latency, Wikimedia-independent fallback image delivery from production Cloudflare edge and real visitor networks.
+2. End-to-end actual Cloudflare Turnstile solve, server-side verification proof, private message creation and Admin inbox receipt against an **authorized nonproduction** backend.
+3. Actual Safari on iPhone, Android Chrome and Facebook/Messenger/Instagram/TikTok in-app browsers.
+4. Final release baseline and rollback plan. **Separate owner approval is required for merging or deploying LIVE hosting/Worker**.
+
+**No claim that production messaging is fixed.**

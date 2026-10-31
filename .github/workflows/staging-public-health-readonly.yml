@@ -37,7 +37,13 @@ jobs:
               except urllib.error.HTTPError as ex:
                   status=ex.code
                   allowed=ex.headers.get("Access-Control-Allow-Origin","")
-                  body=b""
+                  body=ex.read(1200) if method=="GET" else b""
+                  try:
+                      hint=json.loads(body).get("code","")
+                      safe_code=hint if isinstance(hint,str) and len(hint)<72 and all(c.isalnum() or c=="-" for c in hint) else "unavailable"
+                  except Exception:
+                      safe_code="unavailable"
+                  print("Safe application code:",safe_code)
                   print("Safe HTTP diagnostic:", "status",ex.code,
                     "content-type",ex.headers.get("Content-Type","unknown"),
                     "cf-mitigated",ex.headers.get("CF-Mitigated","none"),
@@ -49,6 +55,9 @@ jobs:
 
           status,_,body=request("/health","GET")
           print("Staging health HTTP",status)
+          staging_probe,staging_allowed,_=request("/health","GET","https://lan-portfolio-staging.web.app")
+          print("Staging health with staging Origin HTTP",staging_probe,
+            "CORS allowed:",staging_allowed=="https://lan-portfolio-staging.web.app")
           assert status==200,"Staging Worker health must respond HTTP 200"
           health=json.loads(body)
           assert health.get("ok") is True and health.get("service")=="lan-cloudinary-telemetry","Unexpected staging Worker implementation"

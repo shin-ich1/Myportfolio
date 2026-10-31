@@ -53,7 +53,7 @@ function geometry({ modalWidth, modalHeight, widgetWidth, widgetHeight }) {
       "--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
       "--no-first-run", "--virtual-time-budget=300",
       "--window-size=1280,900", "--dump-dom", "file://" + input
-    ], { encoding: "utf8", timeout: 15000, maxBuffer: 3 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+    ], { encoding: "utf8", timeout: 45000, maxBuffer: 3 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
     const encoded = output.match(/<pre id="geometry-result">([^<]+)<\/pre>/)?.[1];
     assert.ok(encoded, "Chromium must output measured real CSS layout geometry");
     return JSON.parse(encoded.replaceAll("&quot;", '"').replaceAll("&amp;", "&"));

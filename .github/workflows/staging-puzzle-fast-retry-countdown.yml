@@ -18,8 +18,19 @@ jobs:
           node-version: '22'
       - name: Fast wrong answer and server countdown UX regression
         run: node --test tests/public-message-fast-retry-cooldown.test.mjs
-      - name: Existing non-emulator repository tests
-        run: node --test tests/*.test.mjs
+      - name: Existing available non-emulator repository tests
+        shell: bash
+        run: |
+          mapfile -t tests < <(find tests -maxdepth 1 -name '*.test.mjs' \
+            ! -name 'firestore-backup-restore-emulator.test.mjs' \
+            ! -name 'firestore-security-emulator.test.mjs' | sort)
+          test "${#tests[@]}" -gt 0
+          node --test "${tests[@]}"
+      - name: Report unrun emulator-only suites (not waived)
+        run: |
+          echo 'NOT RUN: firestore-backup-restore-emulator.test.mjs'
+          echo 'NOT RUN: firestore-security-emulator.test.mjs'
+          echo 'These require separately provisioned isolated Firestore emulator.'
       - name: Syntax checks
         run: |
           node --check app.js

@@ -1412,7 +1412,8 @@ const MESSAGE_CHALLENGE_LIMIT = 12;
 const MESSAGE_CHALLENGE_COOLDOWN_SECONDS = 0; // Puzzle prewarming is governed by the challenge window; ordinary warmups must not self-throttle.
 const MESSAGE_CHALLENGE_TTL_SECONDS = 180;
 const MESSAGE_VERIFICATION_TTL_SECONDS = 90;
-const MESSAGE_PUZZLE_TOLERANCE = 4;
+const MESSAGE_PUZZLE_TOLERANCE = 1; // Accept only a near-invisible one-step slider rounding difference.
+const MESSAGE_PUZZLE_WRONG_COOLDOWN_SECONDS = 10; // Worker-enforced countdown after three incorrect answers.
 const MESSAGE_PUZZLE_MAX_ATTEMPTS = 3;
 const MESSAGE_PUZZLE_IMAGE_MIN_WIDTH = 1280;
 const MESSAGE_PUZZLE_IMAGE_MIN_HEIGHT = 720;
@@ -1426,6 +1427,58 @@ const MESSAGE_PUZZLE_READY_POOL_TTL_SECONDS = 6 * 60 * 60;
 const MESSAGE_PUZZLE_READY_POOL_TARGET = 8;
 const MESSAGE_PUZZLE_READY_POOL_SEARCHES = 3;
 const MESSAGE_PUZZLE_READY_POOL_PRIME_BATCH = 4;
+const MESSAGE_PUZZLE_OPENVERSE_SEARCH_TIMEOUT_MS = 5000;
+const MESSAGE_PUZZLE_IMAGE_FETCH_TIMEOUT_MS = 3500;
+// A small public-domain photo catalog keeps the puzzle usable during search
+// outages. Server-side geometry, origin binding, rate limits, and Turnstile
+// remain required. Image rights and attributions are in the release report.
+const MESSAGE_PUZZLE_FALLBACK_CACHE_TTL_SECONDS = 120;
+// The emergency image is generated INSIDE this Worker, not loaded from another
+// third-party photo host. Real production Openverse photographs remain primary.
+// Never put visitor input, scripts, remote styles or external links into the SVG.
+function renderOfflinePuzzleLandscapeSvg(variant = 0) {
+  const scenes = [
+    { high:"#14375c",low:"#f1ae84",back:"#698ba0",front:"#244764",river:"#3a7082",sun:"#ffe0aa" },
+    { high:"#122e4d",low:"#9bb7bf",back:"#668294",front:"#1a4251",river:"#36728d",sun:"#e3f0e1" },
+    { high:"#3a3559",low:"#df9570",back:"#867a9e",front:"#294768",river:"#396e83",sun:"#fff0bd" }
+  ];
+  const number = Number(variant);
+  const scene = scenes[Number.isInteger(number) && number >= 0 ? number % scenes.length : 0];
+  const grain = Array.from({length:65},(_,n)=>{
+    const x=(n*211+number*73+41)%960;
+    const y=(n*137+number*67+23)%430;
+    return '<circle cx="'+x+'" cy="'+y+'" r="'+(n%3+1)+'" fill="#fff" opacity="0.10"/>';
+  }).join("");
+  const trees = Array.from({length:21},(_,n)=>{
+    const x=(n*47+number*61)%960;
+    const height=24+(n*13)%54;
+    const y=427+(n*17)%71;
+    return '<path d="M'+x+' '+(y-height)+' l'+(height/3)+' '+height+' h-'+(height*2/3)+' Z" fill="#102f40" opacity="0.65"/>';
+  }).join("");
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img">'+
+    '<defs><linearGradient id="sk" x2="0" y2="1"><stop stop-color="'+scene.high+'"/><stop offset="1" stop-color="'+scene.low+'"/></linearGradient>'+
+    '<linearGradient id="wat" x2="0" y2="1"><stop stop-color="'+scene.river+'"/><stop offset="1" stop-color="#0b273f"/></linearGradient>'+
+    '<radialGradient id="gl"><stop stop-color="'+scene.sun+'" stop-opacity=".55"/><stop offset="1" stop-color="'+scene.sun+'" stop-opacity="0"/></radialGradient></defs>'+
+    '<rect width="960" height="540" fill="url(#sk)"/>'+
+    '<ellipse cx="748" cy="126" rx="220" ry="160" fill="url(#gl)"/>'+
+    '<circle cx="746" cy="124" r="48" fill="'+scene.sun+'" opacity=".94"/>'+
+    '<path d="M0 325 Q145 280 270 327 T550 305 T960 322 V540 H0Z" fill="#eff6ed" opacity=".14"/>'+
+    '<path d="M0 357 147 197 270 351 442 159 602 354 770 230 960 348 V540 H0Z" fill="'+scene.back+'"/>'+
+    '<path d="M92 258 147 197 192 251 151 236 132 247Z M385 217 442 159 495 226 444 208 424 217Z M724 276 770 230 818 281 772 265 752 273Z" fill="#eef5f5" opacity=".73"/>'+
+    '<path d="M0 444 186 320 332 436 528 291 749 436 886 351 960 396 V540 H0Z" fill="'+scene.front+'"/>'+
+    '<path d="M0 473 Q175 442 330 472 T650 455 T960 473 V540 H0Z" fill="url(#wat)"/>'+
+    '<path d="M60 489 Q260 471 440 492 T900 490 M0 518 Q220 508 500 521 T960 516" fill="none" stroke="#bcd4d5" stroke-width="2" opacity=".42"/>'+
+    trees+grain+'</svg>';
+}
+function builtInPuzzleFallbackPool() {
+  return ["Mountain dusk","Alpine valley","Sunset wilderness"].map((title, localArtworkId) => ({
+    id: "lan-landscape-art-" + localArtworkId,
+    sourceUrl: "", previewUrl: "", landingUrl: "",
+    title, creator:"LAN Portfolio", license:"original", licenseVersion:"",
+    width:960, height:540, qualityScore:960*540,
+    source:"LAN Portfolio", localArtworkId
+  }));
+}
 const MESSAGE_PUZZLE_IMAGE_QUERIES = Object.freeze([
   "landscape photography",
   "nature photography",
@@ -1648,7 +1701,7 @@ async function loadOpenversePuzzleImagePool(env, queryIndex, page) {
   url.searchParams.set("page_size", String(MESSAGE_PUZZLE_IMAGE_PAGE_SIZE));
   url.searchParams.set("aspect_ratio", "wide");
   url.searchParams.set("size", "large");
-  const response = await fetch(url.href, { headers: { Accept: "application/json" } });
+  const response = await fetch(url.href, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(MESSAGE_PUZZLE_OPENVERSE_SEARCH_TIMEOUT_MS) });
   if (!response.ok) {
     throw serviceError("Verification image service is temporarily unavailable.", { status: 503, code: "message-puzzle-image-search", source: "openverse" });
   }
@@ -1709,7 +1762,20 @@ async function readyOpenversePuzzleImagePool(env, { refresh = false } = {}) {
     if (Array.isArray(cached) && cached.length) return cached;
   }
   if (!messagePuzzleReadyPoolPromise) {
-    messagePuzzleReadyPoolPromise = buildReadyOpenversePuzzleImagePool(env).finally(() => { messagePuzzleReadyPoolPromise = null; });
+    messagePuzzleReadyPoolPromise = (async () => {
+      try {
+        return await buildReadyOpenversePuzzleImagePool(env);
+      } catch {
+        // Use the existing KV ready-pool owner for a short-lived outage
+        // fallback. Every candidate is still checked by primePuzzleImage;
+        // unavailable images cannot create verification proofs.
+        const fallback = builtInPuzzleFallbackPool();
+        await store.put(privateMessageReadyImagePoolKey(), JSON.stringify(fallback), {
+          expirationTtl: MESSAGE_PUZZLE_FALLBACK_CACHE_TTL_SECONDS
+        });
+        return fallback;
+      }
+    })().finally(() => { messagePuzzleReadyPoolPromise = null; });
   }
   return messagePuzzleReadyPoolPromise;
 }
@@ -1722,6 +1788,8 @@ async function chooseOpenversePuzzleImage(env, binding) {
 
   for (let pass = 0; pass < 2; pass += 1) {
     const pool = await readyOpenversePuzzleImagePool(env, { refresh: pass > 0 });
+    // Retrying the same static catalog cannot fix an outage and only stalls.
+    if (pass > 0 && pool[0]?.source === "LAN Portfolio") break;
     const unseen = pool.filter((image) => !recentIds.has(image.id));
     const candidates = [...(unseen.length ? unseen : pool)];
     while (candidates.length) {
@@ -1750,7 +1818,8 @@ async function fetchPuzzleImageCandidate(image = {}) {
   for (const candidate of candidates) {
     const response = await fetch(candidate, {
       headers: { Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8" },
-      redirect: "follow"
+      redirect: "follow",
+      signal: AbortSignal.timeout(MESSAGE_PUZZLE_IMAGE_FETCH_TIMEOUT_MS)
     }).catch(() => null);
     const contentType = String(response?.headers?.get("Content-Type") || "").toLowerCase();
     if (response?.ok && contentType.startsWith("image/")) return { response, url: candidate };
@@ -1759,6 +1828,9 @@ async function fetchPuzzleImageCandidate(image = {}) {
 }
 
 async function primePuzzleImage(image = {}) {
+  // The built-in image is always drawable: no cross-origin fetch, cache warmup
+  // or external authorization is necessary before minting a real challenge.
+  if (image.localArtworkId != null) return image;
   const cache = globalThis.caches?.default || null;
   const cacheKey = puzzleImageCacheKey(image?.id);
   const cached = cache ? await cache.match(cacheKey) : null;
@@ -1807,6 +1879,16 @@ async function handleMessagePuzzleImage(request, env, challengeId) {
       headers: { "Cache-Control": "no-store" }
     });
   }
+  if (image.localArtworkId != null) {
+    return new Response(renderOfflinePuzzleLandscapeSvg(image.localArtworkId), {
+      status: 200,
+      headers: {
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": `private, max-age=${MESSAGE_CHALLENGE_TTL_SECONDS}`,
+        "X-Content-Type-Options": "nosniff"
+      }
+    });
+  }
   const cache = globalThis.caches?.default || null;
   const cacheKey = puzzleImageCacheKey(image?.id || challengeId);
   const cached = cache ? await cache.match(cacheKey) : null;
@@ -1837,6 +1919,14 @@ async function handleMessagePuzzleImage(request, env, challengeId) {
   return new Response(cacheResponse.body, { status: 200, headers });
 }
 
+// One canonical durable rate owner stores the wrong-answer retry deadline.
+// Reusing the existing coordinator keeps the gate effective across tabs/reloads.
+async function enforceMessagePuzzleCooldown(env, binding) {
+  const owner = await rateCoordinatorOwner("public-message:puzzle-wrong", binding);
+  await coordinateSecurity(env, owner, { op: "puzzle-cooldown-check", scope: "message-puzzle-cooldown" });
+  return owner;
+}
+
 // Verification tokens are never stored raw. Their SHA-256 derived identifiers
 // select exactly one canonical atomic Coordinator record.
 async function privateMessageProofId(token) {
@@ -1849,6 +1939,8 @@ async function handleMessagePuzzleChallenge(request, env) {
     context = messageRequestContext(request, env);
     assertPrivateMessageRelayConfigured(env);
     const turnstile = turnstileConfiguration(request, env);
+    const binding = await privateMessageClientBinding(request);
+    await enforceMessagePuzzleCooldown(env, binding);
     await enforceMessageRateLimit(request, env, {
       scope: "puzzle-challenge",
       limit: MESSAGE_CHALLENGE_LIMIT,
@@ -1857,7 +1949,6 @@ async function handleMessagePuzzleChallenge(request, env) {
     });
     const challengeId = randomCapability(18);
     const geometry = randomPuzzleGeometry();
-    const binding = await privateMessageClientBinding(request);
     const image = await chooseOpenversePuzzleImage(env, binding);
     const now = Date.now();
     await coordinateSecurity(env,securityChallengeOwner("message-puzzle",challengeId),{
@@ -1880,7 +1971,7 @@ async function handleMessagePuzzleChallenge(request, env) {
         landingUrl: image.landingUrl,
         width: image.width,
         height: image.height,
-        source: "Openverse"
+        source: image.source || "Openverse"
       },
       siteKey: turnstile.siteKey,
       action: PRIVATE_MESSAGE_ACTION,
@@ -1888,7 +1979,7 @@ async function handleMessagePuzzleChallenge(request, env) {
     }, 201, context.origin);
   } catch (error) {
     const origin = context?.origin || allowedOrigin(request.headers.get("Origin") || "", env);
-    return json({ error: error?.message || "Verification puzzle could not be created.", code: error?.code || "internal" }, Number(error?.status) || 500, origin);
+    return json({ error: error?.message || "Verification puzzle could not be created.", code: error?.code || "internal", retryAt: error?.retryAt || "" }, Number(error?.status) || 500, origin);
   }
 }
 
@@ -1912,6 +2003,7 @@ async function handleMessagePuzzleVerify(request, env) {
         status:400,code:"message-puzzle-answer",source:"worker"
       });
     const binding = await privateMessageClientBinding(request);
+    const cooldownOwner = await enforceMessagePuzzleCooldown(env, binding);
     const reply = await coordinateSecurity(env,
       securityChallengeOwner("message-puzzle",challengeId), {
         op:"puzzle-check",scope:"message-puzzle",id:challengeId,
@@ -1922,10 +2014,16 @@ async function handleMessagePuzzleVerify(request, env) {
         verificationNonce:securityRandomId(24)
       });
     if (reply.outcome === "replace") {
+      // The challenge was atomically deleted by its existing owner. Start a
+      // short server-side gate, then let the existing form countdown own UI.
+      const cooldown = await coordinateSecurity(env, cooldownOwner, {
+        op: "puzzle-cooldown-start", scope: "message-puzzle-cooldown",
+        seconds: MESSAGE_PUZZLE_WRONG_COOLDOWN_SECONDS
+      });
       return json({
-        ok:false,outcome:"replace",code:"message-puzzle-reset-required",
-        message:"That puzzle did not match. Switching to the next prepared image…"
-      },200,context.origin);
+        error: "Three incorrect puzzle attempts. Please retry after the countdown.",
+        code: "message-puzzle-cooldown", retryAt: cooldown.retryAt
+      },429,context.origin);
     }
     if (reply.outcome === "retry") {
       return json({
@@ -1961,7 +2059,7 @@ async function handleMessagePuzzleVerify(request, env) {
   } catch (error) {
     const origin=context?.origin||allowedOrigin(request.headers.get("Origin")||"",env);
     return json({error:error?.message||"Verification puzzle could not be completed.",
-      code:error?.code||"internal"},Number(error?.status)||500,origin);
+      code:error?.code||"internal",retryAt:error?.retryAt||""},Number(error?.status)||500,origin);
   }
 }
 

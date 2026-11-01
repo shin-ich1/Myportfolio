@@ -2642,7 +2642,9 @@ function beginPublicMessageRetryCountdown(error) {
       button.disabled = true;
       status.className = "public-message-status-error";
       status.textContent = hasServerLimit
-        ? `Too many verification requests. Retry in ${remaining}s.`
+        ? (error?.code === "message-puzzle-cooldown"
+            ? `Three incorrect puzzle attempts. Retry in ${remaining}s.`
+            : `Too many verification requests. Retry in ${remaining}s.`)
         : `Verification image unavailable. Retry verification in ${remaining}s.`;
       return;
     }
@@ -2799,10 +2801,9 @@ async function loadPublicMessagePuzzleChallenge() {
       if (retryChallenge && publicMessagePuzzleChallenge) {
         publicMessagePuzzleChallenge = { ...publicMessagePuzzleChallenge, ...retryChallenge };
       }
-      completedTurnstileToken = "";
-      completedTurnstileAt = 0;
-      completedTurnstileError = null;
-      turnstile.reset?.(publicMessageTurnstileWidgetId);
+      // A wrong answer never spent a Turnstile token on the Worker. Retain
+      // the prepared browser proof rather than restarting Cloudflare on
+      // every incorrect attempt; the Worker still checks every answer.
       setPublicMessagePuzzleSlider(slider, 0);
       syncPublicMessagePuzzleGeometry();
       slider.disabled = false;
@@ -2820,11 +2821,16 @@ async function loadPublicMessagePuzzleChallenge() {
       if (label) label.textContent = "Checking…";
       if (status) status.textContent = "Complete the Cloudflare check below if prompted. Verifying the puzzle securely…";
       try {
-        const turnstileToken = await runTurnstile();
+        const answer = Number(slider.value);
+        const target = Number(publicMessagePuzzleChallenge.targetPercent);
+        // Only a near-aligned attempt can ever pass the Worker tolerance.
+        // Wrong answers go immediately to the authoritative server, without
+        // blocking on a fresh Turnstile token or wasting it on a rejected try.
+        const requiresBrowserProof = Number.isFinite(target) && Math.abs(answer - target) <= 1;
+        const turnstileToken = requiresBrowserProof ? await runTurnstile() : "";
         const verified = await verifyPrivateMessageChallenge({
           challengeId: publicMessagePuzzleChallenge.challengeId,
-          answer: Number(slider.value),
-          turnstileToken
+          answer, turnstileToken
         });
         if (verified?.outcome === "retry") {
           resetSamePuzzle(verified.message || "Not quite. The matching space moved — try again.", verified.challenge);
@@ -2842,7 +2848,8 @@ async function loadPublicMessagePuzzleChallenge() {
       } catch (error) {
         if (error?.status === 429) {
           // The Worker supplies the actual retryAt when a rate window is active.
-          // Do not keep a spent/blocked verification proof in the puzzle.
+          // Discard any prepared challenge before showing the form countdown.
+          discardPublicMessagePuzzleWarmup();
           closePublicMessagePuzzleVerification();
           beginPublicMessageRetryCountdown(error);
           return;

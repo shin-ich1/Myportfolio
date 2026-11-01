@@ -127,6 +127,6 @@ test("LIVE published CSS outside one canonical puzzle rule is preserved exactly"
   assert.match(css,/\.storage-policy-panel/);
   const puzzle=css.slice(start,end);
   assert.match(puzzle,/\.public-message-puzzle-card\{[^}]*grid-auto-rows:max-content/);
-  assert.match(puzzle,/\.public-message-puzzle-foot\{display:none/);
+  assert.match(puzzle,/\.public-message-puzzle-foot\{position:absolute;width:1px;height:1px;[^}]*overflow:hidden;clip-path:inset\(50%\)/,"The existing status footer is visually hidden without a duplicate CSS override");
   assert.match(puzzle,/\.public-message-turnstile-slot\{display:grid/);
 });

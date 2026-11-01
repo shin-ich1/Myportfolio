@@ -44,6 +44,14 @@ const withoutPublicOwners = text => {
   return result;
 };
 const withoutThreadOwner = text => withoutFunction(text, "export function subscribePrivateVisitorThread(", "\nexport async function sendPrivateVisitorMessage(", "visitor Firestore subscriber");
+// Remove only the exact reviewed token-less wrong-answer delegation for
+// comparison against audited main. Correct matches still need server Siteverify.
+const withoutWrongAnswerProofDelegation = text => {
+  const before = "  // A wrong answer is rejected by the Worker before Siteverify, so it may\n  // be checked without waiting for a browser token. Correct answers still\n  // require a real Turnstile token server-side before any proof is issued.\n";
+  assert.equal(text.split(before).length, 2, "Exactly one reviewed delegated check required");
+  assert.ok(text.indexOf(before) > text.indexOf("export async function verifyPrivateMessageChallenge("));
+  return text.replace(before, "  if (!response) throw new Error(\"Secure browser verification is still running.\");\n");
+};
 const withoutTurnstileSlot = text => {
   assert.equal((text.match(/\.public-message-turnstile-slot\{/g) || []).length, 1);
   return text.replace(/\.public-message-turnstile-slot\{[^}]*\}/, "[AUDITED EXISTING TURNSTILE CSS SLOT]");
@@ -53,7 +61,7 @@ test("Audited Public app is frozen outside two canonical message owners and obso
   assert.equal(git("rev-parse", main + ":app.js"), "f156424e6adf216da6660648dc634319e340aa4a");
   // Exact reviewed app.js fingerprint updated for the single authorized expired-puzzle
   // controller correction; no Public code outside the canonical owner changed.
-  assert.equal(git("hash-object", "app.js"), "6b4c27a79a4e1d66a3549c09fa719f14059cacad");
+  assert.equal(git("hash-object", "app.js"), "0e098b12120b0932c3c0ce427234099a35d0ef60");
   assert.equal(withoutPublicOwners(withoutImageFailureRetryUX(source("app.js"))), withoutPublicOwners(original("app.js")));
 });
 test("Only reviewed Turnstile slot and puzzle grid row may differ from audited Public styles", () => {
@@ -79,13 +87,14 @@ test("Only reviewed Turnstile slot and puzzle grid row may differ from audited P
 });
 test("Public messaging Firestore module preserves all other canonical functions", () => {
   assert.equal(git("rev-parse", main + ":message-service.js"), "764a353722a63067b0335f80c17c09fbbfc00a06");
-  assert.equal(git("hash-object", "message-service.js"), "fbbe71500e856d0c553edf689bc2c293fbbc5079");
-  assert.equal(withoutThreadOwner(source("message-service.js")), withoutThreadOwner(original("message-service.js")));
+  assert.equal(git("hash-object", "message-service.js"), "4bd8fffefcd5742890316ecd8c0e13c79a036317");
+  assert.equal(withoutThreadOwner(withoutWrongAnswerProofDelegation(source("message-service.js"))), withoutThreadOwner(original("message-service.js")));
 });
 test("Public messaging security still requires server-verified one-time Cloudflare and slider proof", () => {
   const app=source("app.js"),worker=source("telemetry-worker/src/index.js");
-  assert.match(app,/const turnstileToken = await runTurnstile\(\)/);
-  assert.match(app,/verifyPrivateMessageChallenge\(\{[\s\S]*?answer:[\s\S]*?turnstileToken/);
+  assert.match(app,/const requiresBrowserProof = Number.isFinite\(target\) && Math.abs\(answer - target\) <= 1/);
+  assert.match(app,/const turnstileToken = requiresBrowserProof \? await runTurnstile\(\) : ""/);
+  assert.match(app,/verifyPrivateMessageChallenge\(\{[\s\S]*?answer, turnstileToken/);
   assert.match(worker,/async function verifyTurnstile\(request, env, token\)/);
   assert.match(worker,/result\?\.success !== true/);
   assert.match(worker,/String\(result\.hostname \|\| ""\)\.toLowerCase\(\) !== config\.host/);

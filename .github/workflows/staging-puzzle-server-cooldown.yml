@@ -1,0 +1,27 @@
+name: Isolated staging puzzle wrong-answer cooldown
+on:
+  push:
+    branches:
+      - fix/staging-puzzle-server-cooldown-20261101
+permissions:
+  contents: read
+jobs:
+  secure-cooldown:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Server-issued wrong-answer cooldown security regression
+        run: node --test tests/message-puzzle-wrong-answer-cooldown.test.mjs
+      - name: Available non-emulator repository tests
+        run: node --test tests/*.test.mjs
+      - name: Syntax checks
+        run: |
+          node --check telemetry-worker/src/index.js
+          node --check telemetry-worker/src/security-coordinator.js
+          node --check tests/message-puzzle-wrong-answer-cooldown.test.mjs

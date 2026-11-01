@@ -5,6 +5,10 @@ on:
     branches:
       - fix/message-puzzle-tight-alignment-20261101
 
+  pull_request:
+    branches:
+      - fix/public-message-openverse-outage-20261031
+
 permissions:
   contents: read
 

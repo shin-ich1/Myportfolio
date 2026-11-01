@@ -32,6 +32,8 @@ jobs:
           npx --yes --package=wrangler@4.156.0 wrangler deploy --dry-run \
             --config telemetry-worker/wrangler.jsonc \
             --outdir /tmp/lan-live-message-worker-dry-run
+      - name: Read-only FULL tracked-file LIVE Hosting parity (no deploy)
+        run: node scripts/audit-live-hosting-parity.mjs
       - name: JS syntax
         run: |
           node --check app.js

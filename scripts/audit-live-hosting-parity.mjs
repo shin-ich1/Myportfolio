@@ -37,7 +37,12 @@ async function workerCheck(){
   try{
    const res=await fetch(url,{headers:{"cache-control":"no-cache"},signal:AbortSignal.timeout(20000)});
    if(!res.ok)throw Error("HTTP "+res.status);
-   const actual=blob(Buffer.from(await res.arrayBuffer()));
+   const bytes=Buffer.from(await res.arrayBuffer());
+   const actual=blob(bytes);
+   if(["admin/index.html","admin/admin.css","app.js","styles.css","index.html"].includes(path)) {
+     console.log("SAMPLE",path,"status",res.status,"type",res.headers.get("content-type"),"bytes",bytes.length,"actual",actual,"expected",expected[path],
+       "firstChars",bytes.toString("utf8",0,30).replace(/[\r\n]/g," "));
+   }
    if(actual!==expected[path])results.push({path,actual,expected:expected[path],error:"different published content"});
   }catch(error){results.push({path,error:String(error?.message||error)});}
  }
@@ -46,6 +51,7 @@ await Promise.all(Array.from({length:10},()=>workerCheck()));
 console.log("LIVE Hosting tracked-file parity; site:",site);
 console.log("Checked:",published.length,"Unchanged expected:",published.length-3,"Allowed planned changes: app.js, message-service.js, styles.css");
 console.log("Unexpected mismatches:",results.length);
+console.log("Mismatches grouped by top-level folder:",Object.entries(Object.groupBy(results,r=>r.path.split("/")[0])).map(([k,v])=>k+":"+v.length).join(" "));
 for(const r of results.slice(0,35))console.log("MISMATCH",r.path,r.error,"live:",r.actual||"download-failed","expected:",r.expected||"n/a");
 if(results.length)throw Error("STOP: candidate would change or lose published files beyond authorized three; investigate remote-only assets separately.");
 console.log("READ-ONLY LIVE HOSTING TRACKED-FILE PARITY: PASS; remote-only deployment assets still require release-manifest review");

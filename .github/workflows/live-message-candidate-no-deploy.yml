@@ -1,0 +1,33 @@
+name: LIVE release candidate Public Message regression (NO DEPLOY)
+on:
+  push:
+    branches:
+      - release/live-public-message-parity-20261101
+permissions:
+  contents: read
+jobs:
+  message-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: LIVE release regression
+        run: node --test tests/live-message-release-regression.test.mjs
+      - name: Available repository tests
+        shell: bash
+        run: |
+          mapfile -t cases < <(find tests -maxdepth 1 -name '*.test.mjs' \
+            ! -name 'firestore-backup-restore-emulator.test.mjs' \
+            ! -name 'firestore-security-emulator.test.mjs' | sort)
+          node --test "${cases[@]}"
+      - name: JS syntax
+        run: |
+          node --check app.js
+          node --check message-service.js
+          node --check telemetry-worker/src/index.js
+          node --check telemetry-worker/src/security-coordinator.js

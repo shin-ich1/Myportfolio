@@ -1,0 +1,27 @@
+name: Isolated staging puzzle fast retry and countdown UI
+on:
+  push:
+    branches:
+      - fix/staging-puzzle-fast-retry-countdown-ui-20261101
+permissions:
+  contents: read
+jobs:
+  puzzle-retry-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fast wrong answer and server countdown UX regression
+        run: node --test tests/public-message-fast-retry-cooldown.test.mjs
+      - name: Existing non-emulator repository tests
+        run: node --test tests/*.test.mjs
+      - name: Syntax checks
+        run: |
+          node --check app.js
+          node --check message-service.js
+          node --check tests/public-message-fast-retry-cooldown.test.mjs

@@ -20,6 +20,13 @@ jobs:
         run: node --test tests/message-puzzle-wrong-answer-cooldown.test.mjs
       - name: Available non-emulator repository tests
         run: node --test tests/*.test.mjs
+      - name: Dry-run staging-only Worker package (never deploy)
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          npx --yes --package=wrangler@4.156.0 wrangler deploy --dry-run \
+            --config telemetry-worker/wrangler.staging.jsonc \
+            --outdir /tmp/lan-staging-cooldown-dry-run
       - name: Syntax checks
         run: |
           node --check telemetry-worker/src/index.js

@@ -25,6 +25,13 @@ jobs:
             ! -name 'firestore-backup-restore-emulator.test.mjs' \
             ! -name 'firestore-security-emulator.test.mjs' | sort)
           node --test "${cases[@]}"
+      - name: Production Worker bundle DRY RUN ONLY — no credentials or deployment
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          npx --yes --package=wrangler@4.156.0 wrangler deploy --dry-run \
+            --config telemetry-worker/wrangler.jsonc \
+            --outdir /tmp/lan-live-message-worker-dry-run
       - name: JS syntax
         run: |
           node --check app.js

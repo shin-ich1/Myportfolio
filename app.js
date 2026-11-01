@@ -2528,7 +2528,11 @@ function render() {
 
     ${publicLayout}
   </main>
-  <footer class="wrap site-footer"><a class="brand" href="#home">${escapeHtml(content.site.brand || "LΛN")}</a><span>© ${new Date().getFullYear()} ${escapeHtml(content.site.name)}</span><span class="site-footer-links"><a href="#home">Back to top ↑</a><a class="footer-admin-link" href="admin/">${icon("lock-keyhole")} Admin</a></span></footer>
+  <footer class="wrap site-footer site-footer--storage">
+    <div class="site-footer-identity"><a class="brand" href="#home">${escapeHtml(content.site.brand || "LΛN")}</a><span>© ${new Date().getFullYear()} ${escapeHtml(content.site.name)}</span></div>
+    <nav class="site-footer-links" aria-label="Footer links"><a class="storage-policy-footer-link" href="storage-privacy.html">Privacy Policy</a><a href="#home">Back to top ↑</a><a class="footer-admin-link" href="admin/">${icon("lock-keyhole")} Admin</a></nav>
+    <p class="storage-policy-footer-summary">LAN Portfolio Storage uses Google Drive access to upload and manage portfolio media.</p>
+  </footer>
   <button class="public-message-launcher" id="publicMessageLauncher" type="button" aria-label="Open private message" title="Private message">${icon("message-circle")}<span class="public-message-launcher-dot" aria-hidden="true"></span></button><div id="modal"></div>`;
 
   initPublicAdaptiveMode();
@@ -2550,6 +2554,8 @@ let publicMessagePendingSubmission = null;
 let publicMessagePuzzleResizeObserver = null;
 let publicMessagePuzzleWarmupPromise = null;
 let publicMessagePuzzleWarmup = null;
+let publicMessageRetryTimerId = null;
+let publicMessageRetryUntil = 0;
 const PUBLIC_MESSAGE_PUZZLE_WARMUP_MAX_AGE_MS = 2 * 60 * 1000;
 const PUBLIC_MESSAGE_PUZZLE_NEXT_WARMUP_DELAY_MS = 120;
 
@@ -2723,6 +2729,7 @@ async function takePublicMessagePuzzleWarmup() {
 }
 
 function destroyPublicMessagePuzzleVerification() {
+  stopPublicMessageRetryCountdown();
   publicMessagePuzzleChallenge = null;
   publicMessagePuzzleAnswer = 0;
   publicMessagePendingSubmission = null;
@@ -2805,6 +2812,83 @@ function syncPublicMessagePuzzleGeometry() {
   pieceImage.style.top = `${-top}px`;
 }
 
+function stopPublicMessageRetryCountdown() {
+  if (publicMessageRetryTimerId != null) window.clearInterval(publicMessageRetryTimerId);
+  publicMessageRetryTimerId = null;
+  publicMessageRetryUntil = 0;
+}
+
+function beginPublicMessageRetryCountdown(error) {
+  const button = document.querySelector("[data-public-message-send]");
+  const status = document.querySelector("[data-public-message-status]");
+  if (!button || !status) return;
+  stopPublicMessageRetryCountdown();
+
+  // The Worker owns actual 429 rate-limit timing. An image-load failure has
+  // no server retryAt, so this is only a short local retry delay—not a claim
+  // that the server has lifted a rate limit.
+  const now = Date.now();
+  const serverRetryAt = error?.status === 429 ? Date.parse(String(error?.retryAt || "")) : NaN;
+  const hasServerLimit = Number.isFinite(serverRetryAt) && serverRetryAt > now;
+  const isWrongAnswerCooldown = hasServerLimit && error?.code === "message-puzzle-cooldown";
+  // Keep the server's 10s security gate authoritative. The extra five seconds
+  // are client-side preparation time, not a shortened or bypassed rate limit.
+  const imagePreparationMs = isWrongAnswerCooldown ? 5_000 : 0;
+  publicMessageRetryUntil = hasServerLimit ? serverRetryAt + imagePreparationMs : now + 10_000;
+  const retryDeadline = publicMessageRetryUntil;
+  let warmupState = isWrongAnswerCooldown ? "idle" : "none";
+
+  const update = () => {
+    if (!button.isConnected || !status.isConnected) {
+      stopPublicMessageRetryCountdown();
+      return;
+    }
+    const currentTime = Date.now();
+    if (isWrongAnswerCooldown && currentTime >= serverRetryAt && warmupState === "idle") {
+      warmupState = "pending";
+      // Start the existing shared challenge/image warmup only after the
+      // server allows it. If slow, continue waiting in the message form.
+      try {
+        Promise.resolve(warmPublicMessagePuzzleChallenge()).then(
+          () => {
+            warmupState = "ready";
+            if (publicMessageRetryUntil === retryDeadline) update();
+          },
+          () => {
+            warmupState = "failed";
+            if (publicMessageRetryUntil === retryDeadline) update();
+          }
+        );
+      } catch {
+        warmupState = "failed";
+      }
+    }
+    const remaining = Math.max(0, Math.ceil((retryDeadline - currentTime) / 1000));
+    if (remaining || (isWrongAnswerCooldown && warmupState === "pending")) {
+      button.disabled = true;
+      status.className = "public-message-status-error";
+      status.textContent = remaining
+        ? isWrongAnswerCooldown
+          ? currentTime < serverRetryAt
+            ? `Three incorrect puzzle attempts. Retry in ${remaining}s.`
+            : `Preparing the next puzzle image. Retry in ${remaining}s.`
+          : hasServerLimit
+            ? `Too many verification requests. Retry in ${remaining}s.`
+            : `Verification image unavailable. Retry verification in ${remaining}s.`
+        : "Preparing the next puzzle image…";
+      return;
+    }
+    stopPublicMessageRetryCountdown();
+    button.disabled = false;
+    status.className = "";
+    status.textContent = isWrongAnswerCooldown && warmupState === "failed"
+      ? "Image preparation failed. You can try sending your message again."
+      : "You can try sending your message again.";
+  };
+  update();
+  if (publicMessageRetryUntil > 0) publicMessageRetryTimerId = window.setInterval(update, 1000);
+}
+
 function closePublicMessagePuzzleVerification({ preserveSubmission = false } = {}) {
   const layer = document.querySelector("[data-public-puzzle-layer]");
   if (layer) layer.hidden = true;
@@ -2831,6 +2915,9 @@ async function loadPublicMessagePuzzleChallenge() {
   publicMessagePuzzleChallenge = null;
   publicMessagePuzzleAnswer = 0;
   slider.disabled = true;
+  // The previous puzzle image may still be in the DOM during replacement.
+  // Keep it invisible until the next challenge image is fully loaded.
+  scene.style.visibility = "hidden";
   scene.style.removeProperty("--public-puzzle-aspect");
   if (label) label.textContent = "Preparing puzzle…";
   if (status) { status.textContent = "Preparing a high-quality verification image…"; status.className = "public-message-puzzle-status"; }
@@ -2845,6 +2932,7 @@ async function loadPublicMessagePuzzleChallenge() {
     publicMessagePuzzleChallenge = challenge;
     publicMessagePuzzleAnswer = 0;
     await loadPublicMessagePuzzleImage(image, pieceImage, scene, challenge);
+    scene.style.visibility = "";
     setPublicMessagePuzzleSlider(slider, 0);
     syncPublicMessagePuzzleGeometry();
     publicMessagePuzzleResizeObserver?.disconnect();
@@ -2853,33 +2941,109 @@ async function loadPublicMessagePuzzleChallenge() {
 
     let pendingTurnstileResolve = null;
     let pendingTurnstileReject = null;
+    let turnstileExecutionTimeoutId = null;
+    // One short-lived, single-consumption browser proof; the Worker still validates it.
+    let completedTurnstileToken = "";
+    let completedTurnstileAt = 0;
+    let completedTurnstileError = null;
+    const finishTurnstile = (error, token = "") => {
+      const responseToken = cleanText(token);
+      if (error) {
+        completedTurnstileToken = "";
+        completedTurnstileAt = 0;
+        completedTurnstileError = error;
+      } else if (responseToken) {
+        completedTurnstileToken = responseToken;
+        completedTurnstileAt = Date.now();
+        completedTurnstileError = null;
+      }
+      if (!pendingTurnstileResolve && !pendingTurnstileReject) return;
+      if (turnstileExecutionTimeoutId !== null) window.clearTimeout(turnstileExecutionTimeoutId);
+      turnstileExecutionTimeoutId = null;
+      const resolve = pendingTurnstileResolve;
+      const reject = pendingTurnstileReject;
+      pendingTurnstileResolve = null;
+      pendingTurnstileReject = null;
+      if (error) reject?.(error);
+      else if (responseToken) {
+        completedTurnstileToken = "";
+        completedTurnstileAt = 0;
+        resolve?.(responseToken);
+      } else reject?.(new Error("Secure browser verification returned no token."));
+    };
     const runTurnstile = () => new Promise((resolve, reject) => {
+      // The widget may fail before the visitor reaches the slider. Do not hide
+      // its error and then wait 45 seconds for a callback that already happened.
+      if (completedTurnstileError) {
+        const error = completedTurnstileError;
+        completedTurnstileError = null;
+        reject(error);
+        return;
+      }
+      // Turnstile already started on render. Consume a fresh proof if the visitor
+      // completed its challenge before sliding; never use the same token twice.
+      if (completedTurnstileToken && Date.now() - completedTurnstileAt < 240000
+        && !turnstile.isExpired?.(publicMessageTurnstileWidgetId)) {
+        const token = completedTurnstileToken;
+        completedTurnstileToken = "";
+        completedTurnstileAt = 0;
+        resolve(token);
+        return;
+      }
+      completedTurnstileToken = "";
+      completedTurnstileAt = 0;
       pendingTurnstileResolve = resolve;
       pendingTurnstileReject = reject;
-      turnstile.execute(publicMessageTurnstileWidgetId);
+      turnstileExecutionTimeoutId = window.setTimeout(
+        () => finishTurnstile(new Error("Secure browser verification timed out. Please try again.")),
+        45000
+      );
     });
     publicMessageTurnstileWidgetId = turnstile.render(slot, {
       sitekey: challenge.siteKey,
       theme: "dark",
-      size: "flexible",
+      // Use actual available width rather than treating every mobile view as 150px wide.
+      size: slot.parentElement.getBoundingClientRect().width < 300 ? "compact" : "flexible",
       appearance: "interaction-only",
-      execution: "execute",
+      // Begin Cloudflare verification as soon as the modal is ready so its challenge
+      // can be completed without waiting for the puzzle slider to be released.
+      execution: "render",
       action: challenge.action || "portfolio_message_create",
-      callback: (token) => { pendingTurnstileResolve?.(cleanText(token)); pendingTurnstileResolve = null; pendingTurnstileReject = null; },
-      "expired-callback": () => { pendingTurnstileReject?.(new Error("Secure browser verification expired.")); pendingTurnstileResolve = null; pendingTurnstileReject = null; },
-      "error-callback": () => { pendingTurnstileReject?.(new Error("Secure browser verification could not complete.")); pendingTurnstileResolve = null; pendingTurnstileReject = null; },
-      "timeout-callback": () => { pendingTurnstileReject?.(new Error("Secure browser verification timed out.")); pendingTurnstileResolve = null; pendingTurnstileReject = null; }
+      callback: (token) => {
+        finishTurnstile(null, token);
+        if (!slider.disabled && status) status.textContent = "Browser check ready. Slide the puzzle to continue.";
+      },
+      "before-interactive-callback": () => {
+        // The long status below the puzzle is accessible but visually hidden.
+        // Keep the required manual Cloudflare interaction discoverable when
+        // the visitor must scroll inside a compact puzzle card.
+        if (label) label.textContent = "Complete browser check below";
+        if (status) status.textContent = slider.disabled
+          ? "Complete the Cloudflare check below to finish verification."
+          : "Complete the Cloudflare check below, then slide the puzzle.";
+      },
+      "expired-callback": () => finishTurnstile(new Error("Secure browser verification expired. Please try again.")),
+      "error-callback": (errorCode) => {
+        // Cloudflare error codes are numeric, not tokens. Never log challenge details.
+        const safeCode = /^\d{3,6}$/.test(String(errorCode)) ? ` (code ${String(errorCode)})` : "";
+        finishTurnstile(new Error(`Secure browser verification failed${safeCode}. Please try again.`));
+        return true;
+      },
+      "unsupported-callback": () => finishTurnstile(new Error("This browser cannot complete the secure verification.")),
+      "timeout-callback": () => finishTurnstile(new Error("Secure browser verification timed out. Please try again."))
     });
 
     const resetSamePuzzle = (message = "Try the same puzzle again.", retryChallenge = null) => {
       if (retryChallenge && publicMessagePuzzleChallenge) {
         publicMessagePuzzleChallenge = { ...publicMessagePuzzleChallenge, ...retryChallenge };
       }
-      turnstile.reset?.(publicMessageTurnstileWidgetId);
+      // A wrong answer never spent a Turnstile token on the Worker. Retain
+      // the prepared browser proof rather than restarting Cloudflare on
+      // every incorrect attempt; the Worker still checks every answer.
       setPublicMessagePuzzleSlider(slider, 0);
       syncPublicMessagePuzzleGeometry();
       slider.disabled = false;
-      if (label) label.textContent = "Slide to complete the puzzle";
+      if (label) label.textContent = "Try again — target moved";
       if (status) { status.textContent = message; status.className = "public-message-puzzle-status is-error"; }
     };
 
@@ -2891,13 +3055,18 @@ async function loadPublicMessagePuzzleChallenge() {
       if (!publicMessagePuzzleChallenge) return;
       slider.disabled = true;
       if (label) label.textContent = "Checking…";
-      if (status) status.textContent = "Verifying the puzzle securely…";
+      if (status) status.textContent = "Complete the Cloudflare check below if prompted. Verifying the puzzle securely…";
       try {
-        const turnstileToken = await runTurnstile();
+        const answer = Number(slider.value);
+        const target = Number(publicMessagePuzzleChallenge.targetPercent);
+        // Only a near-aligned attempt can ever pass the Worker tolerance.
+        // Wrong answers go immediately to the authoritative server, without
+        // blocking on a fresh Turnstile token or wasting it on a rejected try.
+        const requiresBrowserProof = Number.isFinite(target) && Math.abs(answer - target) <= 1;
+        const turnstileToken = requiresBrowserProof ? await runTurnstile() : "";
         const verified = await verifyPrivateMessageChallenge({
           challengeId: publicMessagePuzzleChallenge.challengeId,
-          answer: Number(slider.value),
-          turnstileToken
+          answer, turnstileToken
         });
         if (verified?.outcome === "retry") {
           resetSamePuzzle(verified.message || "Not quite. The matching space moved — try again.", verified.challenge);
@@ -2913,19 +3082,51 @@ async function loadPublicMessagePuzzleChallenge() {
         if (status) { status.textContent = "Verified. Sending your message…"; status.className = "public-message-puzzle-status is-success"; }
         await sendPendingPublicMessage(verified.verificationToken);
       } catch (error) {
+        if (error?.status === 429) {
+          // The Worker supplies the actual retryAt when a rate window is active.
+          // Discard any prepared challenge before showing the form countdown.
+          discardPublicMessagePuzzleWarmup();
+          closePublicMessagePuzzleVerification();
+          beginPublicMessageRetryCountdown(error);
+          return;
+        }
+        if (error?.code === "message-puzzle-expired" && error?.status === 410) {
+          // Server-deleted challenges can never be retried. Only the existing
+          // challenge loader may restore a usable slider with a fresh proof.
+          publicMessagePuzzleChallenge = null;
+          slider.disabled = true;
+          completedTurnstileToken = "";
+          completedTurnstileAt = 0;
+          completedTurnstileError = null;
+          if (label) label.textContent = "Preparing a new puzzle…";
+          if (status) {
+            status.textContent = "Verification puzzle expired. Loading a new puzzle…";
+            status.className = "public-message-puzzle-status is-error";
+          }
+          await loadPublicMessagePuzzleChallenge();
+          return;
+        }
+        // Resetting discards any prior browser proof; this does not bypass Siteverify.
+        completedTurnstileToken = "";
+        completedTurnstileAt = 0;
+        completedTurnstileError = null;
+        try { turnstile.reset?.(publicMessageTurnstileWidgetId); } catch {}
         if (status) { status.textContent = error?.message || "Secure verification could not complete. Please try again."; status.className = "public-message-puzzle-status is-error"; }
         slider.disabled = false;
         if (label) label.textContent = "Slide to complete the puzzle";
       }
     };
 
-    // Keep the next server challenge warm as soon as this one is usable so a
-    // bounded failed-attempt rotation can switch images without visible fetch latency.
-    window.setTimeout(() => warmPublicMessagePuzzleChallenge().catch(() => {}), PUBLIC_MESSAGE_PUZZLE_NEXT_WARMUP_DELAY_MS);
   } catch (error) {
     slider.disabled = true;
     if (label) label.textContent = "Verification unavailable";
     if (status) { status.textContent = error?.message || "Secure human verification is unavailable."; status.className = "public-message-puzzle-status is-error"; }
+    // Do not leave an image-less puzzle and unusable slider on screen.
+    // Preserve form fields by closing only the puzzle layer, not its form.
+    if (!layer.hidden) {
+      closePublicMessagePuzzleVerification();
+      beginPublicMessageRetryCountdown(error);
+    }
   }
 }
 
@@ -3072,32 +3273,34 @@ async function openPublicMessageComposer() {
     return;
   }
 
+  publicMessagePushState = "unregistered";
+  publicMessagePushError = "";
+  let initialThreadReceived = false;
+  // Firestore's live authorized snapshot is the canonical source. A separate
+  // getDoc creates an unnecessary blocking network dependency in in-app browsers.
+  const startupTimeoutId = window.setTimeout(() => {
+    if (initialThreadReceived || !dialog.isConnected) return;
+    publicMessageStop?.();
+    publicMessageStop = null;
+    dialog.innerHTML = `<div class="public-private-error"><strong>Conversation is taking longer than expected</strong><p>Check your connection, then try again. Your private conversation has not been removed.</p><button class="btn" data-retry-private-message type="button">Try again</button></div>`;
+    dialog.querySelector("[data-retry-private-message]")?.addEventListener("click", () => openPublicMessageComposer(), { once: true });
+  }, 12000);
+
   try {
-    const thread = await getPrivateVisitorThread(identity.id);
-    if (!thread) {
-      clearVisitorConversationIdentity();
-      updatePublicMessageLauncherUnread(false);
-      renderPublicMessageStart(dialog, "");
-      return;
-    }
-    publicMessagePushState = "unregistered";
-    publicMessagePushError = "";
-    if (("Notification" in window) && Notification.permission === "granted") {
-      try {
-        await rehydratePortfolioPush({ audience: "visitor", threadId: identity.id, iconUrl: publicMessageIconUrl() });
-        publicMessagePushState = "registered";
-      } catch (error) {
-        publicMessagePushError = error?.message || "Reply notifications could not reconnect on this browser.";
-        console.error("Visitor push registration could not be restored:", error);
+    publicMessageStop = subscribePrivateVisitorThread(identity.id, ({ thread: liveThread, messages }) => {
+      if (!dialog.isConnected) return;
+      if (!initialThreadReceived) {
+        initialThreadReceived = true;
+        window.clearTimeout(startupTimeoutId);
       }
-    }
-    publicMessageStop = subscribePrivateVisitorThread(identity.id, async ({ thread: liveThread, messages }) => {
       if (!liveThread) {
         publicMessageStop?.();
         publicMessageStop = null;
+        // Clear browser access only after a real, authorized thread snapshot
+        // confirms deletion. Initial messages snapshots cannot trigger this.
         clearVisitorConversationIdentity();
         updatePublicMessageLauncherUnread(false);
-        if (dialog.isConnected) dialog.innerHTML = publicMessageClosedMarkup();
+        dialog.innerHTML = publicMessageClosedMarkup();
         dialog.querySelector("[data-start-new-private-message]")?.addEventListener("click", () => renderPublicMessageStart(dialog, ""));
         window.lucide?.createIcons();
         return;
@@ -3106,10 +3309,26 @@ async function openPublicMessageComposer() {
       renderPublicPrivateConversation(liveThread, messages);
       if (liveThread.visitorUnread) markPrivateVisitorThreadRead(liveThread.id).catch(() => {});
     }, (error) => {
-      if (dialog.isConnected) dialog.innerHTML = `<div class="public-private-error"><strong>Private messaging unavailable</strong><p>${escapeHtml(error?.message || "Please try again later.")}</p></div>`;
+      window.clearTimeout(startupTimeoutId);
+      if (dialog.isConnected) dialog.innerHTML = `<div class="public-private-error"><strong>Private messaging unavailable</strong><p>${escapeHtml(error?.message || "Please try again later.")}</p><button class="btn" data-retry-private-message type="button">Try again</button></div>`;
+      dialog.querySelector("[data-retry-private-message]")?.addEventListener("click", () => openPublicMessageComposer(), { once: true });
     });
+
+    // Notifications are optional; never block the private conversation while
+    // a webview waits on permission, a push subscription, or service workers.
+    if (("Notification" in window) && Notification.permission === "granted") {
+      Promise.resolve()
+        .then(() => rehydratePortfolioPush({ audience: "visitor", threadId: identity.id, iconUrl: publicMessageIconUrl() }))
+        .then(() => { publicMessagePushState = "registered"; })
+        .catch((error) => {
+          publicMessagePushError = error?.message || "Reply notifications could not reconnect on this browser.";
+          console.error("Visitor push registration could not be restored:", error);
+        });
+    }
   } catch (error) {
-    dialog.innerHTML = `<div class="public-private-error"><strong>Private messaging unavailable</strong><p>${escapeHtml(error?.message || "Please try again later.")}</p></div>`;
+    window.clearTimeout(startupTimeoutId);
+    if (dialog.isConnected) dialog.innerHTML = `<div class="public-private-error"><strong>Private messaging unavailable</strong><p>${escapeHtml(error?.message || "Please try again later.")}</p><button class="btn" data-retry-private-message type="button">Try again</button></div>`;
+    dialog.querySelector("[data-retry-private-message]")?.addEventListener("click", () => openPublicMessageComposer(), { once: true });
   }
 }
 
@@ -3117,6 +3336,7 @@ async function submitPublicMessage(event) {
   event?.preventDefault?.();
   const form = event?.currentTarget;
   if (!form) return;
+  if (publicMessageRetryUntil > Date.now()) return;
   const status = form.querySelector("[data-public-message-status]");
   const data = new FormData(form);
   const name = cleanText(data.get("name"));

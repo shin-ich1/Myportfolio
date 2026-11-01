@@ -109,3 +109,24 @@ test("obsolete delayed-warmup constant is removed; one canonical message owner r
   assert.equal((worker.match(/async function handleMessagePuzzleVerify\(/g)||[]).length,1);
   assert.equal((coordinator.match(/if \(op === "puzzle-cooldown-start" \|\| op === "puzzle-cooldown-check"\)/g)||[]).length,1,"Only one canonical coordinator cooldown branch may own security state");
 });
+
+test("LIVE published CSS outside one canonical puzzle rule is preserved exactly",()=>{
+  const css=read("styles.css");
+  const marker=".public-message-puzzle-layer{";
+  const start=css.indexOf(marker);
+  const end=css.indexOf("\n",start);
+  assert.ok(start>0 && end>start && css.indexOf(marker,start+1)===-1,"Exactly one canonical puzzle style owner");
+  const frozenFNV = text => {
+    let h=2166136261;
+    for(let i=0;i<text.length;i++)h=Math.imul(h^text.charCodeAt(i),16777619)>>>0;
+    return h.toString(16).padStart(8,"0");
+  };
+  assert.equal(frozenFNV(css.slice(0,start)),"7551b6c1","LIVE CSS before puzzle rules changed");
+  assert.equal(frozenFNV(css.slice(end)),"47763787","LIVE footer/privacy/mobile CSS after puzzle rules changed");
+  assert.match(css,/\.site-footer\.site-footer--storage\{/);
+  assert.match(css,/\.storage-policy-panel/);
+  const puzzle=css.slice(start,end);
+  assert.match(puzzle,/\.public-message-puzzle-card\{[^}]*grid-auto-rows:max-content/);
+  assert.match(puzzle,/\.public-message-puzzle-foot\{display:none/);
+  assert.match(puzzle,/\.public-message-turnstile-slot\{display:grid/);
+});

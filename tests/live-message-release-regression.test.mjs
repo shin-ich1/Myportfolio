@@ -115,7 +115,7 @@ test("LIVE published CSS outside one canonical puzzle rule is preserved exactly"
   const marker=".public-message-puzzle-layer{";
   const start=css.indexOf(marker);
   const end=css.indexOf("\n",start);
-  assert.ok(start>0 && end>start && css.indexOf(marker,start+1)===-1,"Exactly one canonical puzzle style owner");
+  assert.ok(start>0 && end>start && (css.match(/^\\.public-message-puzzle-layer\\{/gm)||[]).length===1,"Exactly one top-level puzzle rule owner; media-query reuse is expected");
   const frozenFNV = text => {
     let h=2166136261;
     for(let i=0;i<text.length;i++)h=Math.imul(h^text.charCodeAt(i),16777619)>>>0;

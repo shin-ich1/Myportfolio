@@ -38,3 +38,16 @@ jobs:
           node --check message-service.js
           node --check telemetry-worker/src/index.js
           node --check telemetry-worker/src/security-coordinator.js
+      - name: Assemble tracked source and audit report (NO DEPLOY)
+        run: |
+          mkdir -p "$RUNNER_TEMP/lan-live-message-source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/lan-live-message-source"
+          test -f "$RUNNER_TEMP/lan-live-message-source/release-reports/live-public-message-release-candidate-20261101.md"
+          test -f "$RUNNER_TEMP/lan-live-message-source/tests/live-message-release-regression.test.mjs"
+      - name: Publish one consolidated candidate source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAN-LIVE-Public-Message-RELEASE-CANDIDATE-20261101
+          path: ${{ runner.temp }}/lan-live-message-source/
+          include-hidden-files: true
+          retention-days: 30

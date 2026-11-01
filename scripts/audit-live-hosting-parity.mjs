@@ -1,6 +1,6 @@
 import {execFileSync} from "node:child_process";
 import {readFileSync} from "node:fs";
-import {createHash} from "node:crypto";
+import {createHash,randomUUID} from "node:crypto";
 
 const site="https://rolando-portfolio-3f1a3.web.app";
 const frozenHead="ef8ed543fb2184de40c0f197d5212bd6534d880b";
@@ -33,7 +33,7 @@ let cursor=0;
 async function workerCheck(){
  while(cursor<published.length){
   const path=published[cursor++];
-  const url=site+"/"+path.split("/").map(encodeURIComponent).join("/")+"?release_audit="+frozenHead.slice(0,12);
+  const url=site+"/"+path.split("/").map(encodeURIComponent).join("/")+"?audit="+randomUUID();
   try{
    const res=await fetch(url,{headers:{"cache-control":"no-cache"},signal:AbortSignal.timeout(20000)});
    if(!res.ok)throw Error("HTTP "+res.status);
@@ -48,7 +48,7 @@ async function workerCheck(){
  }
 }
 await Promise.all(Array.from({length:10},()=>workerCheck()));
-console.log("LIVE Hosting tracked-file parity; site:",site);
+console.log("LIVE Hosting tracked-file parity with fresh per-file cache-busters; site:",site);
 console.log("Checked:",published.length,"Unchanged expected:",published.length-3,"Allowed planned changes: app.js, message-service.js, styles.css");
 console.log("Unexpected mismatches:",results.length);
 console.log("Mismatches grouped by top-level folder:",Object.entries(Object.groupBy(results,r=>r.path.split("/")[0])).map(([k,v])=>k+":"+v.length).join(" "));

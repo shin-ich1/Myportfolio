@@ -130,3 +130,10 @@ test("LIVE published CSS outside one canonical puzzle rule is preserved exactly"
   assert.match(puzzle,/\.public-message-puzzle-foot\{position:absolute;width:1px;height:1px;[^}]*overflow:hidden;clip-path:inset\(50%\)/,"The existing status footer is visually hidden without a duplicate CSS override");
   assert.match(puzzle,/\.public-message-turnstile-slot\{display:grid/);
 });
+
+test("published LIVE storage/privacy policy remains exact original release artifact",()=>{
+  assert.equal(sha("storage-privacy.html"),"570c3d7db9c0cf16d281c662f3eb5b0bd13b20c9","Never replace the published Privacy Policy page with fallback or older content");
+  const policy=read("storage-privacy.html");
+  assert.match(policy,/LAN Portfolio Storage/);
+  assert.match(app,/href="storage-privacy\.html"/,"LIVE footer must still link to the real policy page");
+});

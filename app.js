@@ -2630,34 +2630,60 @@ function beginPublicMessageRetryCountdown(error) {
   const now = Date.now();
   const serverRetryAt = error?.status === 429 ? Date.parse(String(error?.retryAt || "")) : NaN;
   const hasServerLimit = Number.isFinite(serverRetryAt) && serverRetryAt > now;
-  publicMessageRetryUntil = hasServerLimit ? serverRetryAt : now + 10_000;
+  const isWrongAnswerCooldown = hasServerLimit && error?.code === "message-puzzle-cooldown";
+  // Keep the server's 10s security gate authoritative. The extra five seconds
+  // are client-side preparation time, not a shortened or bypassed rate limit.
+  const imagePreparationMs = isWrongAnswerCooldown ? 5_000 : 0;
+  publicMessageRetryUntil = hasServerLimit ? serverRetryAt + imagePreparationMs : now + 10_000;
+  const retryDeadline = publicMessageRetryUntil;
+  let warmupState = isWrongAnswerCooldown ? "idle" : "none";
 
   const update = () => {
     if (!button.isConnected || !status.isConnected) {
       stopPublicMessageRetryCountdown();
       return;
     }
-    const remaining = Math.max(0, Math.ceil((publicMessageRetryUntil - Date.now()) / 1000));
-    if (remaining) {
+    const currentTime = Date.now();
+    if (isWrongAnswerCooldown && currentTime >= serverRetryAt && warmupState === "idle") {
+      warmupState = "pending";
+      // Start the existing shared challenge/image warmup only after the
+      // server allows it. If slow, continue waiting in the message form.
+      try {
+        Promise.resolve(warmPublicMessagePuzzleChallenge()).then(
+          () => {
+            warmupState = "ready";
+            if (publicMessageRetryUntil === retryDeadline) update();
+          },
+          () => {
+            warmupState = "failed";
+            if (publicMessageRetryUntil === retryDeadline) update();
+          }
+        );
+      } catch {
+        warmupState = "failed";
+      }
+    }
+    const remaining = Math.max(0, Math.ceil((retryDeadline - currentTime) / 1000));
+    if (remaining || (isWrongAnswerCooldown && warmupState === "pending")) {
       button.disabled = true;
       status.className = "public-message-status-error";
-      status.textContent = hasServerLimit
-        ? (error?.code === "message-puzzle-cooldown"
+      status.textContent = remaining
+        ? isWrongAnswerCooldown
+          ? currentTime < serverRetryAt
             ? `Three incorrect puzzle attempts. Retry in ${remaining}s.`
-            : `Too many verification requests. Retry in ${remaining}s.`)
-        : `Verification image unavailable. Retry verification in ${remaining}s.`;
+            : `Preparing the next puzzle image. Retry in ${remaining}s.`
+          : hasServerLimit
+            ? `Too many verification requests. Retry in ${remaining}s.`
+            : `Verification image unavailable. Retry verification in ${remaining}s.`
+        : "Preparing the next puzzle image…";
       return;
     }
     stopPublicMessageRetryCountdown();
     button.disabled = false;
     status.className = "";
-    status.textContent = "You can try sending your message again.";
-    // Begin a single, existing puzzle/image warmup only when the server
-    // countdown has expired. The Worker remains the authority for access.
-    // This optional preparation never sends a message or consumes a proof.
-    if (hasServerLimit && error?.code === "message-puzzle-cooldown") {
-      warmPublicMessagePuzzleChallenge().catch(() => {});
-    }
+    status.textContent = isWrongAnswerCooldown && warmupState === "failed"
+      ? "Image preparation failed. You can try sending your message again."
+      : "You can try sending your message again.";
   };
   update();
   if (publicMessageRetryUntil > 0) publicMessageRetryTimerId = window.setInterval(update, 1000);

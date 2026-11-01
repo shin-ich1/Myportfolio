@@ -13,13 +13,15 @@ const controller = app.slice(start, end);
 function createBrowserPuzzle({
   verify,
   challenges = ["original-puzzle", "new-puzzle"],
-  secondChallengeFails = false
+  secondChallengeFails = false,
+  delayImageLoad = false
 } = {}) {
   let created = 0;
   let sent = 0;
   let verificationCalls = 0;
   let widgetOptions;
   let resets = 0;
+  let releaseImageLoad = null;
   const slider = {
     disabled: true, value: "0", oninput: null, onchange: null,
     closest: () => ({ style: { setProperty() {} } })
@@ -62,7 +64,9 @@ function createBrowserPuzzle({
       if (!name) throw new Error("Unexpected extra challenge: "+created);
       return {challenge:{challengeId:name,siteKey:"test-site-key",image:{url:"local-fixture",width:960,height:540},targetPercent:40}};
     },
-    async loadPublicMessagePuzzleImage() {},
+    async loadPublicMessagePuzzleImage() {
+      if (delayImageLoad) await new Promise(resolve => { releaseImageLoad = resolve; });
+    },
     syncPublicMessagePuzzleGeometry() {},
     async loadPublicMessageTurnstileApi() { return turnstile; },
     isPublicDocumentFlowMode() {return false;},
@@ -90,7 +94,13 @@ function createBrowserPuzzle({
     "\nreturn {load:loadPublicMessagePuzzleChallenge, currentChallenge:()=>publicMessagePuzzleChallenge?.challengeId || null};");
   const api=factory(...keys.map(k=>deps[k]));
   return {
-    ...api, slider, status, label, layer, formStatus, button,
+    ...api, slider, status, label, layer, scene, formStatus, button,
+    get imageWaiting() { return Boolean(releaseImageLoad); },
+    resolveImageLoad() {
+      const release = releaseImageLoad;
+      releaseImageLoad = null;
+      release?.();
+    },
     showInteractiveCheck() { widgetOptions?.["before-interactive-callback"]?.(); },
     get created() { return created; },
     get sent() { return sent; },
@@ -253,4 +263,28 @@ test("Correctly aligned slider still consumes a real Turnstile token before send
   await view.slider.onchange();
   assert.equal(received.turnstileToken,"test-token-not-sent");
   assert.equal(view.sent,1);
+});
+
+test("Real puzzle controller hides the old picture during replacement and restores it only after image load", async () => {
+  const view=createBrowserPuzzle({ verify:async()=>({outcome:"retry"}), delayImageLoad:true });
+  const first=view.load();
+  for (let n=0;n<12&&!view.imageWaiting;n++) await Promise.resolve();
+  assert.equal(view.imageWaiting,true,"Image preparation must be pending");
+  assert.equal(view.scene.style.visibility,"hidden","No partial or stale image during first preparation");
+  assert.equal(view.slider.disabled,true,"Cannot interact until image is loaded");
+  view.resolveImageLoad();
+  await first;
+  assert.equal(view.scene.style.visibility,"","Reveal only the completed puzzle");
+  assert.equal(view.slider.disabled,false);
+
+  const next=view.load();
+  for(let n=0;n<12&&!view.imageWaiting;n++) await Promise.resolve();
+  assert.equal(view.imageWaiting,true,"Next challenge image should still be preparing");
+  assert.equal(view.scene.style.visibility,"hidden","Previous picture must not flash while the next loads");
+  assert.equal(view.slider.disabled,true);
+  view.resolveImageLoad();
+  await next;
+  assert.equal(view.scene.style.visibility,"");
+  assert.equal(view.currentChallenge(),"new-puzzle");
+  assert.equal(view.sent,0);
 });

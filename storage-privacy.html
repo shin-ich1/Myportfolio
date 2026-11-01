@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#050b14">
+  <meta name="description" content="Privacy Policy for LAN Portfolio Storage, the Google Drive media-storage integration used by LΛN Portfolio.">
+  <title>LAN Portfolio Storage | Privacy Policy</title>
+  <link rel="icon" href="/assets/brand/lan-mark.svg" type="image/svg+xml">
+  <script>(function(){try{var t=localStorage.getItem("theme")==="light"?"light":"dark";document.documentElement.dataset.theme=t;if(t==="light")document.documentElement.classList.add("light");}catch(e){}})();</script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="storage-policy-page">
+  <a class="storage-policy-skip" href="#main-content">Skip to privacy policy</a>
+  <header class="storage-policy-header">
+    <div class="wrap storage-policy-header-inner">
+      <a class="storage-policy-brand" href="index.html" aria-label="LΛN Portfolio home">LΛN</a>
+      <a class="storage-policy-back" href="index.html">Back to portfolio</a>
+    </div>
+  </header>
+
+  <main class="storage-policy-body wrap" id="main-content">
+    <p class="storage-policy-eyebrow">LΛN Portfolio · Google Drive Integration</p>
+    <h1>Privacy Policy</h1>
+    <p class="storage-policy-intro">This policy explains how <strong>LAN Portfolio Storage</strong>, the administrator-managed Google Drive integration for <strong>LΛN Portfolio</strong>, accesses, uses, stores, and shares Google user data.</p>
+    <p class="storage-policy-updated">Last updated: October 30, 2026</p>
+
+    <div class="storage-policy-panel">
+      <section aria-labelledby="storage-policy-about">
+        <h2 id="storage-policy-about">1. What the integration does</h2>
+        <p>LAN Portfolio Storage allows the authorized portfolio administrator to connect a Google Drive account to organize and manage media for the LΛN Portfolio website. It supports creating managed folders, uploading portfolio images, videos, documents, and other files, checking storage readiness, and delivering media selected for public display.</p>
+        <p>The Google Drive connection is for the portfolio administrator's storage management; public visitors do not need to sign in to Google Drive to view the portfolio.</p>
+      </section>
+
+      <section aria-labelledby="storage-policy-access">
+        <h2 id="storage-policy-access">2. Google user data we access</h2>
+        <p>The integration requests the Google Drive file-specific OAuth permission <code>https://www.googleapis.com/auth/drive.file</code>. This permits management of files created by, or explicitly opened for use with, this application; it does not request access to all unrelated files in your Google Drive.</p>
+        <p>When authorized, the integration may process the connected account's display name and email address, available storage quota, and information about managed files and folders, such as IDs, filenames, file types, sizes, locations, access permissions, and relevant metadata.</p>
+        <p>Google OAuth access tokens and refresh tokens are used to authenticate permitted operations. The integration does not request or store your Google account password.</p>
+      </section>
+
+      <section aria-labelledby="storage-policy-use">
+        <h2 id="storage-policy-use">3. How we use the data</h2>
+        <p>Google user data is used only to connect and verify the selected storage account; create and organize application-managed folders; upload, retrieve, and manage portfolio assets; check storage information; and serve assets the administrator has designated for public portfolio display.</p>
+        <p>The integration does not use Google Drive data to target advertisements or sell Google user data. It does not access Gmail or Google Contacts as part of this storage functionality.</p>
+      </section>
+
+      <section aria-labelledby="storage-policy-storage">
+        <h2 id="storage-policy-storage">4. Where data is stored and processed</h2>
+        <p>Media files are stored in the connected <strong>Google Drive</strong> account. A server-side <strong>Cloudflare Worker</strong> performs the Google OAuth exchange, holds the connection's access tokens and refresh tokens in application-side Cloudflare storage, and handles authorized storage requests. OAuth credentials are not intentionally exposed in the public portfolio page.</p>
+        <p><strong>Firebase Firestore</strong> stores the portfolio's storage-profile settings, file references, and related content metadata. Google and these infrastructure services process information needed to provide the requested storage functionality.</p>
+      </section>
+
+      <section aria-labelledby="storage-policy-sharing">
+        <h2 id="storage-policy-sharing">5. Public sharing of portfolio media</h2>
+        <p>The administrator may designate selected managed media as public portfolio assets and set the relevant Drive folder to a public viewer permission. In that case, those files or their delivery URLs may be <strong>publicly accessible</strong> to people visiting the portfolio. Do not upload sensitive or confidential material to folders intended for public display.</p>
+        <p>Unrelated Google Drive files are not made public by this integration. Application-side OAuth credentials are not published alongside public portfolio media.</p>
+      </section>
+
+      <section aria-labelledby="storage-policy-control">
+        <h2 id="storage-policy-control">6. Retention, revocation, and deletion</h2>
+        <p>Storage profile information and references are retained while needed to manage the portfolio and its linked assets. The administrator can manage or delete portfolio files and references using the applicable management tools.</p>
+        <p>The administrator can <strong>disconnect</strong> or remove a Google Drive storage profile from the Admin interface after clearing its dependent references and default assignments. Removing the connection deletes the integration's stored OAuth connection for that profile, but <strong>does not automatically delete existing Google Drive files</strong>. Those files must be deleted separately if desired.</p>
+        <p>You may also <strong>revoke</strong> the application's access through your Google Account's third-party connections settings. For questions about access or to request deletion of data associated with this integration, contact the address below; identity and ownership may need to be verified before account-level changes.</p>
+      </section>
+
+      <section aria-labelledby="storage-policy-contact">
+        <h2 id="storage-policy-contact">7. Contact and policy changes</h2>
+        <p>For privacy questions or requests related to LAN Portfolio Storage, email <a href="mailto:lagmayr2@gmail.com">lagmayr2@gmail.com</a>.</p>
+        <p>This policy covers the Google Drive storage integration, not all features of the public portfolio. The policy may be updated to reflect changes to storage functionality or data-handling practices. The latest version will be available on this page.</p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="storage-policy-footer wrap">
+    <span>LΛN Portfolio · LAN Portfolio Storage</span>
+    <a href="index.html">Return to portfolio</a>
+  </footer>
+</body>
+</html>

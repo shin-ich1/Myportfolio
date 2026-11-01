@@ -41,7 +41,7 @@ async function workerCheck(){
    const bytes=Buffer.from(await res.arrayBuffer());
    const actual=blob(bytes);
    const contentType=(res.headers.get("content-type")||"").toLowerCase();
-   const isText=/^(text\/|application\/(?:javascript|json|xml)|image\/svg\+xml)/.test(contentType);
+   const isText=/^(text\/|application\/(?:javascript|json|xml|manifest\+json)|image\/svg\+xml)/.test(contentType) || (/\.webmanifest$/.test(path) && /json/.test(contentType));
    // GitHub Actions' fetch network can return CRLF where the owner's curl
    // and GitHub source blobs use LF. Tolerate only an exact CRLF-to-LF conversion:
    // NO whitespace trimming, reformatting, CSS rewriting or ignored differences.
@@ -55,7 +55,7 @@ async function workerCheck(){
        normalizedOnly.push(path);
      }
    }
-   if(["admin/index.html","admin/admin.css","app.js","styles.css","index.html"].includes(path)) {
+   if(["admin/index.html","admin/admin.css","admin/manifest.webmanifest","app.js","styles.css","index.html"].includes(path)) {
      console.log("SAMPLE",path,"status",res.status,"type",contentType,"bytes",bytes.length,
        "raw",actual,"normalized",normalizedHash||"none","expected",expected[path],
        "result",equivalent?"MATCH":"MISMATCH");

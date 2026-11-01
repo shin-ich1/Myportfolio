@@ -7,9 +7,10 @@ const frozenHead="ef8ed543fb2184de40c0f197d5212bd6534d880b";
 const oldHashes={
   "app.js":"d570bfd036fb6dc2a9b5a1de94c5f2cac0031257",
   "message-service.js":"764a353722a63067b0335f80c17c09fbbfc00a06",
-  "styles.css":"fce337ffba12417d122a73a5cbbc86ae2a8e11a4"
+  "styles.css":"fce337ffba12417d122a73a5cbbc86ae2a8e11a4",
+  "storage-privacy.html":"570c3d7db9c0cf16d281c662f3eb5b0bd13b20c9"
 };
-const required=["app.js","message-service.js","styles.css","index.html","admin/index.html","config.js"];
+const required=["app.js","message-service.js","styles.css","index.html","admin/index.html","config.js","storage-privacy.html"];
 const cfg=JSON.parse(readFileSync("firebase.json","utf8"));
 const worker=JSON.parse(readFileSync("telemetry-worker/wrangler.jsonc","utf8"));
 if(cfg.hosting.public!=="."||worker.name!=="lan-cloudinary-telemetry"||worker.vars.FIREBASE_PROJECT_ID!=="rolando-portfolio-3f1a3") throw Error("Wrong hosting/worker target");
@@ -25,7 +26,7 @@ const isIgnored=path=>{
 };
 const published=paths.filter(p=>!isIgnored(p));
 if(required.some(p=>!published.includes(p)))throw Error("Required published files missing");
-if(published.length<170||published.length>400)throw Error("Unexpected publishing inventory size: "+published.length);
+if(published.length!==277)throw Error("Unexpected publishing inventory size: "+published.length);
 const blob=bytes=>createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 const expected=Object.fromEntries(published.map(p=>[p,oldHashes[p]||blob(readFileSync(p))]));
 const results=[];

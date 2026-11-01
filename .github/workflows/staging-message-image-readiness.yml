@@ -1,0 +1,29 @@
+name: Staging Public Message cooldown image readiness (no deploy)
+on:
+  push:
+    branches:
+      - fix/staging-message-image-ready-after-cooldown-20261101
+permissions:
+  contents: read
+jobs:
+  puzzle-image-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Countdown expiry and stale-picture regression
+        run: node --test tests/public-message-cooldown-image-readiness.test.mjs
+      - name: Available non-emulator repository tests
+        shell: bash
+        run: |
+          mapfile -t cases < <(find tests -maxdepth 1 -name '*.test.mjs' \
+            ! -name 'firestore-backup-restore-emulator.test.mjs' \
+            ! -name 'firestore-security-emulator.test.mjs' | sort)
+          node --test "${cases[@]}"
+      - name: Public JS syntax
+        run: node --check app.js

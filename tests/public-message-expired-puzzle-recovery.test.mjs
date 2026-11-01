@@ -228,7 +228,7 @@ test("Fast visibly wrong attempt reaches Worker without consuming or resetting T
   assert.equal(view.sent, 0);
 });
 
-test("Server third-wrong 429 closes puzzle and shows the actual 10-second countdown in the form", async () => {
+test("Server third-wrong 429 closes puzzle and shows 10s security cooldown plus 5s image buffer", async () => {
   let requests = 0;
   const retryAt = new Date(Date.now()+10_000).toISOString();
   const view = createBrowserPuzzle({
@@ -247,7 +247,7 @@ test("Server third-wrong 429 closes puzzle and shows the actual 10-second countd
   assert.equal(view.layer.hidden,true);
   assert.equal(view.button.disabled,true);
   assert.match(view.formStatus.textContent,/Three incorrect puzzle attempts/);
-  assert.match(view.formStatus.textContent,/Retry in (?:9|10)s/);
+  assert.match(view.formStatus.textContent,/Retry in (?:14|15)s/);
   assert.equal(view.sent,0);
   assert.equal(view.created,1,"No new challenge should be fetched during enforced cooldown");
 });

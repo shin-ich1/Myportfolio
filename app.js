@@ -2652,6 +2652,12 @@ function beginPublicMessageRetryCountdown(error) {
     button.disabled = false;
     status.className = "";
     status.textContent = "You can try sending your message again.";
+    // Begin a single, existing puzzle/image warmup only when the server
+    // countdown has expired. The Worker remains the authority for access.
+    // This optional preparation never sends a message or consumes a proof.
+    if (hasServerLimit && error?.code === "message-puzzle-cooldown") {
+      warmPublicMessagePuzzleChallenge().catch(() => {});
+    }
   };
   update();
   if (publicMessageRetryUntil > 0) publicMessageRetryTimerId = window.setInterval(update, 1000);
@@ -2683,6 +2689,9 @@ async function loadPublicMessagePuzzleChallenge() {
   publicMessagePuzzleChallenge = null;
   publicMessagePuzzleAnswer = 0;
   slider.disabled = true;
+  // The previous puzzle image may still be in the DOM during replacement.
+  // Keep it invisible until the next challenge image is fully loaded.
+  scene.style.visibility = "hidden";
   scene.style.removeProperty("--public-puzzle-aspect");
   if (label) label.textContent = "Preparing puzzle…";
   if (status) { status.textContent = "Preparing a high-quality verification image…"; status.className = "public-message-puzzle-status"; }
@@ -2697,6 +2706,7 @@ async function loadPublicMessagePuzzleChallenge() {
     publicMessagePuzzleChallenge = challenge;
     publicMessagePuzzleAnswer = 0;
     await loadPublicMessagePuzzleImage(image, pieceImage, scene, challenge);
+    scene.style.visibility = "";
     setPublicMessagePuzzleSlider(slider, 0);
     syncPublicMessagePuzzleGeometry();
     publicMessagePuzzleResizeObserver?.disconnect();

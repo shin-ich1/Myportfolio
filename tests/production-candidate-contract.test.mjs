@@ -17,7 +17,7 @@ function gitBlobSha(path){
 test('Frozen Public structural sources and exact-reviewed message security assets are pinned',()=>{
   const frozen={
     'index.html':'ba6b29cd5d2a84286850022f9f7ef075df5a73a5',
-    'app.js':'6b4c27a79a4e1d66a3549c09fa719f14059cacad', // audited expiry fix and form-level image retry UX
+    'app.js':'0e098b12120b0932c3c0ce427234099a35d0ef60', // audited fast wrong-answer Worker request and retry UX
     'styles.css':'c501127a56458d3fb35eaf760e0b6f050af3c965', // reviewed Turnstile grid, hidden redundant footer and scrollbar
     'public-adaptive.js':'62ec14a5cde2655ce199f5e00085db884b9bcead',
     'public-layout-contract.js':'4c21875d832b06cafad0bebc0ee09b467cbd4ca8',
@@ -26,7 +26,7 @@ test('Frozen Public structural sources and exact-reviewed message security asset
   // app.js pins the canonical Messenger correction; styles.css pins the exact reviewed slot and grid-row fix.
   // Their allowed difference from audited main is verified function-by-function
   // by tests/production-public-security-integration.test.mjs (mandatory CI).
-  assert.equal(gitBlobSha('message-service.js'),'fbbe71500e856d0c553edf689bc2c293fbbc5079',
+  assert.equal(gitBlobSha('message-service.js'),'4bd8fffefcd5742890316ecd8c0e13c79a036317',
     'Only the audited Firestore visitor subscription may change');
   for(const [path,sha] of Object.entries(frozen)){
     assert.ok(sha,'Missing audited production blob hash for '+path);

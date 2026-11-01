@@ -29,6 +29,7 @@ if(published.length<170||published.length>400)throw Error("Unexpected publishing
 const blob=bytes=>createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 const expected=Object.fromEntries(published.map(p=>[p,oldHashes[p]||blob(readFileSync(p))]));
 const results=[];
+const normalizedOnly=[];
 let cursor=0;
 async function workerCheck(){
  while(cursor<published.length){
@@ -39,19 +40,36 @@ async function workerCheck(){
    if(!res.ok)throw Error("HTTP "+res.status);
    const bytes=Buffer.from(await res.arrayBuffer());
    const actual=blob(bytes);
-   if(["admin/index.html","admin/admin.css","app.js","styles.css","index.html"].includes(path)) {
-     console.log("SAMPLE",path,"status",res.status,"type",res.headers.get("content-type"),"bytes",bytes.length,"actual",actual,"expected",expected[path],
-       "firstChars",bytes.toString("utf8",0,30).replace(/[\r\n]/g," "));
+   const contentType=(res.headers.get("content-type")||"").toLowerCase();
+   const isText=/^(text\/|application\/(?:javascript|json|xml)|image\/svg\+xml)/.test(contentType);
+   // GitHub Actions' fetch network can return CRLF where the owner's curl
+   // and GitHub source blobs use LF. Tolerate only an exact CRLF-to-LF conversion:
+   // NO whitespace trimming, reformatting, CSS rewriting or ignored differences.
+   let equivalent=actual===expected[path];
+   let normalizedHash=null;
+   if(!equivalent && isText && bytes.includes(Buffer.from("\r\n"))) {
+     const normalized=Buffer.from(bytes.toString("utf8").replace(/\r\n/g,"\n"),"utf8");
+     normalizedHash=blob(normalized);
+     if(normalizedHash===expected[path]) {
+       equivalent=true;
+       normalizedOnly.push(path);
+     }
    }
-   if(actual!==expected[path])results.push({path,actual,expected:expected[path],error:"different published content"});
+   if(["admin/index.html","admin/admin.css","app.js","styles.css","index.html"].includes(path)) {
+     console.log("SAMPLE",path,"status",res.status,"type",contentType,"bytes",bytes.length,
+       "raw",actual,"normalized",normalizedHash||"none","expected",expected[path],
+       "result",equivalent?"MATCH":"MISMATCH");
+   }
+   if(!equivalent)results.push({path,actual,normalizedHash,expected:expected[path],error:"different published content"});
   }catch(error){results.push({path,error:String(error?.message||error)});}
  }
 }
 await Promise.all(Array.from({length:10},()=>workerCheck()));
 console.log("LIVE Hosting tracked-file parity with fresh per-file cache-busters; site:",site);
 console.log("Checked:",published.length,"Unchanged expected:",published.length-3,"Allowed planned changes: app.js, message-service.js, styles.css");
+console.log("Line-ending-only equal files:",normalizedOnly.length);
 console.log("Unexpected mismatches:",results.length);
 console.log("Mismatches grouped by top-level folder:",Object.entries(Object.groupBy(results,r=>r.path.split("/")[0])).map(([k,v])=>k+":"+v.length).join(" "));
-for(const r of results.slice(0,35))console.log("MISMATCH",r.path,r.error,"live:",r.actual||"download-failed","expected:",r.expected||"n/a");
+for(const r of results.slice(0,35))console.log("MISMATCH",r.path,r.error,"live:",r.actual||"download-failed","CRLF-normalized:",r.normalizedHash||"n/a","expected:",r.expected||"n/a");
 if(results.length)throw Error("STOP: candidate would change or lose published files beyond authorized three; investigate remote-only assets separately.");
 console.log("READ-ONLY LIVE HOSTING TRACKED-FILE PARITY: PASS; remote-only deployment assets still require release-manifest review");

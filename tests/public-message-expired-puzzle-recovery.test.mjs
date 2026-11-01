@@ -76,6 +76,7 @@ function createBrowserPuzzle({
       sent++;
     },
     async warmPublicMessagePuzzleChallenge() {},
+    discardPublicMessagePuzzleWarmup() {},
     cleanText: String,
     PUBLIC_MESSAGE_PUZZLE_NEXT_WARMUP_DELAY_MS: 1500
   };

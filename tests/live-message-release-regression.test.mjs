@@ -107,5 +107,5 @@ test("obsolete delayed-warmup constant is removed; one canonical message owner r
   assert.equal((app.match(/function loadPublicMessagePuzzleChallenge\(/g)||[]).length,1);
   assert.equal((app.match(/function warmPublicMessagePuzzleChallenge\(/g)||[]).length,1);
   assert.equal((worker.match(/async function handleMessagePuzzleVerify\(/g)||[]).length,1);
-  assert.equal((coordinator.match(/op === "puzzle-cooldown-start"/g)||[]).length,1);
+  assert.equal((coordinator.match(/if \(op === "puzzle-cooldown-start" \|\| op === "puzzle-cooldown-check"\)/g)||[]).length,1,"Only one canonical coordinator cooldown branch may own security state");
 });

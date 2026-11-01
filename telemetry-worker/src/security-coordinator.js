@@ -184,6 +184,34 @@ export class SecurityCoordinator {
         challenge: geometry, attempts, attemptsRemaining: maxAttempts - attempts
       });
     }
+    if (op === "puzzle-cooldown-start" || op === "puzzle-cooldown-check") {
+      // Reuse this single durable security coordinator as the authoritative
+      // owner for the short retry gate, shared across tabs and page reloads.
+      if (scope !== "message-puzzle-cooldown") {
+        return reject("message-puzzle-cooldown-invalid", 400, "Invalid puzzle cooldown scope.");
+      }
+      const record = kv.get("record");
+      if (record && record.scope !== scope) {
+        return reject("message-puzzle-cooldown-invalid", 503, "Puzzle cooldown state is invalid.");
+      }
+      const previousUntil = Number(record?.blockedUntil) || 0;
+      if (op === "puzzle-cooldown-start") {
+        const seconds = Number(command.seconds);
+        if (!Number.isInteger(seconds) || seconds < 1 || seconds > 60) {
+          return reject("message-puzzle-cooldown-invalid", 400, "Invalid puzzle cooldown duration.");
+        }
+        const blockedUntil = Math.max(previousUntil, now + seconds * 1000);
+        kv.put("record", { scope, blockedUntil, expiresAt: blockedUntil + 1000 });
+        await this.scheduleExpiry(blockedUntil + 1000);
+        return json({ ok: true, retryAt: new Date(blockedUntil).toISOString() });
+      }
+      if (previousUntil > now) {
+        return reject("message-puzzle-cooldown", 429,
+          "Too many incorrect puzzle attempts. Try again after the countdown.",
+          new Date(previousUntil).toISOString());
+      }
+      return json({ ok: true });
+    }
     if (op === "recovery-prepare") {
       if (!["recovery", "recovery-rotate"].includes(scope) || !validChallengeId(id)) {
         return reject("security-challenge-invalid", 400, "Invalid recovery session.");

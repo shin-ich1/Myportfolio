@@ -86,3 +86,18 @@ User's first PR #51 LIVE Hosting command **stopped before deployment** on `style
 - **LIVE Hosting NOT deployed:** all future commands must use the updated candidate commit (not obsolete `e061bb11`), compare actual remote CSS against `fce337ff...`, and verify all unchanged production site assets before upload. If any other production-only source or asset is discovered, STOP without overwriting. Firebase Hosting previous release remains rollback reference.
 
 **Current release gate:** guarded LIVE Hosting deploy and post-release browser/server/message/Admin regression remain pending. This report's earlier statements that LIVE Worker was unverified or undeployed are historical and superseded by this section.
+
+## 8. LIVE Hosting 279-file inventory reconciled (2026-11-01)
+
+The owner queried Firebase Hosting's ACTIVE LIVE version `projects/rolando-portfolio-3f1a3/sites/rolando-portfolio-3f1a3/versions/5255ee349bb529cb` (279 paths). The old candidate had 276 tracked deployable files. The **only** LIVE-only paths were:
+- `__/firebase/init.js` and `__/firebase/init.json`: Firebase-managed reserved URLs; **must not** be copied into source or shadowed.
+- `storage-privacy.html`: an actual published privacy page linked by the production footer.
+
+Confirmed the published `storage-privacy.html` is **byte-identical** to the canonical `fix/storage-oauth-privacy-page-20261030` branch blob `570c3d7db9c0cf16d281c662f3eb5b0bd13b20c9`. Added that exact page to the isolated release branch; no rewriting. A new regression test first failed without it, then passed after the migration. Updated the Hosting read-only audit to freeze the 277-file candidate and compare the LIVE privacy page by the exact original Git blob.
+
+- [Regression RED](https://github.com/shin-ich1/Myportfolio/actions/runs/41289891697): 11/12 release checks, missing actual LIVE privacy page.
+- [Regression GREEN](https://github.com/shin-ich1/Myportfolio/actions/runs/41289957368): **12/12 release checks, 145/145 available Node tests, Worker dry-run and complete 277/277 tracked-file LIVE source parity**. 132 LIVE HTTP text responses matched source after *only* CRLF→LF normalisation. No missing tracked files or unexpected mismatches.
+- All 279 LIVE paths are reconciled as **277 real release files + 2 Firebase-managed URLs**. Firebase Hosting initialization endpoints are provided by the platform, not an application patch.
+- Current PR code does not change the production Admin, footer markup, privacy page content, or unrelated assets. Only the canonical Public Message app/message-service/CSS behavior is intentionally updated in the Hosting bundle.
+
+**Deployment gate still mandatory:** verify current production Worker version `bd89f743-1dfc-40b9-839a-f09e388a21cd`, GitHub `main` baseline, exact candidate head and changed-file inventory, published existing Hosting version `5255ee349bb529cb`, and all current baseline hashes before any controlled Hosting deployment. After deployment, verify both domains' file hashes and browser runtime. No Hosting deployment recorded in this report.

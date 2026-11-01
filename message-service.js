@@ -118,7 +118,9 @@ export async function verifyPrivateMessageChallenge({ challengeId, answer, turns
   const response = text(turnstileToken);
   if (!id) throw new Error("Human verification challenge is missing.");
   if (!Number.isFinite(Number(answer))) throw new Error("Complete the puzzle first.");
-  if (!response) throw new Error("Secure browser verification is still running.");
+  // A wrong answer is rejected by the Worker before Siteverify, so it may
+  // be checked without waiting for a browser token. Correct answers still
+  // require a real Turnstile token server-side before any proof is issued.
   return workerJson("/messages/security/verify", {
     method: "POST",
     body: { challengeId: id, answer: Number(answer), turnstileToken: response }

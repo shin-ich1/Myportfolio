@@ -2,7 +2,7 @@ name: Staging Public Message cooldown image readiness (no deploy)
 on:
   push:
     branches:
-      - fix/staging-message-image-ready-after-cooldown-20261101
+      - fix/staging-puzzle-five-second-image-buffer-20261101
 permissions:
   contents: read
 jobs:

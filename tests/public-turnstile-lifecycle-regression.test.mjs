@@ -33,8 +33,9 @@ test("Turnstile pre-executes at widget render; slider remains mandatory before s
   assert.match(app, /execution:\s*"render"/);
   assert.match(app, /appearance:\s*"interaction-only"/);
   assert.match(app, /slider\.onchange = async \(\) => \{/);
-  assert.match(app, /const turnstileToken = await runTurnstile\(\)/);
-  assert.match(app, /verifyPrivateMessageChallenge\(\{[\s\S]*?challengeId:[\s\S]*?answer:[\s\S]*?turnstileToken/);
+  assert.match(app, /const requiresBrowserProof = Number.isFinite\(target\) && Math.abs\(answer - target\) <= 1/);
+  assert.match(app, /const turnstileToken = requiresBrowserProof \? await runTurnstile\(\) : ""/);
+  assert.match(app, /verifyPrivateMessageChallenge\(\{[\s\S]*?challengeId:[\s\S]*?answer, turnstileToken/);
   assert.doesNotMatch(app, /turnstile\.execute\(publicMessageTurnstileWidgetId\)/);
 });
 

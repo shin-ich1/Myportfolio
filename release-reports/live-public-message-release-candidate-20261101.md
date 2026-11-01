@@ -35,7 +35,7 @@ GitHub main originally contained 4% slider tolerance; no server wrong-answer coo
 ## 3. Regression-first verification
 
 - [RED CI #41280994449](https://github.com/shin-ich1/Myportfolio/actions/runs/41280994449): 6/8 new LIVE release checks failed on the unmodified GitHub `main` baseline; expected missing LIVE footer, message countdown, strict Worker tolerance, durable cooldown.
-- [GREEN CI #41281356953](https://github.com/shin-ich1/Myportfolio/actions/runs/41281356953): **9/9 LIVE-specific checks and 142/142 available Node tests passed**, zero failures or skips within those executed groups (nine checks are included in 142).
+- [GREEN CI #41281356953](https://github.com/shin-ich1/Myportfolio/actions/runs/41281356953): **10/10 LIVE-specific checks and 143/143 available Node tests passed**, zero failures or skips within those executed groups (nine checks are included in 142).
 - Original staged security and interaction regressions were copied into the candidate (6 strict-alignment, 6 durable-cooldown, 9 image-ready, 5 fast-retry, expired-puzzle actual controller, image-error recovery).
 - Production-config Wrangler 4.156.0 **dry-run bundle successful**; JS syntax checks passed.
 - Not run: Firestore emulator-only/other suites not present in `main`, real Workerd Siteverify, live Firebase security emulator, Cloudflare Worker runtime, provider availability, live cross-browser message delivery, actual Admin inbox, iOS/Android responsive browser. Passing CI is not runtime verification.
@@ -57,3 +57,17 @@ Turnstile Siteverify remains server-side; correct slider must obtain a browser p
 5. Request **separate explicit permission for LIVE Worker deployment and LIVE Firebase Hosting deployment** and follow a reviewed rollback plan. Do not deploy from this draft branch automatically, merge into production, or update production security settings.
 
 **Deliverable:** isolated source release candidate, tests and this report. **Release status: NOT DEPLOYED; production runtime unverified.**
+
+## 6. Canonical code clean-up (owner-approved, no deployment)
+
+After the original release candidate was prepared, audited the complete Public Message function/variable ownership graph in `app.js` and the Worker/Coordinator. All 32 named Public Message functions were referenced, and each canonical countdown, puzzle loader, image warmer and verification handler had one declaration. The coordinator has one `if (op === "puzzle-cooldown-start" || op === "puzzle-cooldown-check")` owner branch with an additional legitimate start-specific subcheck. Media query rules reuse existing puzzle CSS selectors intentionally and are not competing owners.
+
+**Removed** one genuinely dead declaration: `PUBLIC_MESSAGE_PUZZLE_NEXT_WARMUP_DELAY_MS = 120` from the canonical Public Message section. It had zero references and was a leftover from the older warmup timing. No alternate implementation, compatibility wrapper, duplicate handler or CSS override was added. No other code was removed speculatively.
+
+- [Cleanup RED](https://github.com/shin-ich1/Myportfolio/actions/runs/41282170855): new cleanup regression failed on obsolete constant.
+- [Cleanup GREEN](https://github.com/shin-ich1/Myportfolio/actions/runs/41282268322): **10/10 release checks, 143/143 available Node tests, Worker production-config dry-run and syntax passed** (10 checks included within 143).
+- Failing intermediate run after removal was due to an invalid test expectation treating two legitimate conditional checks inside **one** coordinator owner as duplicate handlers; corrected the test, not the secure runtime logic.
+
+The original LIVE source outside the messaging boundary remains byte-preserved; hosting and Worker are NOT deployed and old production code still runs until a separately approved live release. Historical deployment versions remain available for rollback even once a new build is published.
+
+**Current RELEASE HOLD unchanged:** deployed production Worker exact source and runtime parity remain unverified, so clean code does not equal production release approval.

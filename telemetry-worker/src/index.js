@@ -1413,6 +1413,7 @@ const MESSAGE_CHALLENGE_COOLDOWN_SECONDS = 0; // Puzzle prewarming is governed b
 const MESSAGE_CHALLENGE_TTL_SECONDS = 180;
 const MESSAGE_VERIFICATION_TTL_SECONDS = 90;
 const MESSAGE_PUZZLE_TOLERANCE = 1; // Accept only a near-invisible one-step slider rounding difference.
+const MESSAGE_PUZZLE_WRONG_COOLDOWN_SECONDS = 10; // Worker-enforced countdown after three incorrect answers.
 const MESSAGE_PUZZLE_MAX_ATTEMPTS = 3;
 const MESSAGE_PUZZLE_IMAGE_MIN_WIDTH = 1280;
 const MESSAGE_PUZZLE_IMAGE_MIN_HEIGHT = 720;
@@ -1918,6 +1919,14 @@ async function handleMessagePuzzleImage(request, env, challengeId) {
   return new Response(cacheResponse.body, { status: 200, headers });
 }
 
+// One canonical durable rate owner stores the wrong-answer retry deadline.
+// Reusing the existing coordinator keeps the gate effective across tabs/reloads.
+async function enforceMessagePuzzleCooldown(env, binding) {
+  const owner = await rateCoordinatorOwner("public-message:puzzle-wrong", binding);
+  await coordinateSecurity(env, owner, { op: "puzzle-cooldown-check", scope: "message-puzzle-cooldown" });
+  return owner;
+}
+
 // Verification tokens are never stored raw. Their SHA-256 derived identifiers
 // select exactly one canonical atomic Coordinator record.
 async function privateMessageProofId(token) {
@@ -1930,6 +1939,8 @@ async function handleMessagePuzzleChallenge(request, env) {
     context = messageRequestContext(request, env);
     assertPrivateMessageRelayConfigured(env);
     const turnstile = turnstileConfiguration(request, env);
+    const binding = await privateMessageClientBinding(request);
+    await enforceMessagePuzzleCooldown(env, binding);
     await enforceMessageRateLimit(request, env, {
       scope: "puzzle-challenge",
       limit: MESSAGE_CHALLENGE_LIMIT,
@@ -1938,7 +1949,6 @@ async function handleMessagePuzzleChallenge(request, env) {
     });
     const challengeId = randomCapability(18);
     const geometry = randomPuzzleGeometry();
-    const binding = await privateMessageClientBinding(request);
     const image = await chooseOpenversePuzzleImage(env, binding);
     const now = Date.now();
     await coordinateSecurity(env,securityChallengeOwner("message-puzzle",challengeId),{
@@ -1969,7 +1979,7 @@ async function handleMessagePuzzleChallenge(request, env) {
     }, 201, context.origin);
   } catch (error) {
     const origin = context?.origin || allowedOrigin(request.headers.get("Origin") || "", env);
-    return json({ error: error?.message || "Verification puzzle could not be created.", code: error?.code || "internal" }, Number(error?.status) || 500, origin);
+    return json({ error: error?.message || "Verification puzzle could not be created.", code: error?.code || "internal", retryAt: error?.retryAt || "" }, Number(error?.status) || 500, origin);
   }
 }
 
@@ -1993,6 +2003,7 @@ async function handleMessagePuzzleVerify(request, env) {
         status:400,code:"message-puzzle-answer",source:"worker"
       });
     const binding = await privateMessageClientBinding(request);
+    const cooldownOwner = await enforceMessagePuzzleCooldown(env, binding);
     const reply = await coordinateSecurity(env,
       securityChallengeOwner("message-puzzle",challengeId), {
         op:"puzzle-check",scope:"message-puzzle",id:challengeId,
@@ -2003,10 +2014,16 @@ async function handleMessagePuzzleVerify(request, env) {
         verificationNonce:securityRandomId(24)
       });
     if (reply.outcome === "replace") {
+      // The challenge was atomically deleted by its existing owner. Start a
+      // short server-side gate, then let the existing form countdown own UI.
+      const cooldown = await coordinateSecurity(env, cooldownOwner, {
+        op: "puzzle-cooldown-start", scope: "message-puzzle-cooldown",
+        seconds: MESSAGE_PUZZLE_WRONG_COOLDOWN_SECONDS
+      });
       return json({
-        ok:false,outcome:"replace",code:"message-puzzle-reset-required",
-        message:"That puzzle did not match. Switching to the next prepared image…"
-      },200,context.origin);
+        error: "Three incorrect puzzle attempts. Please retry after the countdown.",
+        code: "message-puzzle-cooldown", retryAt: cooldown.retryAt
+      },429,context.origin);
     }
     if (reply.outcome === "retry") {
       return json({
@@ -2042,7 +2059,7 @@ async function handleMessagePuzzleVerify(request, env) {
   } catch (error) {
     const origin=context?.origin||allowedOrigin(request.headers.get("Origin")||"",env);
     return json({error:error?.message||"Verification puzzle could not be completed.",
-      code:error?.code||"internal"},Number(error?.status)||500,origin);
+      code:error?.code||"internal",retryAt:error?.retryAt||""},Number(error?.status)||500,origin);
   }
 }
 

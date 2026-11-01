@@ -1,5 +1,7 @@
 # LIVE Public Message release candidate — 2026-11-01
 
+> **CURRENT STATUS 2026-11-01 (supersedes older status lines below):** LIVE Cloudflare Worker PR #51 published as version `bd89f743-1dfc-40b9-839a-f09e388a21cd` at 100%. LIVE Firebase Hosting **NOT deployed**: guarded preflight discovered LIVE CSS differs from GitHub main. Corrected clean candidate preserves actual published LIVE CSS and passed 11/11 release checks and 144/144 available tests. Full Hosting publish and runtime checks pending.
+
 **Status: implemented and automated-test verified in an isolated draft branch. NOT deployed to LIVE or STAGING. Runtime parity and production-worker source provenance are NOT verified. Release HOLD.**
 
 ## 1. Provenance and baseline
@@ -71,3 +73,16 @@ After the original release candidate was prepared, audited the complete Public M
 The original LIVE source outside the messaging boundary remains byte-preserved; hosting and Worker are NOT deployed and old production code still runs until a separately approved live release. Historical deployment versions remain available for rollback even once a new build is published.
 
 **Current RELEASE HOLD unchanged:** deployed production Worker exact source and runtime parity remain unverified, so clean code does not equal production release approval.
+
+## 7. LIVE CSS root cause and final corrected baseline (supersedes earlier CSS/source status)
+
+User's first PR #51 LIVE Hosting command **stopped before deployment** on `styles.css` mismatch. Two independent Firebase domains returned the same old LIVE CSS Git blob `fce337ffba12417d122a73a5cbbc86ae2a8e11a4`, which differs from GitHub `main` blob `fe7db31f32c0cbe85e144fb67e713723325303e7`. Other audited LIVE files matched expected values. This is a real production-only CSS change, not a caching delay. The current LIVE CSS includes 60 more lines, among them newer footer/storage/privacy styling.
+
+**Canonical correction:** candidate `styles.css` now starts from the exact LIVE blob, replaces **only one existing top-level compressed Public Message puzzle-owner rule line** from verified STAGING, and preserves every other LIVE CSS byte. New candidate blob `978dd048b3a5a029b4cbb9436774e9bdac2ec1d6`; frozen pre-rule FNV1a `7551b6c1`, post-rule FNV1a `47763787`. No duplicate selector, patch layer, or visual redesign. Responsive media query behavior and LIVE footer styling are preserved.
+
+- [LIVE CSS RED regression](https://github.com/shin-ich1/Myportfolio/actions/runs/41286546534): 10/11 targeted tests; missing LIVE CSS production-preservation guarantee identified.
+- [Corrected LIVE CSS GREEN](https://github.com/shin-ich1/Myportfolio/actions/runs/41286899300): **11/11 LIVE-specific and 144/144 available Node tests** passed; JS syntax and production-config Worker dry-run passed. The 11 release checks are part of 144. Test implementation corrected two overly restrictive assertions about existing responsive selectors and visually-hidden status footer; runtime security code was not weakened.
+- LIVE Worker **already deployed** (new version `bd89f743-1dfc-40b9-839a-f09e388a21cd`) after source-bundle parity and binding audit. Original rollback version `7dbe1cae-6933-42e0-86ec-e1ed37f1bbb3`.
+- **LIVE Hosting NOT deployed:** all future commands must use the updated candidate commit (not obsolete `e061bb11`), compare actual remote CSS against `fce337ff...`, and verify all unchanged production site assets before upload. If any other production-only source or asset is discovered, STOP without overwriting. Firebase Hosting previous release remains rollback reference.
+
+**Current release gate:** guarded LIVE Hosting deploy and post-release browser/server/message/Admin regression remain pending. This report's earlier statements that LIVE Worker was unverified or undeployed are historical and superseded by this section.

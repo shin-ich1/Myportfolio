@@ -200,3 +200,57 @@ test("A manual Turnstile prompt visibly tells visitors to scroll for the browser
   assert.match(view.label.textContent,/browser check below/i);
   assert.equal(view.sent,0);
 });
+
+test("Fast visibly wrong attempt reaches Worker without consuming or resetting Turnstile", async () => {
+  let received = null;
+  const view = createBrowserPuzzle({
+    verify: async (args) => {
+      received = args;
+      return { outcome:"retry", challenge:{targetPercent:72,topPercent:31,pieceScalePercent:16} };
+    }
+  });
+  await view.load();
+  view.slider.value = "12";
+  await view.slider.onchange();
+  assert.equal(received.answer, 12);
+  assert.equal(received.turnstileToken, "", "Wrong answer must not wait for or consume Turnstile");
+  assert.equal(view.resets, 0, "Wrong answer must not restart Cloudflare");
+  assert.equal(view.sent, 0);
+});
+
+test("Server third-wrong 429 closes puzzle and shows the actual 10-second countdown in the form", async () => {
+  let requests = 0;
+  const retryAt = new Date(Date.now()+10_000).toISOString();
+  const view = createBrowserPuzzle({
+    verify: async ({turnstileToken}) => {
+      requests++;
+      assert.equal(turnstileToken,"", "An obviously wrong answer must be sent without waiting for Turnstile");
+      throw Object.assign(new Error("Three incorrect attempts"),{
+        status:429, code:"message-puzzle-cooldown", retryAt
+      });
+    }
+  });
+  await view.load();
+  view.slider.value = "10";
+  await view.slider.onchange();
+  assert.equal(requests,1);
+  assert.equal(view.layer.hidden,true);
+  assert.equal(view.button.disabled,true);
+  assert.match(view.formStatus.textContent,/Three incorrect puzzle attempts/);
+  assert.match(view.formStatus.textContent,/Retry in (?:9|10)s/);
+  assert.equal(view.sent,0);
+  assert.equal(view.created,1,"No new challenge should be fetched during enforced cooldown");
+});
+
+test("Correctly aligned slider still consumes a real Turnstile token before sending", async () => {
+  let received=null;
+  const view = createBrowserPuzzle({verify: async (args)=>{
+    received=args;
+    return {verificationToken:"server-verified-proof"};
+  }});
+  await view.load();
+  view.slider.value="40";
+  await view.slider.onchange();
+  assert.equal(received.turnstileToken,"test-token-not-sent");
+  assert.equal(view.sent,1);
+});

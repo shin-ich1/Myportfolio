@@ -14,6 +14,20 @@ const mainRegion=app.slice(app.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC"),app
 const verify=worker.slice(worker.indexOf("async function handleMessagePuzzleVerify("),worker.indexOf("\nasync function consumePrivateMessageVerification("));
 const challenge=worker.slice(worker.indexOf("async function handleMessagePuzzleChallenge("),worker.indexOf("\nasync function handleMessagePuzzleVerify("));
 const sha = path => execFileSync("git",["hash-object",path],{encoding:"utf8"}).trim();
+const frozenLiveRegionHash = text => {
+  let h=2166136261;
+  for (let i=0;i<text.length;i++) h=Math.imul(h^text.charCodeAt(i),16777619)>>>0;
+  return h.toString(16).padStart(8,"0");
+};
+test("ALL actual LIVE Public source outside the canonical messaging region remains byte-for-byte unchanged",()=>{
+  const begin=app.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
+  const end=app.indexOf("\nfunction publicServicesValid(",begin);
+  assert.ok(begin > 0 && end > begin,"Canonical message owner boundaries must be unique");
+  assert.equal(begin,143684,"Do not alter any live functionality or footer before message owner");
+  assert.equal(frozenLiveRegionHash(app.slice(0,begin)),"81403db9");
+  assert.equal(frozenLiveRegionHash(app.slice(end)),"c8365446","Do not alter live sections and startup code after message owner");
+  assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
+});
 
 test("release preserves the actual LIVE footer and production media/startup owners",()=>{
   assert.match(app,/site-footer--storage/);

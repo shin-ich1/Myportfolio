@@ -100,3 +100,12 @@ test("no placeholder or hidden duplicate verifier is introduced",()=>{
   assert.equal((worker.match(/async function handleMessagePuzzleVerify\(/g)||[]).length,1);
   assert.equal((worker.match(/async function enforceMessagePuzzleCooldown\(/g)||[]).length,1);
 });
+
+test("obsolete delayed-warmup constant is removed; one canonical message owner remains",()=>{
+  assert.doesNotMatch(mainRegion,/PUBLIC_MESSAGE_PUZZLE_NEXT_WARMUP_DELAY_MS/);
+  assert.equal((app.match(/function beginPublicMessageRetryCountdown\(/g)||[]).length,1);
+  assert.equal((app.match(/function loadPublicMessagePuzzleChallenge\(/g)||[]).length,1);
+  assert.equal((app.match(/function warmPublicMessagePuzzleChallenge\(/g)||[]).length,1);
+  assert.equal((worker.match(/async function handleMessagePuzzleVerify\(/g)||[]).length,1);
+  assert.equal((coordinator.match(/op === "puzzle-cooldown-start"/g)||[]).length,1);
+});

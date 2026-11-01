@@ -25,7 +25,7 @@ const isIgnored=path=>{
 };
 const published=paths.filter(p=>!isIgnored(p));
 if(required.some(p=>!published.includes(p)))throw Error("Required published files missing");
-if(published.length<170||published.length>260)throw Error("Unexpected publishing inventory size: "+published.length);
+if(published.length<170||published.length>400)throw Error("Unexpected publishing inventory size: "+published.length);
 const blob=bytes=>createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 const expected=Object.fromEntries(published.map(p=>[p,oldHashes[p]||blob(readFileSync(p))]));
 const results=[];

@@ -1,9 +1,9 @@
 name: Public Message Touch Zoom and Slider Tracking regression (NO DEPLOY)
 on:
   push:
-    branches: [fix/public-message-slider-direct-tracking-20261102]
+    branches: [fix/public-message-slider-hit-target-20261102]
   pull_request:
-    branches: [fix/public-message-touch-zoom-20261102]
+    branches: [fix/public-message-slider-direct-tracking-20261102]
 permissions:
   contents: read
 jobs:

@@ -89,7 +89,7 @@ test("Only approved existing Public Message CSS owners may differ from verified 
   const changes = [
     [".public-message-dialog", "min-width:0}", "min-width:0;touch-action:manipulation}"],
     [".public-message-form input,.public-message-form textarea,.public-private-reply textarea", "font:inherit;outline:0;", "font:inherit;font-size:16px;outline:0;"],
-    [".public-message-puzzle-slider input", "opacity:0;cursor:inherit}", "opacity:0;cursor:inherit;touch-action:none}"],
+    [".public-message-puzzle-slider input", "opacity:0;cursor:inherit}", "opacity:0;cursor:inherit;touch-action:none;appearance:none;background:transparent}"],
     [".public-message-puzzle-target,.public-message-puzzle-piece",
       "clip-path:url(#publicMessagePuzzlePieceShape);transition:left .16s var(--ease),top .16s var(--ease),width .16s var(--ease),height .16s var(--ease)}",
       "clip-path:url(#publicMessagePuzzlePieceShape)}"],
@@ -108,5 +108,11 @@ test("Only approved existing Public Message CSS owners may differ from verified 
     assert.notEqual(original, replacement, "No change to " + selector);
     expected = expected.replace(original,replacement);
   }
+  const nativeInput = ".public-message-puzzle-slider input{" + rule(".public-message-puzzle-slider input", expected) + "}";
+  const nativeThumbOwners =
+    ".public-message-puzzle-slider input::-webkit-slider-thumb{appearance:none;width:2.75rem;height:2.75rem;margin:0;border:0;background:transparent}" +
+    ".public-message-puzzle-slider input::-moz-range-thumb{width:2.75rem;height:2.75rem;border:0;background:transparent}";
+  assert.equal(expected.split(nativeInput).length,2,"One native slider owner for CSS thumb insertion");
+  expected = expected.replace(nativeInput,nativeInput + nativeThumbOwners);
   assert.equal(css, expected, "No added CSS patch layer, no wide/compact layout change, no unrelated styling");
 });

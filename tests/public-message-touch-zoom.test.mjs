@@ -47,6 +47,29 @@ test("Canonical native range input exclusively owns horizontal puzzle drag witho
   assert.doesNotMatch(css,/@media[^\{]*\{[^\}]*\.public-message-puzzle-slider input\{[^}]*touch-action/);
 });
 
+test("Puzzle range native touch thumb has a 44px hit target aligned with the visible drag handle",()=>{
+  const input = rule(".public-message-puzzle-slider input");
+  assert.match(input,/(?:^|;)appearance:none(?:;|$)/,
+    "Browser-default invisible 16px native thumb does not match the visual ~34px handle");
+  assert.match(input,/(?:^|;)touch-action:none(?:;|$)/,
+    "Horizontal puzzle gestures must not scroll the message card");
+  const webkit = rule(".public-message-puzzle-slider input::-webkit-slider-thumb");
+  const firefox = rule(".public-message-puzzle-slider input::-moz-range-thumb");
+  for (const [name, nativeThumb] of [["WebKit",webkit],["Firefox",firefox]]) {
+    assert.match(nativeThumb,/width:2\.75rem;?/,
+      name + " touch hit target must be at least 44px");
+    assert.match(nativeThumb,/height:2\.75rem;?/,
+      name + " touch hit target must be at least 44px");
+    assert.match(nativeThumb,/background:transparent/,
+      name + " native thumb must stay invisible behind existing visual handle");
+  }
+  assert.match(rule(".public-message-puzzle-thumb"),/width:clamp\(2rem,9cqi,2\.25rem\)/,
+    "Existing visible blue handle design is unchanged");
+  assert.doesNotMatch(app.slice(app.indexOf("function publicMessagePuzzleMarkup()"),app.indexOf("async function openPublicMessagePuzzleVerification(")),
+    /addEventListener\("(?:touchstart|touchmove|touchend|pointerdown|pointermove)"/,
+    "Keep one native range gesture owner and avoid competing listeners");
+});
+
 test("Visible puzzle piece and slider thumb follow native range input directly without horizontal animation lag",()=>{
   const shared = rule(".public-message-puzzle-target,.public-message-puzzle-piece");
   assert.doesNotMatch(shared,/transition:/,"Moving piece must not inherit the target's left transition");

@@ -143,7 +143,12 @@ test("LIVE published CSS outside approved canonical touch and slider declaration
   assert.equal(frozenFNV(frozenCss.slice(end)),"47763787","LIVE footer/privacy/mobile CSS after puzzle rules changed");
   assert.match(css,/\.site-footer\.site-footer--storage\{/);
   assert.match(css,/\.storage-policy-panel/);
-  const puzzle=css.slice(start,end);
+  // Index the candidate CSS independently: approved edits may change its length.
+  // The reconstructed LIVE positions above remain the separate frozen-source guard.
+  const candidateStart=css.indexOf(marker);
+  const candidateEnd=css.indexOf("\n",candidateStart);
+  assert.ok(candidateStart>0 && candidateEnd>candidateStart,"One complete candidate puzzle CSS owner");
+  const puzzle=css.slice(candidateStart,candidateEnd);
   assert.match(puzzle,/\.public-message-puzzle-card\{[^}]*grid-auto-rows:max-content/);
   assert.match(puzzle,/\.public-message-puzzle-foot\{position:absolute;width:1px;height:1px;[^}]*overflow:hidden;clip-path:inset\(50%\)/,"The existing status footer is visually hidden without a duplicate CSS override");
   assert.match(puzzle,/\.public-message-turnstile-slot\{display:grid/);

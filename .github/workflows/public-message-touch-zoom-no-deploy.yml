@@ -1,7 +1,7 @@
-name: Public Message Touch and Zoom regression (NO DEPLOY)
+name: Public Message Touch Zoom and Slider Tracking regression (NO DEPLOY)
 on:
   push:
-    branches: [fix/public-message-touch-zoom-20261102]
+    branches: [fix/public-message-slider-direct-tracking-20261102]
 permissions:
   contents: read
 jobs:
@@ -56,12 +56,12 @@ jobs:
       - name: Archive exact complete isolated source (one final ZIP)
         shell: bash
         run: |
-          git archive --format=zip HEAD -o "$RUNNER_TEMP/LAN-Public-Message-Touch-Zoom-20261102-FINAL.zip"
-          unzip -t "$RUNNER_TEMP/LAN-Public-Message-Touch-Zoom-20261102-FINAL.zip" >/dev/null
+          git archive --format=zip HEAD -o "$RUNNER_TEMP/LAN-Public-Message-Touch-Slider-20261102-CANDIDATE.zip"
+          unzip -t "$RUNNER_TEMP/LAN-Public-Message-Touch-Slider-20261102-CANDIDATE.zip" >/dev/null
           echo "Final candidate archive: verified"
       - name: Deliver one consolidated final source ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: LAN-Public-Message-Touch-Zoom-20261102-FINAL
-          path: ${{ runner.temp }}/LAN-Public-Message-Touch-Zoom-20261102-FINAL.zip
+          name: LAN-Public-Message-Touch-Slider-20261102-CANDIDATE
+          path: ${{ runner.temp }}/LAN-Public-Message-Touch-Slider-20261102-CANDIDATE.zip
           retention-days: 30

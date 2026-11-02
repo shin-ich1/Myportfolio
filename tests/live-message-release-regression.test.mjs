@@ -110,19 +110,29 @@ test("obsolete delayed-warmup constant is removed; one canonical message owner r
   assert.equal((coordinator.match(/if \(op === "puzzle-cooldown-start" \|\| op === "puzzle-cooldown-check"\)/g)||[]).length,1,"Only one canonical coordinator cooldown branch may own security state");
 });
 
-test("LIVE published CSS outside one canonical puzzle rule is preserved exactly",()=>{
+test("LIVE published CSS outside the three canonical dialog/form/slider declarations is preserved exactly",()=>{
   const css=read("styles.css");
+  let frozenCss=css;
+  const approved = [
+    ["touch-action:manipulation}", "}"],
+    ["font:inherit;font-size:16px;", "font:inherit;"],
+    ["cursor:inherit;touch-action:none}", "cursor:inherit}"]
+  ];
+  for(const [updated,original] of approved) {
+    assert.equal(frozenCss.split(updated).length,2,"Exactly one approved existing CSS owner change: "+updated);
+    frozenCss=frozenCss.replace(updated,original);
+  }
   const marker=".public-message-puzzle-layer{";
-  const start=css.indexOf(marker);
-  const end=css.indexOf("\n",start);
-  assert.ok(start>0 && end>start && css.split("\n").filter(line=>line.startsWith(marker)).length===1,"Exactly one top-level puzzle rule owner; media-query reuse is expected");
+  const start=frozenCss.indexOf(marker);
+  const end=frozenCss.indexOf("\n",start);
+  assert.ok(start>0 && end>start && frozenCss.split("\n").filter(line=>line.startsWith(marker)).length===1,"Exactly one top-level puzzle rule owner; media-query reuse is expected");
   const frozenFNV = text => {
     let h=2166136261;
     for(let i=0;i<text.length;i++)h=Math.imul(h^text.charCodeAt(i),16777619)>>>0;
     return h.toString(16).padStart(8,"0");
   };
-  assert.equal(frozenFNV(css.slice(0,start)),"7551b6c1","LIVE CSS before puzzle rules changed");
-  assert.equal(frozenFNV(css.slice(end)),"47763787","LIVE footer/privacy/mobile CSS after puzzle rules changed");
+  assert.equal(frozenFNV(frozenCss.slice(0,start)),"7551b6c1","LIVE CSS before puzzle rules changed");
+  assert.equal(frozenFNV(frozenCss.slice(end)),"47763787","LIVE footer/privacy/mobile CSS after puzzle rules changed");
   assert.match(css,/\.site-footer\.site-footer--storage\{/);
   assert.match(css,/\.storage-policy-panel/);
   const puzzle=css.slice(start,end);

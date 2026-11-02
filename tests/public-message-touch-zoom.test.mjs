@@ -49,7 +49,9 @@ test("Visible puzzle piece and slider thumb follow native range input directly w
   const target = rule(".public-message-puzzle-target");
   assert.match(target,/transition:left \.16s var\(--ease\)/,
     "Keep target movement animation when a wrong-answer challenge is rotated");
-  const piece = rule(".public-message-puzzle-piece");
+  const pieceOwners = css.split("}.public-message-puzzle-piece{");
+  assert.equal(pieceOwners.length, 2, "Only one standalone canonical puzzle piece owner");
+  const piece = pieceOwners[1].split("}")[0];
   assert.match(piece,/transition:top \.16s var\(--ease\),width \.16s var\(--ease\),height \.16s var\(--ease\)/,
     "Keep non-horizontal piece animations");
   assert.doesNotMatch(piece,/transition:left/,"Piece must move in sync with finger, not chase it");

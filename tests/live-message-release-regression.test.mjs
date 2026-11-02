@@ -114,7 +114,7 @@ test("LIVE published CSS outside the three canonical dialog/form/slider declarat
   const css=read("styles.css");
   let frozenCss=css;
   const approved = [
-    ["touch-action:manipulation}", "}"],
+    [";touch-action:manipulation}", "}"],
     ["font:inherit;font-size:16px;", "font:inherit;"],
     ["cursor:inherit;touch-action:none}", "cursor:inherit}"]
   ];

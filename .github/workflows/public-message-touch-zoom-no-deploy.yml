@@ -1,0 +1,39 @@
+name: Public Message Touch and Zoom regression (NO DEPLOY)
+on:
+  push:
+    branches: [fix/public-message-touch-zoom-20261102]
+permissions:
+  contents: read
+jobs:
+  public-message-touch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Touch and zoom regression
+        run: node --test tests/public-message-touch-zoom.test.mjs
+      - name: All available repository tests
+        shell: bash
+        run: |
+          mapfile -t cases < <(find tests -maxdepth 1 -name '*.test.mjs' \
+            ! -name 'firestore-backup-restore-emulator.test.mjs' \
+            ! -name 'firestore-security-emulator.test.mjs' | sort)
+          node --test "${cases[@]}"
+      - name: Syntax checks
+        run: |
+          node --check app.js
+          node --check message-service.js
+          node --check telemetry-worker/src/index.js
+          node --check telemetry-worker/src/security-coordinator.js
+      - name: Production Worker bundle dry-run only
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          npx --yes --package=wrangler@4.156.0 wrangler deploy --dry-run \
+            --config telemetry-worker/wrangler.jsonc \
+            --outdir /tmp/lan-public-message-touch-worker-dry-run

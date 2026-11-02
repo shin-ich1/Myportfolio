@@ -37,3 +37,31 @@ jobs:
           npx --yes --package=wrangler@4.156.0 wrangler deploy --dry-run \
             --config telemetry-worker/wrangler.jsonc \
             --outdir /tmp/lan-public-message-touch-worker-dry-run
+      - name: Final diff, protected paths and secret filename audit (NO DEPLOY)
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=4d96a5314bbb060cd74a1cf7726b385e92f78b24
+          git diff --check "$base" HEAD
+          while IFS= read -r changed; do
+            case "$changed" in
+              styles.css|tests/public-message-touch-zoom.test.mjs|tests/live-message-release-regression.test.mjs|.github/workflows/public-message-touch-zoom-no-deploy.yml|release-reports/public-message-touch-zoom-20261102.md) ;;
+              *) echo "Unauthorized changed file: $changed"; exit 1 ;;
+            esac
+          done < <(git diff --name-only "$base" HEAD)
+          if git ls-files | grep -E '(^|/)(\.env|\.dev\.vars|\.private-key|service-account\.json)$'; then
+            echo "Sensitive filename tracked: block source ZIP"; exit 1
+          fi
+          echo "Final diff allowlist and source archive audit: PASS"
+      - name: Archive exact complete isolated source (one final ZIP)
+        shell: bash
+        run: |
+          git archive --format=zip HEAD -o "$RUNNER_TEMP/LAN-Public-Message-Touch-Zoom-20261102-FINAL.zip"
+          unzip -t "$RUNNER_TEMP/LAN-Public-Message-Touch-Zoom-20261102-FINAL.zip" >/dev/null
+          echo "Final candidate archive: verified"
+      - name: Deliver one consolidated final source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAN-Public-Message-Touch-Zoom-20261102-FINAL
+          path: ${{ runner.temp }}/LAN-Public-Message-Touch-Zoom-20261102-FINAL.zip
+          retention-days: 30

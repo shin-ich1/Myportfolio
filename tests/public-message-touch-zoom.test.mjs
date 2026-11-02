@@ -12,11 +12,15 @@ const originalCss = execFileSync("git", ["show", liveBaseline + ":styles.css"], 
 
 function rule(selector, text=css) {
   const needle = selector + "{";
-  const matches = text.split(needle);
-  assert.equal(matches.length, 2, "One canonical CSS rule for " + selector);
-  const end = matches[1].indexOf("}");
+  const owners = [];
+  for (let index = text.indexOf(needle); index !== -1; index = text.indexOf(needle, index + needle.length)) {
+    if (index === 0 || /[}\n]/.test(text[index - 1])) owners.push(index);
+  }
+  assert.equal(owners.length, 1, "One canonical CSS rule for " + selector);
+  const after = text.slice(owners[0] + needle.length);
+  const end = after.indexOf("}");
   assert.ok(end >= 0, "Rule closes: " + selector);
-  return matches[1].slice(0, end);
+  return after.slice(0, end);
 }
 
 test("Public Message form text fields have >=16px text at all viewport widths without changing their labels",()=>{
@@ -49,9 +53,7 @@ test("Visible puzzle piece and slider thumb follow native range input directly w
   const target = rule(".public-message-puzzle-target");
   assert.match(target,/transition:left \.16s var\(--ease\)/,
     "Keep target movement animation when a wrong-answer challenge is rotated");
-  const pieceOwners = css.split("}.public-message-puzzle-piece{");
-  assert.equal(pieceOwners.length, 2, "Only one standalone canonical puzzle piece owner");
-  const piece = pieceOwners[1].split("}")[0];
+  const piece = rule(".public-message-puzzle-piece");
   assert.match(piece,/transition:top \.16s var\(--ease\),width \.16s var\(--ease\),height \.16s var\(--ease\)/,
     "Keep non-horizontal piece animations");
   assert.doesNotMatch(piece,/transition:left/,"Piece must move in sync with finger, not chase it");
@@ -60,11 +62,19 @@ test("Visible puzzle piece and slider thumb follow native range input directly w
   assert.match(app,/slider\.oninput = \(\) => setPublicMessagePuzzleSlider\(slider, slider\.value\)/);
 });
 
-test("Only the three existing Public Message CSS owners may differ from the verified published LIVE source",()=>{
+test("Only approved existing Public Message CSS owners may differ from verified LIVE source",()=>{
   const changes = [
     [".public-message-dialog", "min-width:0}", "min-width:0;touch-action:manipulation}"],
     [".public-message-form input,.public-message-form textarea,.public-private-reply textarea", "font:inherit;outline:0;", "font:inherit;font-size:16px;outline:0;"],
-    [".public-message-puzzle-slider input", "opacity:0;cursor:inherit}", "opacity:0;cursor:inherit;touch-action:none}"]
+    [".public-message-puzzle-slider input", "opacity:0;cursor:inherit}", "opacity:0;cursor:inherit;touch-action:none}"],
+    [".public-message-puzzle-target,.public-message-puzzle-piece",
+      "clip-path:url(#publicMessagePuzzlePieceShape);transition:left .16s var(--ease),top .16s var(--ease),width .16s var(--ease),height .16s var(--ease)}",
+      "clip-path:url(#publicMessagePuzzlePieceShape)}"],
+    [".public-message-puzzle-target", "background:",
+      "transition:left .16s var(--ease),top .16s var(--ease),width .16s var(--ease),height .16s var(--ease);background:"],
+    [".public-message-puzzle-piece", "overflow:hidden;",
+      "transition:top .16s var(--ease),width .16s var(--ease),height .16s var(--ease);overflow:hidden;"],
+    [".public-message-puzzle-thumb", ";transition:left .06s linear}", "}"]
   ];
   let expected = originalCss;
   for (const [selector, before, after] of changes) {

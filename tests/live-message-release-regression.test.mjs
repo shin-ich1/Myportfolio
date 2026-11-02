@@ -116,7 +116,7 @@ test("LIVE published CSS outside approved canonical touch and slider declaration
   const approved = [
     [";touch-action:manipulation}", "}"],
     ["font:inherit;font-size:16px;", "font:inherit;"],
-    ["cursor:inherit;touch-action:none}", "cursor:inherit}"],
+    ["cursor:inherit;touch-action:none;appearance:none;background:transparent}.public-message-puzzle-slider input::-webkit-slider-thumb{appearance:none;width:2.75rem;height:2.75rem;margin:0;border:0;background:transparent}.public-message-puzzle-slider input::-moz-range-thumb{width:2.75rem;height:2.75rem;border:0;background:transparent}", "cursor:inherit}"],
     ["clip-path:url(#publicMessagePuzzlePieceShape)}.public-message-puzzle-target{",
      "clip-path:url(#publicMessagePuzzlePieceShape);transition:left .16s var(--ease),top .16s var(--ease),width .16s var(--ease),height .16s var(--ease)}.public-message-puzzle-target{"],
     [".public-message-puzzle-target{transition:left .16s var(--ease),top .16s var(--ease),width .16s var(--ease),height .16s var(--ease);background:",

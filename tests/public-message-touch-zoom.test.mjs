@@ -43,6 +43,21 @@ test("Canonical native range input exclusively owns horizontal puzzle drag witho
   assert.doesNotMatch(css,/@media[^\{]*\{[^\}]*\.public-message-puzzle-slider input\{[^}]*touch-action/);
 });
 
+test("Visible puzzle piece and slider thumb follow native range input directly without horizontal animation lag",()=>{
+  const shared = rule(".public-message-puzzle-target,.public-message-puzzle-piece");
+  assert.doesNotMatch(shared,/transition:/,"Moving piece must not inherit the target's left transition");
+  const target = rule(".public-message-puzzle-target");
+  assert.match(target,/transition:left \.16s var\(--ease\)/,
+    "Keep target movement animation when a wrong-answer challenge is rotated");
+  const piece = rule(".public-message-puzzle-piece");
+  assert.match(piece,/transition:top \.16s var\(--ease\),width \.16s var\(--ease\),height \.16s var\(--ease\)/,
+    "Keep non-horizontal piece animations");
+  assert.doesNotMatch(piece,/transition:left/,"Piece must move in sync with finger, not chase it");
+  assert.doesNotMatch(rule(".public-message-puzzle-thumb"),/transition:left/,
+    "Visible thumb must track same native range value without visual delay");
+  assert.match(app,/slider\.oninput = \(\) => setPublicMessagePuzzleSlider\(slider, slider\.value\)/);
+});
+
 test("Only the three existing Public Message CSS owners may differ from the verified published LIVE source",()=>{
   const changes = [
     [".public-message-dialog", "min-width:0}", "min-width:0;touch-action:manipulation}"],

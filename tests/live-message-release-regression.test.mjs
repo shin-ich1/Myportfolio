@@ -110,13 +110,21 @@ test("obsolete delayed-warmup constant is removed; one canonical message owner r
   assert.equal((coordinator.match(/if \(op === "puzzle-cooldown-start" \|\| op === "puzzle-cooldown-check"\)/g)||[]).length,1,"Only one canonical coordinator cooldown branch may own security state");
 });
 
-test("LIVE published CSS outside the three canonical dialog/form/slider declarations is preserved exactly",()=>{
+test("LIVE published CSS outside approved canonical touch and slider declarations is preserved exactly",()=>{
   const css=read("styles.css");
   let frozenCss=css;
   const approved = [
     [";touch-action:manipulation}", "}"],
     ["font:inherit;font-size:16px;", "font:inherit;"],
-    ["cursor:inherit;touch-action:none}", "cursor:inherit}"]
+    ["cursor:inherit;touch-action:none}", "cursor:inherit}"],
+    ["clip-path:url(#publicMessagePuzzlePieceShape)}.public-message-puzzle-target{",
+     "clip-path:url(#publicMessagePuzzlePieceShape);transition:left .16s var(--ease),top .16s var(--ease),width .16s var(--ease),height .16s var(--ease)}.public-message-puzzle-target{"],
+    [".public-message-puzzle-target{transition:left .16s var(--ease),top .16s var(--ease),width .16s var(--ease),height .16s var(--ease);background:",
+     ".public-message-puzzle-target{background:"],
+    [".public-message-puzzle-piece{transition:top .16s var(--ease),width .16s var(--ease),height .16s var(--ease);overflow:",
+     ".public-message-puzzle-piece{overflow:"],
+    ["box-shadow:0 .25rem .75rem rgba(8,120,227,.28)}.public-message-puzzle-thumb svg",
+     "box-shadow:0 .25rem .75rem rgba(8,120,227,.28);transition:left .06s linear}.public-message-puzzle-thumb svg"]
   ];
   for(const [updated,original] of approved) {
     assert.equal(frozenCss.split(updated).length,2,"Exactly one approved existing CSS owner change: "+updated);

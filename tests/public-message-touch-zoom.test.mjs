@@ -11,10 +11,12 @@ const liveBaseline = "4d96a5314bbb060cd74a1cf7726b385e92f78b24";
 const originalCss = execFileSync("git", ["show", liveBaseline + ":styles.css"], {encoding:"utf8"});
 
 function rule(selector, text=css) {
-  const matches = text.split("\n").filter(line => line.startsWith(selector + "{"));
-  assert.equal(matches.length, 1, "One canonical top-level rule for " + selector);
-  const line = matches[0];
-  return line.slice(selector.length + 1, line.lastIndexOf("}"));
+  const needle = selector + "{";
+  const matches = text.split(needle);
+  assert.equal(matches.length, 2, "One canonical CSS rule for " + selector);
+  const end = matches[1].indexOf("}");
+  assert.ok(end >= 0, "Rule closes: " + selector);
+  return matches[1].slice(0, end);
 }
 
 test("Public Message form text fields have >=16px text at all viewport widths without changing their labels",()=>{

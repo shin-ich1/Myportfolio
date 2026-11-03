@@ -40,7 +40,26 @@ jobs:
       - name: Audit diff and archive isolated source (NO DEPLOY)
         shell: bash
         run: |
-          git diff --check 4ca4fcfedc7959335d78517702638c1dda51f6f4 HEAD
+          set -euo pipefail
+          base=4ca4fcfedc7959335d78517702638c1dda51f6f4
+          git diff --check "$base" HEAD
+          while IFS= read -r changed; do
+            case "$changed" in
+              .github/workflows/media-regression.yml|admin/js/settings.js|app.js|tests/storage-drive-connection-state.test.mjs|tests/public-message-browser-warmup-resize.test.mjs|tests/public-message-expired-puzzle-recovery.test.mjs|tests/public-message-image-failure-retry-ui.test.mjs|release-reports/combined-storage-puzzle-20261103.md) ;;
+              *) echo "Unexpected candidate file: $changed"; exit 1 ;;
+            esac
+          done < <(git diff --name-only "$base" HEAD)
+          if git ls-files | grep -E '(^|/)(\.env|\.dev\.vars|\.private-key|service-account\.json) -o "$RUNNER_TEMP/LAN-Combined-Storage-Puzzle-20261103-CANDIDATE.zip"
+          unzip -t "$RUNNER_TEMP/LAN-Combined-Storage-Puzzle-20261103-CANDIDATE.zip" >/dev/null
+      - name: Retain one isolated source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAN-Combined-Storage-Puzzle-20261103-CANDIDATE
+          path: ${{ runner.temp }}/LAN-Combined-Storage-Puzzle-20261103-CANDIDATE.zip
+          retention-days: 30
+; then
+            echo "Sensitive filename tracked: release blocked"; exit 1
+          fi
           git archive --format=zip HEAD -o "$RUNNER_TEMP/LAN-Combined-Storage-Puzzle-20261103-CANDIDATE.zip"
           unzip -t "$RUNNER_TEMP/LAN-Combined-Storage-Puzzle-20261103-CANDIDATE.zip" >/dev/null
       - name: Retain one isolated source ZIP

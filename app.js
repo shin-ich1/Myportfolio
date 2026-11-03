@@ -2553,6 +2553,8 @@ let publicMessagePuzzleAnswer = 0;
 let publicMessagePendingSubmission = null;
 let publicMessagePuzzleResizeObserver = null;
 let publicMessagePuzzleResizeFallbackCleanup = null;
+let publicMessageTurnstileCancel = null;
+let publicMessagePuzzleLoadGeneration = 0;
 let publicMessagePuzzleWarmupPromise = null;
 let publicMessagePuzzleWarmup = null;
 let publicMessageRetryTimerId = null;
@@ -2750,7 +2752,15 @@ function startPublicMessagePuzzleGeometryWatch(scene) {
   }
 }
 
+function publicMessagePuzzleTurnstileAbort() {
+  const cancel = publicMessageTurnstileCancel;
+  publicMessageTurnstileCancel = null;
+  cancel?.();
+}
+
 function destroyPublicMessagePuzzleVerification() {
+  publicMessagePuzzleTurnstileAbort();
+  publicMessagePuzzleLoadGeneration++;
   stopPublicMessageRetryCountdown();
   publicMessagePuzzleChallenge = null;
   publicMessagePuzzleAnswer = 0;
@@ -2911,6 +2921,8 @@ function beginPublicMessageRetryCountdown(error) {
 }
 
 function closePublicMessagePuzzleVerification({ preserveSubmission = false } = {}) {
+  publicMessagePuzzleTurnstileAbort();
+  publicMessagePuzzleLoadGeneration++;
   const layer = document.querySelector("[data-public-puzzle-layer]");
   if (layer) layer.hidden = true;
   publicMessagePuzzleChallenge = null;
@@ -2932,6 +2944,8 @@ async function loadPublicMessagePuzzleChallenge() {
   const slot = layer?.querySelector("[data-public-turnstile-slot]");
   if (!layer || !scene || !image || !pieceImage || !slider || !slot) return;
 
+  publicMessagePuzzleTurnstileAbort();
+  const loadGeneration = ++publicMessagePuzzleLoadGeneration;
   stopPublicMessagePuzzleGeometryWatch();
   publicMessagePuzzleChallenge = null;
   publicMessagePuzzleAnswer = 0;
@@ -2947,11 +2961,13 @@ async function loadPublicMessagePuzzleChallenge() {
 
   try {
     const prepared = await takePublicMessagePuzzleWarmup();
+    if (loadGeneration !== publicMessagePuzzleLoadGeneration || layer.hidden) return;
     const challenge = prepared?.challenge;
     if (!challenge?.challengeId || !challenge?.siteKey) throw new Error("Secure human verification is not configured.");
     publicMessagePuzzleChallenge = challenge;
     publicMessagePuzzleAnswer = 0;
     await loadPublicMessagePuzzleImage(image, pieceImage, scene, challenge);
+    if (loadGeneration !== publicMessagePuzzleLoadGeneration || layer.hidden) return;
     scene.style.visibility = "";
     setPublicMessagePuzzleSlider(slider, 0);
     syncPublicMessagePuzzleGeometry();
@@ -2960,15 +2976,18 @@ async function loadPublicMessagePuzzleChallenge() {
     // Server-side verification remains mandatory before any message can send.
     if (status) status.textContent = "Preparing secure browser verification…";
     const turnstile = await loadPublicMessageTurnstileApi();
+    if (loadGeneration !== publicMessagePuzzleLoadGeneration || layer.hidden) return;
 
     let pendingTurnstileResolve = null;
     let pendingTurnstileReject = null;
     let turnstileExecutionTimeoutId = null;
+    let turnstileCancelled = false;
     // One short-lived, single-consumption browser proof; the Worker still validates it.
     let completedTurnstileToken = "";
     let completedTurnstileAt = 0;
     let completedTurnstileError = null;
     const finishTurnstile = (error, token = "") => {
+      if (turnstileCancelled) return;
       const responseToken = cleanText(token);
       if (error) {
         completedTurnstileToken = "";
@@ -3021,6 +3040,13 @@ async function loadPublicMessagePuzzleChallenge() {
         45000
       );
     });
+    // Reject any outstanding browser-proof wait before the widget disappears.
+    // A closed challenge must never consume a late token.
+    publicMessageTurnstileCancel = () => {
+      if (turnstileCancelled) return;
+      finishTurnstile(Object.assign(new Error("Verification canceled."), { code: "message-verification-cancelled" }));
+      turnstileCancelled = true;
+    };
     publicMessageTurnstileWidgetId = turnstile.render(slot, {
       sitekey: challenge.siteKey,
       theme: "dark",
@@ -3033,7 +3059,7 @@ async function loadPublicMessagePuzzleChallenge() {
       action: challenge.action || "portfolio_message_create",
       callback: (token) => {
         finishTurnstile(null, token);
-        if (!slider.disabled && status) status.textContent = "Browser check ready. Slide the puzzle to continue.";
+        if (!turnstileCancelled && !slider.disabled && status) status.textContent = "Browser check ready. Slide the puzzle to continue.";
       },
       "before-interactive-callback": () => {
         // The long status below the puzzle is accessible but visually hidden.
@@ -3086,10 +3112,12 @@ async function loadPublicMessagePuzzleChallenge() {
         // blocking on a fresh Turnstile token or wasting it on a rejected try.
         const requiresBrowserProof = Number.isFinite(target) && Math.abs(answer - target) <= 1;
         const turnstileToken = requiresBrowserProof ? await runTurnstile() : "";
+        if (loadGeneration !== publicMessagePuzzleLoadGeneration || layer.hidden) return;
         const verified = await verifyPrivateMessageChallenge({
           challengeId: publicMessagePuzzleChallenge.challengeId,
           answer, turnstileToken
         });
+        if (loadGeneration !== publicMessagePuzzleLoadGeneration || layer.hidden) return;
         if (verified?.outcome === "retry") {
           resetSamePuzzle(verified.message || "Not quite. The matching space moved — try again.", verified.challenge);
           return;
@@ -3104,6 +3132,7 @@ async function loadPublicMessagePuzzleChallenge() {
         if (status) { status.textContent = "Verified. Sending your message…"; status.className = "public-message-puzzle-status is-success"; }
         await sendPendingPublicMessage(verified.verificationToken);
       } catch (error) {
+        if (loadGeneration !== publicMessagePuzzleLoadGeneration || layer.hidden || error?.code === "message-verification-cancelled") return;
         if (error?.status === 429) {
           // The Worker supplies the actual retryAt when a rate window is active.
           // Discard any prepared challenge before showing the form countdown.
@@ -3140,6 +3169,7 @@ async function loadPublicMessagePuzzleChallenge() {
     };
 
   } catch (error) {
+    if (loadGeneration !== publicMessagePuzzleLoadGeneration || layer.hidden) return;
     slider.disabled = true;
     if (label) label.textContent = "Verification unavailable";
     if (status) { status.textContent = error?.message || "Secure human verification is unavailable."; status.className = "public-message-puzzle-status is-error"; }

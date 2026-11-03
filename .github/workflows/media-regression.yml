@@ -9,6 +9,7 @@ on:
       - fix/public-shared-media-priority-20261025
       - fix/public-static-renditions-startup-20261025
       - fix/public-message-browser-warmup-resize-main-20261103
+      - release/combined-storage-puzzle-candidate-20261103
 
 permissions:
   contents: read
@@ -32,6 +33,7 @@ jobs:
           node --check storage-asset.js
           node --check video-compatibility.js
           node --check admin/services/storageUploadService.js
+          node --check admin/js/settings.js
           node --check telemetry-worker/src/index.js
           node --check scripts/prepare-browser-video.mjs
           node --check scripts/prepare-static-videos.mjs
@@ -39,11 +41,11 @@ jobs:
         shell: bash
         run: |
           git diff --check 4ca4fcfedc7959335d78517702638c1dda51f6f4 HEAD
-          git archive --format=zip HEAD -o "$RUNNER_TEMP/LAN-Puzzle-Browser-Compatibility-20261103-CANDIDATE.zip"
-          unzip -t "$RUNNER_TEMP/LAN-Puzzle-Browser-Compatibility-20261103-CANDIDATE.zip" >/dev/null
+          git archive --format=zip HEAD -o "$RUNNER_TEMP/LAN-Combined-Storage-Puzzle-20261103-CANDIDATE.zip"
+          unzip -t "$RUNNER_TEMP/LAN-Combined-Storage-Puzzle-20261103-CANDIDATE.zip" >/dev/null
       - name: Retain one isolated source ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: LAN-Puzzle-Browser-Compatibility-20261103-CANDIDATE
-          path: ${{ runner.temp }}/LAN-Puzzle-Browser-Compatibility-20261103-CANDIDATE.zip
+          name: LAN-Combined-Storage-Puzzle-20261103-CANDIDATE
+          path: ${{ runner.temp }}/LAN-Combined-Storage-Puzzle-20261103-CANDIDATE.zip
           retention-days: 30

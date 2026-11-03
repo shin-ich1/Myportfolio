@@ -17,7 +17,9 @@ function createBrowserPuzzle({
   verify,
   challenges = ["original-puzzle", "new-puzzle"],
   secondChallengeFails = false,
-  delayImageLoad = false
+  delayImageLoad = false,
+  turnstileTokenOnRender = true,
+  delayTurnstileApi = false
 } = {}) {
   let created = 0;
   let sent = 0;
@@ -25,6 +27,9 @@ function createBrowserPuzzle({
   let widgetOptions;
   let resets = 0;
   let releaseImageLoad = null;
+  let releaseTurnstileApi = null;
+  let renderCount = 0;
+  let clearedTimeouts = 0;
   const slider = {
     disabled: true, value: "0", oninput: null, onchange: null,
     closest: () => ({ style: { setProperty() {} } })
@@ -36,7 +41,7 @@ function createBrowserPuzzle({
   const style = { removeProperty() {}, setProperty() {} };
   const scene = { style };
   const turnstile = {
-    render(_slot, options) { widgetOptions = options; options.callback("test-token-not-sent"); return "fixture-widget"; },
+    render(_slot, options) { renderCount++; widgetOptions = options; if (turnstileTokenOnRender) options.callback("test-token-not-sent"); return "fixture-widget"; },
     execute() { widgetOptions.callback("test-token-not-sent"); },
     remove() {},
     reset() { resets++; }
@@ -54,7 +59,7 @@ function createBrowserPuzzle({
   const document = { querySelector: selector => ({ "[data-public-puzzle-layer]":layer, "[data-public-message-send]":button, "[data-public-message-status]":formStatus }[selector] || null) };
   const window = {
     turnstile, addEventListener() {}, removeEventListener() {},
-    setTimeout() { return 1; }, clearTimeout() {},
+    setTimeout() { return 1; }, clearTimeout() { clearedTimeouts++; },
     setInterval() { return 2; }, clearInterval() {}
   };
   const deps = {
@@ -71,7 +76,10 @@ function createBrowserPuzzle({
       if (delayImageLoad) await new Promise(resolve => { releaseImageLoad = resolve; });
     },
     syncPublicMessagePuzzleGeometry() {},
-    async loadPublicMessageTurnstileApi() { return turnstile; },
+    async loadPublicMessageTurnstileApi() {
+      if (delayTurnstileApi) await new Promise((resolve) => { releaseTurnstileApi = resolve; });
+      return turnstile;
+    },
     isPublicDocumentFlowMode() {return false;},
     setPublicMessagePuzzleSlider(node, value) {node.value=String(value);},
     async verifyPrivateMessageChallenge(args) {
@@ -93,8 +101,9 @@ function createBrowserPuzzle({
     "let publicMessageTurnstileCancel = null, publicMessageTurnstileWidgetId = null;\n" +
     "let publicMessagePuzzleResizeObserver = null, publicMessagePuzzleResizeFallbackCleanup = null;\n" +
     "let publicMessagePendingSubmission = null, publicMessageRetryUntil = 0, publicMessageRetryTimerId = null;\n" +
+    "let publicMessagePuzzleLoadGeneration = 0;\n" +
     controller +
-    "\nreturn {load:loadPublicMessagePuzzleChallenge, currentChallenge:()=>publicMessagePuzzleChallenge?.challengeId || null};");
+    "\nreturn {load:loadPublicMessagePuzzleChallenge, close:closePublicMessagePuzzleVerification, currentChallenge:()=>publicMessagePuzzleChallenge?.challengeId || null};");
   const api=factory(...keys.map(k=>deps[k]));
   return {
     ...api, slider, status, label, layer, scene, formStatus, button,
@@ -105,6 +114,11 @@ function createBrowserPuzzle({
       release?.();
     },
     showInteractiveCheck() { widgetOptions?.["before-interactive-callback"]?.(); },
+    fireLateToken() { widgetOptions?.callback?.("late-token"); },
+    releaseTurnstileApi() { releaseTurnstileApi?.(); },
+    get waitingForTurnstile() { return Boolean(releaseTurnstileApi); },
+    get renderCount() { return renderCount; },
+    get clearedTimeouts() { return clearedTimeouts; },
     get created() { return created; },
     get sent() { return sent; },
     get verificationCalls(){return verificationCalls;},
@@ -290,4 +304,48 @@ test("Real puzzle controller hides the old picture during replacement and restor
   assert.equal(view.scene.style.visibility,"");
   assert.equal(view.currentChallenge(),"new-puzzle");
   assert.equal(view.sent,0);
+});
+
+
+test("Closing a puzzle aborts a pending browser proof and clears its watchdog without sending", async () => {
+  const view = createBrowserPuzzle({
+    turnstileTokenOnRender: false,
+    verify: async () => ({ verificationToken: "server-verified-proof" })
+  });
+  await view.load();
+  view.slider.value = "40";
+  let settled = false;
+  const pending = view.slider.onchange().then(() => { settled = true; });
+  assert.equal(view.slider.disabled, true);
+  view.close();
+  for (let n = 0; n < 8 && !settled; n++) await Promise.resolve();
+  assert.equal(settled, true, "Closing the puzzle must release its pending async slider task immediately");
+  await pending;
+  assert.equal(view.layer.hidden, true);
+  assert.equal(view.currentChallenge(), null);
+  assert.equal(view.slider.disabled, true, "The closed puzzle must never be re-enabled");
+  assert.ok(view.clearedTimeouts >= 1, "Cancel the scheduled 45-second proof watchdog");
+  view.fireLateToken();
+  await Promise.resolve();
+  assert.equal(view.verificationCalls, 0, "A late callback must not call the Worker");
+  assert.equal(view.sent, 0, "No message may send after cancellation");
+});
+
+test("Closing before the Turnstile script arrives cannot render a stale widget or reopen the puzzle", async () => {
+  const view = createBrowserPuzzle({
+    delayTurnstileApi: true,
+    verify: async () => ({ verificationToken: "server-verified-proof" })
+  });
+  const pending = view.load();
+  for (let n = 0; n < 16 && !view.waitingForTurnstile; n++) await Promise.resolve();
+  assert.equal(view.waitingForTurnstile, true, "Fixture must pause after the puzzle image loads");
+  view.close();
+  view.releaseTurnstileApi();
+  await pending;
+  assert.equal(view.renderCount, 0, "Closed session must never render delayed third-party widget");
+  assert.equal(view.layer.hidden, true);
+  assert.equal(view.currentChallenge(), null);
+  assert.equal(view.slider.disabled, true);
+  assert.equal(view.verificationCalls, 0);
+  assert.equal(view.sent, 0);
 });

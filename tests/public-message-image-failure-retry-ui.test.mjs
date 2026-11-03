@@ -51,7 +51,7 @@ function harness(error = new Error("Verification image could not be loaded. Plea
   const FakeDate={ now(){return now;},parse:Date.parse };
   const source=[
     "let publicMessagePuzzleChallenge=null, publicMessagePuzzleAnswer=0;",
-    "let publicMessagePuzzleResizeObserver=null, publicMessagePuzzleResizeFallbackCleanup=null, publicMessageTurnstileWidgetId=null, publicMessagePendingSubmission=null;",
+    "let publicMessagePuzzleResizeObserver=null, publicMessagePuzzleResizeFallbackCleanup=null, publicMessageTurnstileWidgetId=null, publicMessagePendingSubmission=null, publicMessageTurnstileCancel=null, publicMessagePuzzleLoadGeneration=0;",
     "let publicMessageRetryUntil=0, publicMessageRetryTimerId=null;",
     controller,
     "return {load:loadPublicMessagePuzzleChallenge,stop:stopPublicMessageRetryCountdown,until:()=>publicMessageRetryUntil};"

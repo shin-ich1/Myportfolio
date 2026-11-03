@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -30,5 +32,19 @@ jobs:
           node --check storage-asset.js
           node --check video-compatibility.js
           node --check admin/services/storageUploadService.js
+          node --check admin/js/settings.js
+          node --check telemetry-worker/src/index.js
           node --check scripts/prepare-browser-video.mjs
           node --check scripts/prepare-static-videos.mjs
+      - name: Package complete isolated source ZIP (NO DEPLOY)
+        shell: bash
+        run: |
+          git diff --check 4ca4fcfedc7959335d78517702638c1dda51f6f4 HEAD
+          git archive --format=zip HEAD -o "$RUNNER_TEMP/LAN-Google-Drive-Admin-Status-20261103-CANDIDATE.zip"
+          unzip -t "$RUNNER_TEMP/LAN-Google-Drive-Admin-Status-20261103-CANDIDATE.zip" >/dev/null
+      - name: Retain one tested source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAN-Google-Drive-Admin-Status-20261103-CANDIDATE
+          path: ${{ runner.temp }}/LAN-Google-Drive-Admin-Status-20261103-CANDIDATE.zip
+          retention-days: 30

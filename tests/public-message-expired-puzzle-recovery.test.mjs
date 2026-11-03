@@ -8,7 +8,10 @@ const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const start = app.indexOf("function stopPublicMessageRetryCountdown()");
 const end = app.indexOf("\nasync function openPublicMessagePuzzleVerification(", start);
 assert.ok(start >= 0 && end > start, "One canonical Public Message puzzle owner");
-const controller = app.slice(start, end);
+const geometryStart = app.indexOf("function stopPublicMessagePuzzleGeometryWatch()");
+const geometryEnd = app.indexOf("\nfunction destroyPublicMessagePuzzleVerification()", geometryStart);
+assert.ok(geometryStart >= 0 && geometryEnd > geometryStart, "Include the actual canonical geometry watcher in the runtime harness");
+const controller = app.slice(geometryStart, geometryEnd) + "\n" + app.slice(start, end);
 
 function createBrowserPuzzle({
   verify,

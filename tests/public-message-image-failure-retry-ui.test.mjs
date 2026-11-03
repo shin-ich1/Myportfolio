@@ -7,7 +7,10 @@ const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const start = app.indexOf("function stopPublicMessageRetryCountdown(");
 const end = app.indexOf("\nasync function openPublicMessagePuzzleVerification(", start);
 assert.ok(start > 0 && end > start, "Canonical Public Message controller must own failed-image retry countdown");
-const controller = app.slice(start, end);
+const geometryStart = app.indexOf("function stopPublicMessagePuzzleGeometryWatch()");
+const geometryEnd = app.indexOf("\nfunction destroyPublicMessagePuzzleVerification()", geometryStart);
+assert.ok(geometryStart >= 0 && geometryEnd > geometryStart, "Include the actual canonical geometry watcher in the runtime harness");
+const controller = app.slice(geometryStart, geometryEnd) + "\n" + app.slice(start, end);
 
 function harness(error = new Error("Verification image could not be loaded. Please try again.")) {
   let now = 2_000_000;
@@ -48,7 +51,7 @@ function harness(error = new Error("Verification image could not be loaded. Plea
   const FakeDate={ now(){return now;},parse:Date.parse };
   const source=[
     "let publicMessagePuzzleChallenge=null, publicMessagePuzzleAnswer=0;",
-    "let publicMessagePuzzleResizeObserver=null, publicMessageTurnstileWidgetId=null, publicMessagePendingSubmission=null;",
+    "let publicMessagePuzzleResizeObserver=null, publicMessagePuzzleResizeFallbackCleanup=null, publicMessageTurnstileWidgetId=null, publicMessagePendingSubmission=null;",
     "let publicMessageRetryUntil=0, publicMessageRetryTimerId=null;",
     controller,
     "return {load:loadPublicMessagePuzzleChallenge,stop:stopPublicMessageRetryCountdown,until:()=>publicMessageRetryUntil};"

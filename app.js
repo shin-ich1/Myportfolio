@@ -2552,6 +2552,7 @@ let publicMessagePuzzleChallenge = null;
 let publicMessagePuzzleAnswer = 0;
 let publicMessagePendingSubmission = null;
 let publicMessagePuzzleResizeObserver = null;
+let publicMessagePuzzleResizeFallbackCleanup = null;
 let publicMessagePuzzleWarmupPromise = null;
 let publicMessagePuzzleWarmup = null;
 let publicMessageRetryTimerId = null;
@@ -2707,11 +2708,14 @@ function publicMessagePuzzleWarmupFresh() {
 async function warmPublicMessagePuzzleChallenge() {
   if (publicMessagePuzzleWarmupFresh()) return publicMessagePuzzleWarmup;
   if (publicMessagePuzzleWarmupPromise) return publicMessagePuzzleWarmupPromise;
+  // Start the browser-verification download in parallel, but do not block image
+  // preparation on third-party script availability.
+  loadPublicMessageTurnstileApi().catch(() => {});
   publicMessagePuzzleWarmupPromise = (async () => {
-    const [challenge, turnstile] = await Promise.all([createPrivateMessageChallenge(), loadPublicMessageTurnstileApi()]);
+    const challenge = await createPrivateMessageChallenge();
     if (!challenge?.challengeId || !challenge?.siteKey) throw new Error("Secure human verification is not configured.");
     await preloadPublicMessagePuzzleImage(challenge);
-    publicMessagePuzzleWarmup = { challenge, turnstile, preparedAt: Date.now() };
+    publicMessagePuzzleWarmup = { challenge, preparedAt: Date.now() };
     return publicMessagePuzzleWarmup;
   })().finally(() => { publicMessagePuzzleWarmupPromise = null; });
   return publicMessagePuzzleWarmupPromise;
@@ -2727,14 +2731,32 @@ async function takePublicMessagePuzzleWarmup() {
   return prepared;
 }
 
+function stopPublicMessagePuzzleGeometryWatch() {
+  publicMessagePuzzleResizeObserver?.disconnect();
+  publicMessagePuzzleResizeObserver = null;
+  publicMessagePuzzleResizeFallbackCleanup?.();
+  publicMessagePuzzleResizeFallbackCleanup = null;
+}
+
+function startPublicMessagePuzzleGeometryWatch(scene) {
+  stopPublicMessagePuzzleGeometryWatch();
+  if (typeof ResizeObserver === "function") {
+    publicMessagePuzzleResizeObserver = new ResizeObserver(syncPublicMessagePuzzleGeometry);
+    publicMessagePuzzleResizeObserver.observe(scene);
+  } else {
+    // The canonical geometry updater also handles older browsers and WebViews.
+    window.addEventListener("resize", syncPublicMessagePuzzleGeometry, { passive: true });
+    publicMessagePuzzleResizeFallbackCleanup = () => window.removeEventListener("resize", syncPublicMessagePuzzleGeometry);
+  }
+}
+
 function destroyPublicMessagePuzzleVerification() {
   stopPublicMessageRetryCountdown();
   publicMessagePuzzleChallenge = null;
   publicMessagePuzzleAnswer = 0;
   publicMessagePendingSubmission = null;
   discardPublicMessagePuzzleWarmup();
-  publicMessagePuzzleResizeObserver?.disconnect();
-  publicMessagePuzzleResizeObserver = null;
+  stopPublicMessagePuzzleGeometryWatch();
   if (publicMessageTurnstileWidgetId != null && window.turnstile?.remove) window.turnstile.remove(publicMessageTurnstileWidgetId);
   publicMessageTurnstileWidgetId = null;
 }
@@ -2893,8 +2915,7 @@ function closePublicMessagePuzzleVerification({ preserveSubmission = false } = {
   if (layer) layer.hidden = true;
   publicMessagePuzzleChallenge = null;
   publicMessagePuzzleAnswer = 0;
-  publicMessagePuzzleResizeObserver?.disconnect();
-  publicMessagePuzzleResizeObserver = null;
+  stopPublicMessagePuzzleGeometryWatch();
   if (!preserveSubmission) publicMessagePendingSubmission = null;
   if (publicMessageTurnstileWidgetId != null && window.turnstile?.remove) window.turnstile.remove(publicMessageTurnstileWidgetId);
   publicMessageTurnstileWidgetId = null;
@@ -2911,6 +2932,7 @@ async function loadPublicMessagePuzzleChallenge() {
   const slot = layer?.querySelector("[data-public-turnstile-slot]");
   if (!layer || !scene || !image || !pieceImage || !slider || !slot) return;
 
+  stopPublicMessagePuzzleGeometryWatch();
   publicMessagePuzzleChallenge = null;
   publicMessagePuzzleAnswer = 0;
   slider.disabled = true;
@@ -2926,7 +2948,6 @@ async function loadPublicMessagePuzzleChallenge() {
   try {
     const prepared = await takePublicMessagePuzzleWarmup();
     const challenge = prepared?.challenge;
-    const turnstile = prepared?.turnstile || await loadPublicMessageTurnstileApi();
     if (!challenge?.challengeId || !challenge?.siteKey) throw new Error("Secure human verification is not configured.");
     publicMessagePuzzleChallenge = challenge;
     publicMessagePuzzleAnswer = 0;
@@ -2934,9 +2955,11 @@ async function loadPublicMessagePuzzleChallenge() {
     scene.style.visibility = "";
     setPublicMessagePuzzleSlider(slider, 0);
     syncPublicMessagePuzzleGeometry();
-    publicMessagePuzzleResizeObserver?.disconnect();
-    publicMessagePuzzleResizeObserver = new ResizeObserver(syncPublicMessagePuzzleGeometry);
-    publicMessagePuzzleResizeObserver.observe(scene);
+    startPublicMessagePuzzleGeometryWatch(scene);
+    // Show the prepared puzzle image even if the verification script is delayed.
+    // Server-side verification remains mandatory before any message can send.
+    if (status) status.textContent = "Preparing secure browser verification…";
+    const turnstile = await loadPublicMessageTurnstileApi();
 
     let pendingTurnstileResolve = null;
     let pendingTurnstileReject = null;

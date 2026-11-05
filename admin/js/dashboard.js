@@ -21,6 +21,7 @@
   import {
     cloudinaryConfig
   } from "../../config.js";
+  import { getVisitorAnalyticsSummary } from "../services/adminSecurityService.js";
 
   import {
     buildDashboardGreeting,
@@ -189,7 +190,8 @@
       visual.dataset.visualShape = "loading";
       const resolvedEdgeSource = new URL(String(source), document.baseURI).href;
       const safeSource = JSON.stringify(resolvedEdgeSource);
-      visual.style.setProperty("--dashboard-edge-image", `url(${safeSource})`);
+      // One image source shared by the desktop visual and compact hero copy.
+      visual.closest(".dashboard-welcome")?.style.setProperty("--dashboard-edge-image", `url(${safeSource})`);
     }
     dashboardHeroImage.src = source;
     if (dashboardHeroImage.complete) updateDashboardVisualShape();
@@ -863,7 +865,78 @@
   }
   
   /* =========================================================
-     13. FIREBASE DASHBOARD CONNECTION
+     13. VISITOR ANALYTICS — ONE READ-ONLY DATA OWNER FOR BOTH FACES
+     Cloudflare Web Analytics is queried by the authenticated Worker.
+     No metrics are stored in Firestore or collected by this Admin page.
+     ========================================================= */
+
+  function renderVisitorAnalytics(payload) {
+    const status = document.querySelector("[data-analytics-status]");
+    const total = document.querySelector("[data-analytics-total-views]");
+    const today = document.querySelector("[data-analytics-today]");
+    const visits = document.querySelector("[data-analytics-week-visits]");
+    const backTotal = document.querySelector("[data-analytics-back-total]");
+    const chart = document.querySelector("[data-analytics-week-chart]");
+    if (!chart || !total || !today || !visits || !backTotal || !status) return;
+
+    const valid = payload?.configured === true && Array.isArray(payload.days)
+      && payload.days.length === 7
+      && payload.days.every((day) => /^\d{4}-\d{2}-\d{2}$/.test(String(day.date || ""))
+        && Number.isSafeInteger(day.views) && day.views >= 0);
+    if (!valid) {
+      for (const node of [total, today, visits, backTotal]) node.textContent = "—";
+      status.textContent = "Analytics not connected";
+      chart.replaceChildren();
+      const empty = document.createElement("span");
+      empty.className = "portfolio-analytics-no-data";
+      empty.textContent = "Connect Cloudflare Web Analytics to see visitor activity.";
+      chart.append(empty);
+      chart.setAttribute("aria-label", "Analytics not connected");
+      return;
+    }
+
+    const format = (value) => new Intl.NumberFormat("en-US").format(value);
+    const days = payload.days;
+    const totalViews = days.reduce((sum, day) => sum + day.views, 0);
+    const visitCount = days.reduce((sum, day) => sum + Math.max(0, Number(day.visits) || 0), 0);
+    total.textContent = format(totalViews);
+    today.textContent = format(days[days.length - 1].views);
+    visits.textContent = format(visitCount);
+    backTotal.textContent = format(totalViews);
+    status.textContent = "Cloudflare · Page views";
+
+    const peak = Math.max(1, ...days.map((day) => day.views));
+    const bars = document.createElement("div");
+    bars.className = "portfolio-analytics-bars";
+    for (const day of days) {
+      const bar = document.createElement("span");
+      bar.className = "portfolio-analytics-day";
+      const value = document.createElement("i");
+      value.className = "portfolio-analytics-day-bar";
+      value.style.height = `${Math.max(3, 100 * day.views / peak)}%`;
+      value.title = `${day.date}: ${format(day.views)} page views`;
+      const dayName = document.createElement("small");
+      dayName.textContent = new Date(`${day.date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+      bar.append(value, dayName);
+      bars.append(bar);
+    }
+    chart.replaceChildren(bars);
+    chart.setAttribute("aria-label", `${format(totalViews)} page views across the last seven UTC days`);
+  }
+
+  async function loadVisitorAnalytics() {
+    try {
+      renderVisitorAnalytics(await getVisitorAnalyticsSummary());
+    } catch (error) {
+      renderVisitorAnalytics(null);
+      const status = document.querySelector("[data-analytics-status]");
+      if (status) status.textContent = "Analytics unavailable";
+      console.warn("Read-only visitor analytics could not be loaded:", error?.code || error?.status || "unavailable");
+    }
+  }
+
+  /* =========================================================
+     14. FIREBASE DASHBOARD CONNECTION
      ========================================================= */
   
   async function initializeDashboardFirebase() {
@@ -871,7 +944,7 @@
       // Dashboard is a consumer of the persistent shell session. It never
       // restores Auth, refreshes tokens, or owns a second authorization path.
       await (window.__LAN_ADMIN_READY__ ?? Promise.reject(new Error("Admin shell session bridge did not initialize.")));
-      await loadDashboardCounts(db);
+      await Promise.allSettled([loadDashboardCounts(db), loadVisitorAnalytics()]);
     } catch (error) {
       console.warn("Dashboard record counts are waiting for the canonical Admin session:", error);
     }

@@ -167,6 +167,11 @@ export const portfolioModuleRegistry = Object.freeze([
    After free Workers deployment, place its /telemetry URL in
    productionUrl. No API secret belongs in this file.
 ========================================================= */
+/* Optional Cloudflare Web Analytics site tag (public, not an API credential).
+   Keep empty until the site has been registered for the LIVE hostname.
+   The backend analytics API token MUST remain in Cloudflare Worker secrets. */
+export const webAnalyticsConfig = Object.freeze({ siteToken: "" });
+
 export const telemetryBridgeConfig = Object.freeze({
   localUrl: "http://127.0.0.1:8787/telemetry",
   productionUrl: "https://lan-cloudinary-telemetry.lagmayr2.workers.dev/telemetry"

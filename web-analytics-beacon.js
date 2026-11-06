@@ -8,7 +8,8 @@ const allowedHosts = new Set([
 const siteToken = String(webAnalyticsConfig.siteToken || "").trim();
 if (allowedHosts.has(location.hostname) && /^[a-f0-9]{32}$/i.test(siteToken)) {
   const script = document.createElement("script");
-  // The Cloudflare beacon reads its own data-cf-beacon attribute as a classic script.
+  // Match Cloudflare’s recommended module beacon and data-cf-beacon attribute.
+  script.type = "module";
   script.async = true;
   script.src = "https://static.cloudflareinsights.com/beacon.min.js";
   script.dataset.cfBeacon = JSON.stringify({ token: siteToken });

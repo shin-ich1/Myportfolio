@@ -37,6 +37,10 @@ export function withoutAuthorizedPreviewCssOwners(source) {
     css = css.replace(pattern, "[canonical preview CSS: " + label + "]");
   };
   replaceRule(/^\.public-photo-gallery\s*\{[^}]*\}/gm, "photo gallery overview");
+  replaceRule(/^\.photo-detail-viewer\s*\{[^}]*\}/gm, "photo viewer scroll owner");
+  replaceRule(/^\.photo-detail-shell\s*\{[^}]*\}/gm, "photo details shell sizing");
+  replaceRule(/^\.gallery-viewer\s*\{[^}]*\}/gm, "shared gallery viewer flow");
+  replaceRule(/^html\[data-lan-public-mode="mobile"\]\s+\.photo-detail-shell\s*\{[^}]*\}/gm, "mobile photo detail spacing");
   replaceRule(/\.dynamic-detail-gallery\{display:grid;[^}]*\}/g, "dynamic gallery overview");
   return css;
 }

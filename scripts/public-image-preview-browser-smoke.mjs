@@ -144,12 +144,19 @@ try {
     await openFixture(page,"single");
     await page.waitForFunction(() => {
       const img=document.querySelector(".photo-detail-single-stage [data-public-media-image]");
-      return img?.complete && img?.naturalWidth > 0;
+      const frame=document.querySelector(".photo-detail-single-stage > .public-media-frame");
+      return img?.complete && img?.naturalWidth > 0
+        && Boolean(frame?.style.getPropertyValue("--public-media-intrinsic-aspect"));
     });
     const detailBounds=await page.evaluate(() => {
       const container=document.querySelector(".photo-detail-media--single").getBoundingClientRect();
-      const frame=document.querySelector(".photo-detail-single-stage > .public-media-frame").getBoundingClientRect();
-      return {container:container.toJSON(),frame:frame.toJSON(),viewport:[innerWidth,innerHeight]};
+      const media=document.querySelector(".photo-detail-single-stage > .public-media-frame");
+      const img=media.querySelector("[data-public-media-image]");
+      const frame=media.getBoundingClientRect();
+      return {container:container.toJSON(),frame:frame.toJSON(),viewport:[innerWidth,innerHeight],
+        ratio:media.style.getPropertyValue("--public-media-intrinsic-ratio"),
+        aspect:media.style.getPropertyValue("--public-media-intrinsic-aspect"),
+        imageDims:[img.naturalWidth,img.naturalHeight]};
     });
     assert.ok(detailBounds.frame.top >= detailBounds.container.top-1 && detailBounds.frame.left >= detailBounds.container.left-1
       && detailBounds.frame.bottom <= detailBounds.container.bottom+1 && detailBounds.frame.right <= detailBounds.container.right+1,

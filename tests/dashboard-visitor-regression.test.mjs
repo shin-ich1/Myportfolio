@@ -46,7 +46,8 @@ test('analytics UI has fail-closed unconfigured state and production data source
   const dashboard = read('admin/js/dashboard.js');
   assert.match(dashboard, /getVisitorAnalyticsSummary/);
   assert.match(dashboard, /renderVisitorAnalytics/);
-  assert.match(dashboard, /Analytics unavailable|Not connected/);
+  assert.match(dashboard, /Connection check failed · Retry/);
+  assert.match(dashboard, /status.textContent = "Analytics not connected"/);
   assert.match(read('admin/services/adminSecurityService.js'), /export const getVisitorAnalyticsSummary/);
 });
 
@@ -54,4 +55,70 @@ test('public tracking only activates when Cloudflare Web Analytics site tag is c
   assert.match(read('config.js'), /webAnalyticsConfig/);
   assert.match(read('index.html'), /web-analytics-beacon\.js/);
   assert.match(read('web-analytics-beacon.js'), /siteToken/);
+});
+
+
+test('one-click retry stays in the canonical analytics card and never flips the wallet', () => {
+  const html = read('admin/dashboard.html');
+  const js = read('admin/js/dashboard.js');
+  assert.match(html, /data-analytics-retry/);
+  assert.match(html, /type="button"[^>]*data-analytics-retry/);
+  assert.match(js, /function bindVisitorAnalyticsRetry\(/);
+  assert.match(js, /retryButton\.addEventListener\("click",/);
+  assert.match(js, /if \(event\.target !== wallet\) return;/);
+  assert.match(js, /visitorAnalyticsRequestInFlight/);
+  assert.match(js, /retryButton\.disabled = true/);
+});
+
+test('one-click recovery reports Cloudflare auth vs transient failures without token rotation', () => {
+  const js = read('admin/js/dashboard.js');
+  const worker = read('telemetry-worker/src/index.js');
+  assert.match(worker, /upstream\.status===401/);
+  assert.match(worker, /upstream\.status===403/);
+  assert.match(worker, /upstream\.status===429/);
+  assert.match(worker, /analytics-token-invalid/);
+  assert.match(worker, /analytics-token-permission-denied/);
+  assert.match(worker, /analytics-rate-limited/);
+  assert.match(js, /analytics-token-invalid/);
+  assert.match(js, /analytics-token-permission-denied/);
+  assert.match(js, /analytics-rate-limited/);
+  assert.doesNotMatch(js, /CF_ANALYTICS_READ_TOKEN|createToken|rotateToken/);
+});
+
+test('Cloudflare analytics provider failures have distinct safe diagnostic codes', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const worker = read('telemetry-worker/src/index.js');
+  const begin = worker.indexOf('async function readCloudflareVisitorAnalytics(env){');
+  const end = worker.indexOf('async function handleSecurityRoute(', begin);
+  assert.ok(begin > 0 && end > begin, 'Canonical worker function is extractable');
+  const fnCode = worker.slice(begin, end);
+  const env = {
+    CF_ANALYTICS_ACCOUNT_ID: 'a'.repeat(32),
+    CF_ANALYTICS_SITE_TAG: 'b'.repeat(32),
+    CF_ANALYTICS_READ_TOKEN: 'test-only-placeholder-not-a-real-token'
+  };
+  const simulate = (status, errorMessages = [], networkError = false) => {
+    const fakeFetch = networkError
+      ? async () => { throw new Error('network temporarily unavailable'); }
+      : async () => ({status, ok: status === 200, json: async () => errorMessages.length
+        ? {errors: errorMessages.map(message => ({message}))}
+        : {data: {viewer: {accounts: [{rumPageloadEventsAdaptiveGroups: []}]}}}});
+    return runInNewContext(`${fnCode}; readCloudflareVisitorAnalytics`, {
+      fetch: fakeFetch,
+      AbortSignal: {timeout: () => null},
+      serviceError: (message, props) => Object.assign(new Error(message), props)
+    });
+  };
+  await assert.rejects(simulate(401)(env), error => error.code === 'analytics-token-invalid');
+  await assert.rejects(simulate(403)(env), error => error.code === 'analytics-token-permission-denied');
+  await assert.rejects(simulate(429)(env), error => error.code === 'analytics-rate-limited');
+  await assert.rejects(simulate(200, ['not authorized for that account'])(env), error => error.code === 'analytics-token-permission-denied');
+  await assert.rejects(simulate(200, ['token expired'])(env), error => error.code === 'analytics-token-invalid');
+  await assert.rejects(simulate(0, [], true)(env), error => error.code === 'analytics-upstream-unavailable');
+  const empty = await simulate(200)(env);
+  assert.equal(empty.configured, true);
+  assert.equal(empty.days.length, 7);
+  assert.ok(empty.days.every(d => d.views === 0 && d.visits === 0));
+  const unconfigured = await simulate(200)({});
+  assert.equal(unconfigured.configured, false);
 });

@@ -2997,10 +2997,23 @@ async function readCloudflareVisitorAnalytics(env){
     body:JSON.stringify({query,variables:{accountTag,siteTag,start:start.toISOString(),end:tomorrow.toISOString()}}),
     signal:AbortSignal.timeout(9000)
   }).catch(()=>null);
-  if(!upstream?.ok) throw serviceError('Analytics provider is unavailable.',{status:502,code:'analytics-upstream-unavailable'});
+  if(!upstream) throw serviceError('Analytics provider is unavailable.',{status:502,code:'analytics-upstream-unavailable'});
+  if(upstream.status===401) throw serviceError('Cloudflare analytics credentials need attention.',{status:502,code:'analytics-token-invalid'});
+  if(upstream.status===403) throw serviceError('Cloudflare analytics permission is insufficient.',{status:502,code:'analytics-token-permission-denied'});
+  if(upstream.status===429) throw serviceError('Cloudflare analytics is rate-limited.',{status:503,code:'analytics-rate-limited'});
+  if(!upstream.ok) throw serviceError('Analytics provider is unavailable.',{status:502,code:'analytics-upstream-unavailable'});
   const data=await upstream.json().catch(()=>null);
-  if(!data || (Array.isArray(data.errors)&&data.errors.length))
+  if(!data) throw serviceError('Analytics query was not accepted.',{status:502,code:'analytics-query-unavailable'});
+  if(Array.isArray(data.errors)&&data.errors.length){
+    const descriptions=data.errors.map(item=>String(item?.message||'')).join(' ').toLowerCase();
+    if(/not authorized|permission|access denied|forbidden/.test(descriptions))
+      throw serviceError('Cloudflare analytics permission is insufficient.',{status:502,code:'analytics-token-permission-denied'});
+    if(/unauthorized|invalid (?:api )?token|token expired|authentication failed/.test(descriptions))
+      throw serviceError('Cloudflare analytics credentials need attention.',{status:502,code:'analytics-token-invalid'});
+    if(/rate limit|too many|excessive resources/.test(descriptions))
+      throw serviceError('Cloudflare analytics is rate-limited.',{status:503,code:'analytics-rate-limited'});
     throw serviceError('Analytics query was not accepted.',{status:502,code:'analytics-query-unavailable'});
+  }
   const groups=data.data?.viewer?.accounts?.[0]?.rumPageloadEventsAdaptiveGroups;
   if(!Array.isArray(groups)) throw serviceError('Analytics provider returned no valid dataset.',{status:502,code:'analytics-data-invalid'});
   const countOrZero=(value)=>Number.isSafeInteger(Number(value))&&Number(value)>=0?Number(value):0;

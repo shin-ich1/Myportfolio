@@ -227,6 +227,7 @@
     });
 
     wallet.addEventListener("keydown", (event) => {
+      if (event.target !== wallet) return;
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       toggleWallet();
@@ -870,6 +871,8 @@
      No metrics are stored in Firestore or collected by this Admin page.
      ========================================================= */
 
+  let visitorAnalyticsRequestInFlight = false;
+
   function renderVisitorAnalytics(payload) {
     const status = document.querySelector("[data-analytics-status]");
     const total = document.querySelector("[data-analytics-total-views]");
@@ -925,14 +928,38 @@
   }
 
   async function loadVisitorAnalytics() {
+    if (visitorAnalyticsRequestInFlight) return;
+    visitorAnalyticsRequestInFlight = true;
+    const retryButton = document.querySelector("[data-analytics-retry]");
+    const status = document.querySelector("[data-analytics-status]");
+    if (retryButton) { retryButton.disabled = true; retryButton.textContent = "Checking…"; }
+    if (status) status.textContent = "Checking analytics…";
     try {
       renderVisitorAnalytics(await getVisitorAnalyticsSummary());
     } catch (error) {
       renderVisitorAnalytics(null);
-      const status = document.querySelector("[data-analytics-status]");
-      if (status) status.textContent = "Analytics unavailable";
-      console.warn("Read-only visitor analytics could not be loaded:", error?.code || error?.status || "unavailable");
+      const code = String(error?.code || "");
+      const message = ({
+        "analytics-token-invalid": "Cloudflare token invalid · Replace secret",
+        "analytics-token-permission-denied": "Cloudflare Analytics Read access required",
+        "analytics-rate-limited": "Cloudflare is busy · Retry later",
+        "analytics-configuration-invalid": "Analytics config needs attention",
+        "security/session-required": "Admin session required",
+      })[code] || (error?.status === 401 || error?.status === 403
+        ? "Admin session needs attention"
+        : "Connection check failed · Retry");
+      if (status) status.textContent = message;
+      console.warn("Read-only visitor analytics could not be loaded:", code || error?.status || "unavailable");
+    } finally {
+      visitorAnalyticsRequestInFlight = false;
+      if (retryButton) { retryButton.disabled = false; retryButton.textContent = "Retry"; }
     }
+  }
+
+  function bindVisitorAnalyticsRetry() {
+    const retryButton = document.querySelector("[data-analytics-retry]");
+    if (!retryButton) return;
+    retryButton.addEventListener("click", () => { void loadVisitorAnalytics(); });
   }
 
   /* =========================================================
@@ -958,6 +985,7 @@
     applyDashboardVisualPreference();
     bindDashboardVisualShape();
     bindCommandWallet();
+    bindVisitorAnalyticsRetry();
     displayPortfolioPassName();
     displayDashboardGreeting();
     displayLastAccess();

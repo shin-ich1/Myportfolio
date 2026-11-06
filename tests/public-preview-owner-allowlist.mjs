@@ -38,6 +38,8 @@ export function withoutAuthorizedPreviewCssOwners(source) {
   };
   replaceRule(/^\.public-photo-gallery\s*\{[^}]*\}/gm, "photo gallery overview");
   replaceRule(/^\.photo-detail-viewer\s*\{[^}]*\}/gm, "photo viewer scroll owner");
+  replaceRule(/^\.photo-detail-media--single\s*\{[^}]*\}/gm, "photo intrinsic single stage container");
+  replaceRule(/^\.photo-detail-single-stage\s*\{[^}]*\}/gm, "photo intrinsic stage geometry");
   replaceRule(/^\.photo-detail-shell\s*\{[^}]*\}/gm, "photo details shell sizing");
   replaceRule(/^\.gallery-viewer\s*\{[^}]*\}/gm, "shared gallery viewer flow");
   replaceRule(/^html\[data-lan-public-mode="mobile"\]\s+\.photo-detail-shell\s*\{[^}]*\}/gm, "mobile photo detail spacing");

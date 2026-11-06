@@ -37,6 +37,9 @@ export function withoutAuthorizedPreviewCssOwners(source) {
     css = css.replace(pattern, "[canonical preview CSS: " + label + "]");
   };
   replaceRule(/^\.public-photo-gallery\s*\{[^}]*\}/gm, "photo gallery overview");
+  css = css.replace(/^\.photo-detail-media-shell\s*\{[^}]*\}\n/m, "");
+  replaceRule(/^\.photo-detail-record-nav-row\s*\{[^}]*\}/gm, "photo record navigation row");
+  replaceRule(/^\.photo-detail-record-nav\s*\{[^}]*\}/gm, "photo record navigation controls");
   replaceRule(/^\.photo-detail-viewer\s*\{[^}]*\}/gm, "photo viewer scroll owner");
   replaceRule(/^\.photo-detail-media--single\s*\{[^}]*\}/gm, "photo intrinsic single stage container");
   replaceRule(/^\.photo-detail-single-stage\s*\{[^}]*\}/gm, "photo intrinsic stage geometry");

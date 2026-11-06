@@ -154,3 +154,16 @@ test("canonical image-only preview is an immersive transparent image stage, not 
   assert.match(css, /\.public-image-preview-stage\s*\{[^}]*grid-area:\s*stage/,
     "Keep existing image fitting and responsive navigation ownership");
 });
+
+test("Before & After first-level panels size from available width instead of imposing a tall mobile viewport slot", () => {
+  const pair = css.match(/^\.public-comparison-pair\s*\{([^}]*)\}/m)?.[1] || "";
+  const panel = css.match(/^\.public-comparison-panel\s*\{([^}]*)\}/m)?.[1] || "";
+  assert.match(pair, /height:\s*auto\s*;/, "Let the comparison height follow its panels");
+  assert.doesNotMatch(pair, /min-height:/, "No oversized minimum height on the shared pair");
+  assert.match(panel, /aspect-ratio:\s*4\s*\/\s*5\s*;/, "Size each panel from its width");
+  assert.match(panel, /max-height:\s*min\(58dvh,\s*600px\)/, "Landscape and small screens must cap excessive height");
+  assert.doesNotMatch(css, /html\[data-lan-public-mode="mobile"\]\s*\.public-comparison-pair\s*\{[^}]*height:/,
+    "No competing mobile-only fixed-height comparison rule");
+  assert.doesNotMatch(css, /\.public-comparison-pair\s*\{\s*min-height:\s*240px\s*;\s*\}/,
+    "No remaining narrow layout minimum height");
+});

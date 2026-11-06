@@ -52,6 +52,7 @@ const svg = (width, height, color) => "data:image/svg+xml;charset=utf-8," + enco
 const before = svg(900, 500, "#9b4051");
 const after = svg(600, 1100, "#2b8498");
 const third = svg(1200, 450, "#8a6d35");
+const portrait = svg(900, 1200, "#4b658b");
 
 const executable = [process.env.CHROME_BIN, "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser"].find(path => path && existsSync(path));
 assert.ok(executable, "Chrome/Chromium executable required for browser verification");
@@ -59,16 +60,20 @@ const browser = await chromium.launch({executablePath:executable, headless:true,
 let checks = 0;
 
 async function openFixture(page, mode) {
-  const sources = [before, after, third];
+  const sources = [before, after, third, portrait];
   await page.evaluate(({mode, sources}) => {
     const {show, photoEditingDetailMediaMarkup, setupPhotoDetailGalleryViewer, setupPhotoDetailSingleComparisonPreview} = window.__previewTest;
     const role = mode === "comparison" ? {key:"comparison",label:"Before & After"}
       : mode === "gallery" ? {key:"gallery",label:"Gallery · 3 images"}
       : {key:"single",label:"Single Image"};
-    const item = {title:"Media Contract Test", category:"Testing", beforeImage:sources[0], afterImage:sources[1],
+    const item = {title:"Media Contract Test", category:"Testing", beforeImage:sources[0], afterImage:mode === "single" ? sources[3] : sources[1],
       galleryImages:sources, description:"This description remains in first-level details"};
-    show('<article class="photo-detail-shell">' + photoEditingDetailMediaMarkup(item, role)
-      + '<section class="photo-detail-information" data-first-level-details>Details and description</section></article>',
+    show('<article class="photo-detail-shell">'
+      + '<header class="photo-detail-head"><div class="photo-detail-head-icon">Photo</div><div><div class="photo-detail-kicker">PHOTO EDITING · '+role.label+'</div><h2>'+item.title+'</h2><p>'+item.category+'</p></div></header>'
+      + photoEditingDetailMediaMarkup(item, role)
+      + '<nav class="photo-detail-record-nav-row" aria-label="Browse photo editing samples"><button class="carousel-arrow photo-detail-record-nav is-prev" type="button">Previous</button><button class="carousel-arrow photo-detail-record-nav is-next" type="button">Next</button></nav>'
+      + '<div class="photo-detail-information" data-first-level-details><section class="photo-detail-facts"><div><small>CATEGORY</small><strong>Testing</strong></div><div><small>PRESENTATION</small><strong>'+role.label+'</strong></div></section>'
+      + '<section class="photo-detail-about"><h3>ABOUT THIS EDIT</h3><p>This description remains in first-level details</p></section></div></article>',
       "gallery-viewer photo-detail-viewer");
     if (role.key === "gallery") setupPhotoDetailGalleryViewer(document.querySelector("#modal"), item);
     else setupPhotoDetailSingleComparisonPreview(document.querySelector("#modal"), item, role);
@@ -106,7 +111,7 @@ async function verifyBounds(page, expectedImages) {
 }
 
 try {
-  for (const size of [{width:1440,height:900},{width:800,height:700},{width:390,height:844},{width:844,height:390}]) {
+  for (const size of [{width:1650,height:927},{width:1440,height:900},{width:800,height:700},{width:390,height:844},{width:844,height:390}]) {
     const page = await browser.newPage({viewport:size,deviceScaleFactor:1});
     await page.setContent('<!doctype html><html><head></head><body><main id="modal"></main></body></html>');
     await page.addStyleTag({content:css});

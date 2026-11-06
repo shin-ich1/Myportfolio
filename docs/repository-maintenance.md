@@ -10,7 +10,7 @@ GitHub Actions runs the following without deploying:
 - JavaScript syntax and diff checks.
 - A read-only scan of tracked filenames and common high-confidence credential signatures.
 - A read-only Firebase Hosting candidate manifest check.
-- A read-only Cloudflare Web Analytics site-tag comparison.
+- A read-only Cloudflare Web Analytics configuration check that distinguishes the public beacon token from the Worker reporting site tag.
 
 To reproduce the new checks locally from the repository root:
 
@@ -38,15 +38,20 @@ Before adopting the new directory in `firebase.json`, compare its contents again
 
 A GitHub merge is **not** permission to deploy Firebase or Cloudflare Worker code.
 
-## Cloudflare Web Analytics: property identity review
+## Cloudflare Web Analytics: resolved source identifiers (PR #60)
 
-The browser's `config.js` defines the public beacon `siteToken`; the Worker's checked-in Wrangler variables define `CF_ANALYTICS_SITE_TAG` used for the account's RUM GraphQL filter. As reviewed on 2026-11-06, **these values do not match**.
+The public website's `config.js` defines the public beacon **`siteToken`** used by `beacon.min.js`. The Worker uses **`CF_ANALYTICS_SITE_TAG`** to filter `rumPageloadEventsAdaptiveGroups` in Cloudflare GraphQL. These two Cloudflare identifiers have **different meanings and must not be assumed equal**.
 
-Both are public 32-character property identifiers, but they ordinarily should reference the *same Web Analytics property* if browser collection is to appear in the dashboard's visitor graph. The `CF_ANALYTICS_ACCOUNT_ID` is a separate account identifier. The `CF_ANALYTICS_READ_TOKEN` is a **private server-side token**, and must never be added to `config.js`, public JS, or Wrangler `vars`.
+On November 6, 2026, [PR #60](https://github.com/shin-ich1/Myportfolio/pull/60) confirmed the correct Cloudflare GraphQL reporting `siteTag` from the dashboard and corrected the checked-in Worker configuration. The automated regression at `tests/analytics-site-tag-regression.test.mjs` explicitly confirms the verified Worker tag **differs** from the public beacon token. The combined release merged this source correction into `main`.
 
-Run `node scripts/check-analytics-config.mjs` for a non-mutating warning. To resolve the mismatch correctly, verify the actual site's beacon snippet/property tag in the authorized Cloudflare dashboard, confirm the Worker GraphQL account/site configuration, and only then change the erroneous property identifier. **Do not guess which existing tag is correct, and do not change a live Worker secret solely to make values look equal.**
+Run `node scripts/check-analytics-config.mjs` for a read-only sanity check. It validates public identifier syntax, preserves their intentional difference, and checks that the private analytics read token is **not** present in checked-in Wrangler `vars`. The test suite separately guards the verified GraphQL reporting tag.
 
-Official references:
+The `CF_ANALYTICS_ACCOUNT_ID` is a separate account identifier. The private `CF_ANALYTICS_READ_TOKEN` must remain a Worker **secret**. Never copy it to `config.js` or any public frontend file.
+
+**Source verification is not LIVE verification.** No repository test can confirm the currently active Cloudflare Worker environment variable or Admin visitor counts. If the Admin graph still shows zeros, check the live Worker setting and real GraphQL response with authenticated admin access instead of changing the public beacon token to match it.
+
+References:
+- [PR #60 — verified reporting siteTag fix](https://github.com/shin-ich1/Myportfolio/pull/60)
 - [Cloudflare Web Analytics FAQ](https://developers.cloudflare.com/web-analytics/faq/)
 - [Cloudflare GraphQL filtering](https://developers.cloudflare.com/analytics/graphql-api/features/filtering/)
 - [Firebase Hosting configuration](https://firebase.google.com/docs/hosting/full-config)

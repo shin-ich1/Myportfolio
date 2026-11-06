@@ -112,6 +112,8 @@ test("single-image details use the outer modal as the sole scroll owner", () => 
   const viewer = css.match(/\.photo-detail-viewer\s*\{([^}]*)\}/)?.[1] || "";
   const shell = css.match(/\.photo-detail-shell\s*\{([^}]*)\}/)?.[1] || "";
   assert.match(viewer, /overflow-y:\s*auto/, "The outer Photo Editing detail modal must remain scrollable");
+  const gallery = css.match(/\.gallery-viewer\s*\{([^}]*)\}/)?.[1] || "";
+  assert.match(gallery, /display:\s*block/, "Photo details cannot be a shrinking flex item inside the max-height modal");
   assert.doesNotMatch(shell, /max-height|overflow-y:\s*auto/, "A nested scroll/height owner shrinks the portrait media row beneath its image");
   assert.doesNotMatch(css, /html\[data-lan-public-mode="mobile"\]\s+\.photo-detail-shell\s*\{[^}]*max-height/,
     "Mobile uses the same canonical scroll geometry rather than a second height constraint");

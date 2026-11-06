@@ -67,7 +67,7 @@ async function openFixture(page, mode) {
       : mode === "gallery" ? {key:"gallery",label:"Gallery · 3 images"}
       : {key:"single",label:"Single Image"};
     const item = {title:"Media Contract Test", category:"Testing", beforeImage:sources[0], afterImage:mode === "single" ? sources[3] : sources[1],
-      galleryImages:sources, description:"This description remains in first-level details"};
+      galleryImages:sources.slice(0,3), description:"This description remains in first-level details"};
     show('<article class="photo-detail-shell">'
       + '<header class="photo-detail-head"><div class="photo-detail-head-icon">Photo</div><div><div class="photo-detail-kicker">PHOTO EDITING · '+role.label+'</div><h2>'+item.title+'</h2><p>'+item.category+'</p></div></header>'
       + photoEditingDetailMediaMarkup(item, role)

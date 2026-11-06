@@ -87,7 +87,7 @@ async function verifyBounds(page, expectedImages) {
     assert.ok(image.naturalWidth>0 && image.naturalHeight>0);
     assert.ok(r.x >= result.stage.x - 1 && r.y >= result.stage.y - 1
       && closeEnough(r.right,result.stage.right) && closeEnough(r.bottom,result.stage.bottom),
-      "Image must fit completely inside the second-level preview stage");
+      "Image must fit completely inside the second-level preview stage: " + JSON.stringify({viewport:[result.w,result.h],stage:result.stage,image:r}));
   }
   checks++;
 }

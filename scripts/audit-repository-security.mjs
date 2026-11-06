@@ -23,7 +23,7 @@ function isPrivateFile(path) {
 
 const textTypes = new Set([".js", ".mjs", ".cjs", ".json", ".jsonc", ".yaml", ".yml", ".toml", ".html", ".md", ".txt", ".rules", ".css", ".env"]);
 const signatureRules = [
-  { name: "private-key header", re: /-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/ },
+  { name: "embedded PEM private key", re: /-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----\s*(?:[A-Za-z0-9+/=]{16,}\s*){2,}-----END (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/ },
   { name: "GitHub personal access token", re: /gh(?:p|o|u|s|r)_[a-zA-Z0-9_]{30,}|github_pat_[a-zA-Z0-9_]{55,}/ },
   { name: "live payment secret", re: /sk_live_[a-zA-Z0-9]{16,}/ }
 ];

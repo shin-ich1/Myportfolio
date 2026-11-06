@@ -4201,16 +4201,13 @@ function openPublicImagePreview({ items = [], mode = "single", index = 0, title 
   overlay.setAttribute("aria-modal", "true");
   overlay.setAttribute("aria-label", cleanText(title) || "Image preview");
   overlay.innerHTML = `<div class="public-image-preview-panel">
-    <header class="public-image-preview-header">
-      <strong>${escapeHtml(cleanText(title) || "Image Preview")}</strong>
-      <button class="close public-image-preview-close" type="button" data-public-preview-close aria-label="Close image preview">${icon("x")}</button>
-    </header>
+    <button class="close public-image-preview-close" type="button" data-public-preview-close aria-label="Close image preview">${icon("x")}</button>
     <div class="public-image-preview-layout">
       <button class="carousel-arrow public-image-preview-nav is-prev" type="button" data-public-preview-prev aria-label="Previous image">${icon("chevron-left")}</button>
       <div class="public-image-preview-stage" data-public-preview-stage></div>
       <button class="carousel-arrow public-image-preview-nav is-next" type="button" data-public-preview-next aria-label="Next image">${icon("chevron-right")}</button>
     </div>
-    <footer class="public-image-preview-footer" data-public-preview-caption></footer>
+    <footer class="public-image-preview-footer" data-public-preview-caption hidden></footer>
   </div>`;
   const stage = overlay.querySelector("[data-public-preview-stage]");
   const previous = overlay.querySelector("[data-public-preview-prev]");
@@ -4239,7 +4236,8 @@ function openPublicImagePreview({ items = [], mode = "single", index = 0, title 
     });
     previous.hidden = !gallery || !nav.hasPrevious;
     next.hidden = !gallery || !nav.hasNext;
-    caption.textContent = comparison ? "Before & After" : gallery ? `Image ${selected + 1} of ${sources.length}` : "Single Image";
+    caption.textContent = gallery ? `Image ${selected + 1} of ${sources.length}` : "";
+    caption.hidden = !gallery;
     bindPublicMediaFrames(stage);
   };
   previous.addEventListener("click", () => { selected -= 1; render(); });
@@ -4476,7 +4474,7 @@ function openPhotoEditingSource(documentId) {
   const navigation = recordNavigation
     ? `<nav class="photo-detail-record-nav-row" aria-label="Browse photo editing samples">${recordNavigation}</nav>`
     : "";
-  show(`<article class="photo-detail-shell" data-photo-detail-role="${escapeHtml(role.key)}"><header class="photo-detail-head"><div class="photo-detail-head-icon">${icon("camera")}</div><div><div class="photo-detail-kicker">PHOTO EDITING · ${escapeHtml(role.label.toUpperCase())}</div><h2>${escapeHtml(source.title)}</h2><p>${escapeHtml(source.category)}</p></div></header>${media}${navigation}<div class="photo-detail-information">${factMarkup}${descriptionMarkup}${tagsMarkup}</div></article>`, "gallery-viewer photo-detail-viewer");
+  show(`<article class="photo-detail-shell" data-photo-detail-role="${escapeHtml(role.key)}"><header class="photo-detail-head"><div class="photo-detail-head-icon">${icon("camera")}</div><div><div class="photo-detail-kicker">PHOTO EDITING · ${escapeHtml(role.label.toUpperCase())}</div><h2>${escapeHtml(source.title)}</h2><p>${escapeHtml(source.category)}</p></div></header><div class="photo-detail-media-shell">${media}${navigation}</div><div class="photo-detail-information">${factMarkup}${descriptionMarkup}${tagsMarkup}</div></article>`, "gallery-viewer photo-detail-viewer");
 
   const modal = document.querySelector("#modal");
   modal?.querySelectorAll?.("[data-photo-record-nav]").forEach((button) => {

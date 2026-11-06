@@ -16,14 +16,26 @@ function section(start, end) {
 }
 
 const browserRuntime = [
-  `const cleanText = value => String(value ?? "").trim();
+  `"use strict";
+  const cleanText = value => String(value ?? "").trim();
   const escapeHtml = value => String(value ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   const icon = value => '<span aria-hidden="true">' + value + '</span>';
-  const bindPublicMediaFrames = () => {};
-  const publicMediaFrameMarkup = (asset, alt = "") => '<span class="public-media-frame" data-public-media-frame><img class="public-media-frame__image" data-public-media-image src="' + escapeHtml(typeof asset === "string" ? asset : asset?.url || "") + '" alt="' + escapeHtml(alt) + '"></span>';
+  const bindPublicMediaFrames = root => root?.querySelectorAll?.("[data-public-media-frame]").forEach(frame => {
+    const image = frame.querySelector("[data-public-media-image]");
+    if (!image) return;
+    const apply = () => syncPublicIntrinsicMediaFrame(frame,image);
+    if (image.complete && image.naturalWidth) apply();
+    else image.addEventListener("load",apply,{once:true});
+  });
+  const publicMediaFrameMarkup = (asset, alt = "", opts = {}) => {
+    const name = opts.sizing === "intrinsic" ? "public-media-frame--intrinsic " : "";
+    const value = typeof asset === "string" ? asset : asset?.url || "";
+    return '<span class="public-media-frame ' + name + '" data-public-media-frame><img class="public-media-frame__image" data-public-media-image src="' + escapeHtml(value) + '" alt="' + escapeHtml(alt) + '"></span>';
+  };
   const photoGalleryMediaDescriptors = item => (item.galleryImages || []).map((asset, index) => ({asset, index, shape:"square", width:800, height:800}));
   window.lucide = {createIcons() {}};
   `,
+  section("function syncPublicIntrinsicMediaFrame(", "\nfunction bindPublicMediaFrames("),
   section("function bindPublicImagePreviewTriggers(", "\nfunction publicImagePreviewNavigation("),
   section("function publicImagePreviewNavigation(", "\nfunction openPublicImagePreview("),
   section("function openPublicImagePreview(", "\nfunction closePublicImagePreview("),
@@ -125,6 +137,19 @@ try {
     assert.equal(await page.locator("[data-first-level-details]").count(),1);
     checks++;
     await openFixture(page,"single");
+    await page.waitForFunction(() => {
+      const img=document.querySelector(".photo-detail-single-stage [data-public-media-image]");
+      return img?.complete && img?.naturalWidth > 0;
+    });
+    const detailBounds=await page.evaluate(() => {
+      const container=document.querySelector(".photo-detail-media--single").getBoundingClientRect();
+      const frame=document.querySelector(".photo-detail-single-stage > .public-media-frame").getBoundingClientRect();
+      return {container:container.toJSON(),frame:frame.toJSON(),viewport:[innerWidth,innerHeight]};
+    });
+    assert.ok(detailBounds.frame.top >= detailBounds.container.top-1 && detailBounds.frame.left >= detailBounds.container.left-1
+      && detailBounds.frame.bottom <= detailBounds.container.bottom+1 && detailBounds.frame.right <= detailBounds.container.right+1,
+      "Single image overflows its first-level dark stage: "+JSON.stringify(detailBounds));
+    checks++;
     await page.locator("[data-photo-preview-open]").click();
     await verifyBounds(page,1);
     assert.equal(await page.locator("[data-public-preview-next]:visible").count(),0);

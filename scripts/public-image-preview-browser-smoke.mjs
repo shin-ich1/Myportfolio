@@ -59,15 +59,15 @@ assert.ok(executable, "Chrome/Chromium executable required for browser verificat
 const browser = await chromium.launch({executablePath:executable, headless:true, args:["--no-sandbox","--disable-dev-shm-usage"]});
 let checks = 0;
 
-async function openFixture(page, mode) {
+async function openFixture(page, mode, galleryCount = 3) {
   const sources = [before, after, third, portrait];
-  await page.evaluate(({mode, sources}) => {
+  await page.evaluate(({mode, sources, galleryCount}) => {
     const {show, photoEditingDetailMediaMarkup, setupPhotoDetailGalleryViewer, setupPhotoDetailSingleComparisonPreview} = window.__previewTest;
     const role = mode === "comparison" ? {key:"comparison",label:"Before & After"}
       : mode === "gallery" ? {key:"gallery",label:"Gallery · 3 images"}
       : {key:"single",label:"Single Image"};
     const item = {title:"Media Contract Test", category:"Testing", beforeImage:sources[0], afterImage:mode === "single" ? sources[3] : sources[1],
-      galleryImages:sources.slice(0,3), description:"This description remains in first-level details"};
+      galleryImages:sources.slice(0,galleryCount), description:"This description remains in first-level details"};
     show('<article class="photo-detail-shell">'
       + '<header class="photo-detail-head"><div class="photo-detail-head-icon">Photo</div><div><div class="photo-detail-kicker">PHOTO EDITING · '+role.label+'</div><h2>'+item.title+'</h2><p>'+item.category+'</p></div></header>'
       + photoEditingDetailMediaMarkup(item, role)
@@ -77,7 +77,7 @@ async function openFixture(page, mode) {
       "gallery-viewer photo-detail-viewer");
     if (role.key === "gallery") setupPhotoDetailGalleryViewer(document.querySelector("#modal"), item);
     else setupPhotoDetailSingleComparisonPreview(document.querySelector("#modal"), item, role);
-  }, {mode,sources});
+  }, {mode,sources,galleryCount});
 }
 
 async function verifyBounds(page, expectedImages) {
@@ -116,14 +116,15 @@ try {
     await page.setContent('<!doctype html><html><head></head><body><main id="modal"></main></body></html>');
     await page.addStyleTag({content:css});
     await page.addScriptTag({content:browserRuntime});
-    await openFixture(page,"gallery");
+    await openFixture(page,"gallery",2);
     const thumbnails = page.locator("[data-photo-gallery-open]");
-    assert.equal(await thumbnails.count(),3,"Gallery first view retains all thumbnails");
+    assert.equal(await thumbnails.count(),2,"Two-image Gallery first view retains both thumbnails");
+    const tiles = await Promise.all([thumbnails.nth(0).boundingBox(),thumbnails.nth(1).boundingBox()]);
+    assert.ok(tiles.every(Boolean) && Math.abs(tiles[0].width-tiles[1].width)<=1,"Gallery with two images must balance the thumbnail widths");
     await thumbnails.nth(0).click();
     await verifyBounds(page,1);
     assert.equal(await page.locator("[data-public-preview-prev]:visible").count(),0,"First image has no Previous");
     assert.equal(await page.locator("[data-public-preview-next]:visible").count(),1);
-    await page.locator("[data-public-preview-next]").click();
     await page.locator("[data-public-preview-next]").click();
     await verifyBounds(page,1);
     assert.equal(await page.locator("[data-public-preview-next]:visible").count(),0,"Last image has no Next");

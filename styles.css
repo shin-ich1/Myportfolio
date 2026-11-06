@@ -1210,8 +1210,7 @@ video { display: block; width: 100%; max-height: 72vh; object-fit: contain; bord
 .photo-detail-media--empty { display: grid; min-height: 260px; place-items: center; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); }
 
 .gallery-viewer {
-  display: flex;
-  flex-direction: column;
+  display: block;
 }
 
 .resume-grid { display: grid; gap: 11px; }

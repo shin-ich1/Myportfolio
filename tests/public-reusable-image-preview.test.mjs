@@ -100,3 +100,10 @@ test("generated future module images reuse the same image-only entrypoint", () =
   const binder = owner("bindPublicImagePreviewTriggers", "publicImagePreviewNavigation");
   assert.match(binder, /openPublicImagePreview/);
 });
+
+test("image-only viewer declares its focus owner before use in strict JavaScript modules", () => {
+  const section = app.slice(app.indexOf("function publicImagePreviewNavigation("), app.indexOf("\nlet modalOpener = null;", app.indexOf("function publicImagePreviewNavigation(")));
+  assert.match(section, /(?:const|let)\s+publicImagePreviewReturnFocus\s*=\s*null\s*;/,
+    "An undeclared focus state throws ReferenceError on gallery, single and comparison clicks in the real ES module");
+  assert.match(section, /publicImagePreviewReturnFocus\s*=\s*opener\s*\|\|\s*document\.activeElement/);
+});

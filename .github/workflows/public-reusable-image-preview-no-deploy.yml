@@ -24,6 +24,11 @@ jobs:
           node --check app.js
           node --check record-media.js
           node --check tests/public-reusable-image-preview.test.mjs
+      - name: Browser smoke - live DOM in wide, compact, mobile and landscape
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/lan-preview-browser" --no-audit --no-fund playwright-core@1.56.1
+          LAN_PLAYWRIGHT_CORE="$RUNNER_TEMP/lan-preview-browser/node_modules/playwright-core" node scripts/public-image-preview-browser-smoke.mjs
       - name: Scoped diff check and security filename audit
         shell: bash
         run: |
@@ -32,7 +37,7 @@ jobs:
           git diff --check "$base" HEAD
           while IFS= read -r changed; do
             case "$changed" in
-              app.js|styles.css|tests/public-reusable-image-preview.test.mjs|tests/public-preview-owner-allowlist.mjs|tests/public-message-touch-zoom.test.mjs|tests/live-message-release-regression.test.mjs|.github/workflows/public-reusable-image-preview-no-deploy.yml) ;;
+              app.js|styles.css|tests/public-reusable-image-preview.test.mjs|tests/public-preview-owner-allowlist.mjs|tests/public-message-touch-zoom.test.mjs|tests/live-message-release-regression.test.mjs|scripts/public-image-preview-browser-smoke.mjs|.github/workflows/public-reusable-image-preview-no-deploy.yml) ;;
               *) echo "Unauthorized changed file: $changed"; exit 1 ;;
             esac
           done < <(git diff --name-only "$base" HEAD)

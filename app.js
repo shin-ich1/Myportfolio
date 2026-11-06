@@ -4182,6 +4182,7 @@ function publicImagePreviewNavigation(index, count) {
   return { index: position, hasPrevious: position > 0, hasNext: position < total - 1 };
 }
 
+let publicImagePreviewReturnFocus = null;
 function openPublicImagePreview({ items = [], mode = "single", index = 0, title = "", opener = null } = {}) {
   const modal = document.querySelector("#modal");
   const backdrop = modal?.querySelector(".backdrop");

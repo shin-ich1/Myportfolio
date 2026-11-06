@@ -81,6 +81,7 @@ async function verifyBounds(page, expectedImages) {
   assert.equal(result.images.length, expectedImages);
   assert.ok(result.panel.x >= -1 && result.panel.y >= -1 && closeEnough(result.panel.right,result.w)
     && closeEnough(result.panel.bottom,result.h),"Panel must remain within visual viewport");
+  assert.ok(result.stage.width >= result.panel.width * .65, "Preview stage must occupy the center grid column, even with hidden navigation: " + JSON.stringify({viewport:[result.w,result.h],stage:result.stage,panel:result.panel}));
   for(const image of result.images){
     const r=image.rect;
     assert.equal(image.fit,"contain","Never crop an original image");

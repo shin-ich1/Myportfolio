@@ -137,3 +137,20 @@ test("first-level photo record navigation is anchored to media sides, not a sepa
   assert.match(navRule, /pointer-events:\s*none/, "Transparent navigation must not block image or gallery thumbnails");
   assert.match(arrowRule, /pointer-events:\s*auto/, "Arrow buttons remain clickable");
 });
+
+test("canonical image-only preview is an immersive transparent image stage, not a second blue details card", () => {
+  const open = owner("openPublicImagePreview", "closePublicImagePreview");
+  assert.doesNotMatch(open, /public-image-preview-header|<strong>\$\{escapeHtml\(cleanText\(title\)/,
+    "Only one picture and floating controls should appear: no details heading in image-only view");
+  assert.match(open, /data-public-preview-close/, "Full-view Close still returns to details");
+  assert.match(open, /data-public-preview-stage/, "Preserve shared media delivery and fitted image stage");
+  const panel = css.match(/\.public-image-preview-panel\s*\{([^}]*)\}/)?.[1] || "";
+  const image = css.match(/\.public-image-preview-image>\.public-media-frame\s*\{([^}]*)\}/)?.[1] || "";
+  assert.match(panel, /background:\s*transparent/, "Shared full preview must not render an opaque blue panel");
+  assert.match(panel, /border:\s*0\b/, "Remove the second level decorative panel border");
+  assert.match(image, /background:\s*transparent/, "Media frame must not paint a blue rectangle behind the image");
+  assert.match(css, /\.public-image-preview-close\s*\{[^}]*position:\s*absolute/,
+    "Close floats outside the image instead of consuming header space");
+  assert.match(css, /\.public-image-preview-stage\s*\{[^}]*grid-area:\s*stage/,
+    "Keep existing image fitting and responsive navigation ownership");
+});

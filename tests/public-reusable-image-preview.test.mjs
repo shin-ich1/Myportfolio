@@ -118,3 +118,22 @@ test("single-image details use the outer modal as the sole scroll owner", () => 
   assert.doesNotMatch(css, /html\[data-lan-public-mode="mobile"\]\s+\.photo-detail-shell\s*\{[^}]*max-height/,
     "Mobile uses the same canonical scroll geometry rather than a second height constraint");
 });
+
+test("first-level photo record navigation is anchored to media sides, not a separate row below it", () => {
+  const detail = owner("openPhotoEditingSource", "setupPhotoDetailGalleryViewer");
+  assert.match(detail, /<div class="photo-detail-media-shell">\$\{media\}\$\{navigation\}<\/div>/,
+    "Both arrows must live with the image area, before details and description");
+  assert.doesNotMatch(detail, /\$\{media\}\$\{navigation\}<div class="photo-detail-information"/,
+    "Remove the redundant bottom navigation row");
+  assert.match(detail, /\[data-photo-record-nav\]/, "Keep record-level navigation handler");
+  const previous = app.slice(app.indexOf("function photoEditingDetailNavigation("), app.indexOf("\nfunction openPhotoEditingSource("));
+  assert.match(previous, /data-photo-record-nav/, "Arrows must navigate records rather than gallery images");
+  const shellRule = css.match(/\.photo-detail-media-shell\s*\{([^}]*)\}/)?.[1] || "";
+  const navRule = css.match(/\.photo-detail-record-nav-row\s*\{([^}]*)\}/)?.[1] || "";
+  const arrowRule = css.match(/\.photo-detail-record-nav\s*\{([^}]*)\}/)?.[1] || "";
+  assert.match(shellRule, /position:\s*relative/, "Media provides the canonical positioning containing block");
+  assert.match(navRule, /position:\s*absolute/, "Navigation must overlay the media sides without shrinking the images");
+  assert.match(navRule, /align-items:\s*center/, "Arrows must vertically align with the image, not description");
+  assert.match(navRule, /pointer-events:\s*none/, "Transparent navigation must not block image or gallery thumbnails");
+  assert.match(arrowRule, /pointer-events:\s*auto/, "Arrow buttons remain clickable");
+});

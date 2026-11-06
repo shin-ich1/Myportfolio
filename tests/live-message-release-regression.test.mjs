@@ -23,9 +23,9 @@ const frozenLiveRegionHash = text => {
 test("Public Message and all unrelated app source remain byte-for-byte unchanged outside approved preview owners",()=>{
   const liveBase=execFileSync("git",["show",publicPreviewBaseline+":app.js"],{encoding:"utf8"});
   const begin=app.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
-  const end=app.indexOf("\\nfunction publicServicesValid(",begin);
+  const end=app.indexOf("\nfunction publicServicesValid(",begin);
   const baseBegin=liveBase.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
-  const baseEnd=liveBase.indexOf("\\nfunction publicServicesValid(",baseBegin);
+  const baseEnd=liveBase.indexOf("\nfunction publicServicesValid(",baseBegin);
   assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
   assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
   assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(liveBase),
@@ -121,14 +121,14 @@ test("All LIVE CSS unrelated to authorized image preview owners stays byte-ident
     "No message puzzle, slider, footer, Admin, or unrelated responsive CSS may change");
   const marker=".public-message-puzzle-layer{";
   const start=css.indexOf(marker);
-  const end=css.indexOf("\\n",start);
-  assert.ok(start>0 && end>start && css.split("\\n").filter(line=>line.startsWith(marker)).length===1);
+  const end=css.indexOf("\n",start);
+  assert.ok(start>0 && end>start && css.split("\n").filter(line=>line.startsWith(marker)).length===1);
   const puzzle=css.slice(start,end);
-  assert.match(puzzle,/\\.public-message-puzzle-card\\{[^}]*grid-auto-rows:max-content/);
-  assert.match(puzzle,/\\.public-message-puzzle-foot\\{position:absolute;width:1px;height:1px;[^}]*overflow:hidden;clip-path:inset\\(50%\\)/);
-  assert.match(puzzle,/\\.public-message-turnstile-slot\\{display:grid/);
-  assert.match(css,/\\.site-footer\\.site-footer--storage\\{/);
-  assert.match(css,/\\.storage-policy-panel/);
+  assert.match(puzzle,/\.public-message-puzzle-card\{[^}]*grid-auto-rows:max-content/);
+  assert.match(puzzle,/\.public-message-puzzle-foot\{position:absolute;width:1px;height:1px;[^}]*overflow:hidden;clip-path:inset\(50%\)/);
+  assert.match(puzzle,/\.public-message-turnstile-slot\{display:grid/);
+  assert.match(css,/\.site-footer\.site-footer--storage\{/);
+  assert.match(css,/\.storage-policy-panel/);
 });
 
 test("published LIVE storage/privacy policy remains exact original release artifact",()=>{

@@ -36,7 +36,7 @@ export function withoutAuthorizedPreviewCssOwners(source) {
     if (matches.length !== 1) throw new Error("Expected one " + label + " owner; found " + matches.length);
     css = css.replace(pattern, "[canonical preview CSS: " + label + "]");
   };
-  replaceRule(/\.public-photo-gallery\s*\{[^}]*\}/g, "photo gallery overview");
+  replaceRule(/^\.public-photo-gallery\s*\{[^}]*\}/gm, "photo gallery overview");
   replaceRule(/\.dynamic-detail-gallery\{display:grid;[^}]*\}/g, "dynamic gallery overview");
   return css;
 }

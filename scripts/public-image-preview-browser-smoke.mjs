@@ -80,6 +80,39 @@ async function openFixture(page, mode, galleryCount = 3) {
   }, {mode,sources,galleryCount});
 }
 
+async function verifyFirstLevelComparisonDensity(page) {
+  const result = await page.evaluate(() => {
+    const pair = document.querySelector(".public-comparison-pair").getBoundingClientRect();
+    const panels = [...document.querySelectorAll(".public-comparison-panel")].map(panel => {
+      const rect = panel.getBoundingClientRect();
+      const img = panel.querySelector("[data-public-media-image]");
+      const frame = panel.querySelector("[data-public-media-frame]");
+      const image = img?.getBoundingClientRect();
+      const caption = panel.querySelector(".public-comparison-label")?.getBoundingClientRect();
+      return {rect:rect.toJSON(),image:image?.toJSON(),caption:caption?.toJSON(),
+        fit:img ? getComputedStyle(img).objectFit : "",frame:frame?.getBoundingClientRect().toJSON()};
+    });
+    return {pair:pair.toJSON(),panels,viewport:[innerWidth,innerHeight]};
+  });
+  assert.equal(result.panels.length,2,"Comparison first view keeps two complete image panels");
+  const [width,height]=result.viewport;
+  for(const panel of result.panels) {
+    assert.ok(panel.rect.height <= Math.min(panel.rect.width * 1.28, height * .58, 600) + 3,
+      "Before/After panels should size from width, not leave a giant empty vertical slot: "+JSON.stringify(result));
+    assert.equal(panel.fit,"contain","Comparison must never crop the original image");
+    assert.ok(panel.caption && panel.caption.top >= panel.rect.top - 1 && panel.caption.bottom <= panel.rect.bottom + 1,
+      "Before and After labels should stay within their own panels");
+    assert.ok(panel.image && panel.image.left >= panel.rect.left - 1 && panel.image.right <= panel.rect.right + 1 &&
+      panel.image.top >= panel.rect.top - 1 && panel.image.bottom <= panel.rect.bottom + 1,
+      "Both original images must remain inside their compact panels");
+  }
+  assert.ok(result.panels[0].rect.right <= result.panels[1].rect.left + 1,
+    "First view must preserve side-by-side comparison");
+  if (width <= 430) assert.ok(result.panels[0].rect.height < 260,
+    "Pixel 9 Pro comparison should no longer have 400px-tall panels");
+  checks++;
+}
+
 async function verifyRecordNavigationBounds(page) {
   const bounds = await page.evaluate(() => {
     const media = document.querySelector(".photo-detail-media-shell").getBoundingClientRect();
@@ -161,9 +194,13 @@ async function verifyBounds(page, expectedImages) {
 }
 
 try {
-  for (const size of [{width:1650,height:927},{width:1440,height:900},{width:800,height:700},{width:390,height:844},{width:844,height:390}]) {
+  for (const size of [{width:1650,height:927},{width:1440,height:900},{width:800,height:700},{width:427,height:952},{width:390,height:844},{width:844,height:390}]) {
     const page = await browser.newPage({viewport:size,deviceScaleFactor:1});
     await page.setContent('<!doctype html><html><head></head><body><main id="modal"></main></body></html>');
+    await page.evaluate(width => {
+      const mode = width <= 600 ? "mobile" : width <= 1100 ? "compact" : "wide";
+      document.documentElement.setAttribute("data-lan-public-mode",mode);
+    },size.width);
     await page.addStyleTag({content:css});
     await page.addScriptTag({content:browserRuntime});
     await openFixture(page,"gallery",2);
@@ -186,6 +223,7 @@ try {
     assert.equal(await page.locator("[data-first-level-details]").count(),1,"Close returns to details, not homepage");
     checks++;
     await openFixture(page,"comparison");
+    await verifyFirstLevelComparisonDensity(page);
     await verifyRecordNavigationBounds(page);
     await page.locator("[data-photo-preview-open]").click();
     await verifyImmersivePreview(page);

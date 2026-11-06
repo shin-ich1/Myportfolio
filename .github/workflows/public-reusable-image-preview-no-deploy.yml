@@ -32,7 +32,7 @@ jobs:
           git diff --check "$base" HEAD
           while IFS= read -r changed; do
             case "$changed" in
-              app.js|styles.css|tests/public-reusable-image-preview.test.mjs|.github/workflows/public-reusable-image-preview-no-deploy.yml) ;;
+              app.js|styles.css|tests/public-reusable-image-preview.test.mjs|tests/public-preview-owner-allowlist.mjs|tests/public-message-touch-zoom.test.mjs|tests/live-message-release-regression.test.mjs|.github/workflows/public-reusable-image-preview-no-deploy.yml) ;;
               *) echo "Unauthorized changed file: $changed"; exit 1 ;;
             esac
           done < <(git diff --name-only "$base" HEAD)

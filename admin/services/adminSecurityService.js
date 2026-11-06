@@ -256,6 +256,8 @@ export function requireRecentStepUp(action='sensitive-action'){
 export async function changeAdministratorPassword(newPassword){ const proof=requireRecentStepUp('change password'); return workerRequest('/security/account/password',{body:{newPassword:String(newPassword??''),proofId:proof.proofId},authorization:true}); }
 export async function resetAuthenticatorEnrollment(){ const proof=requireRecentStepUp('reset authenticator'); const result=await workerRequest('/security/totp/reset',{body:{proofId:proof.proofId},authorization:true}); await clearLocalTrustedDevice().catch(()=>{}); writeStoredSession(null); stepUpProof=null; await signOutFirebaseAdministrator(); return result; }
 
+// Read-only Cloudflare Web Analytics summary; authorization is server-enforced.
+export const getVisitorAnalyticsSummary=()=>workerRequest('/security/analytics/visitor-summary',{method:'GET',authorization:true});
 export const getSecurityOverview=()=>workerRequest('/security/overview',{method:'GET',authorization:true});
 export const getSecurityAccessState=()=>workerRequest('/security/access-state',{method:'GET',authorization:true});
 export const listTrustedDevices=()=>workerRequest('/security/devices',{method:'GET',authorization:true});

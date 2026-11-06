@@ -2968,6 +2968,68 @@ const SECURITY_REQUEST_SCHEMAS = Object.freeze({
   "/security/lockdown/exit": { proofId: REQUEST_SCHEMA_ANY }
 });
 
+// Aggregate RUM/Cloudflare Web Analytics, not raw visitor identities. This
+// handler is called ONLY after requireSecurityApprovedAdministrator succeeds.
+async function readCloudflareVisitorAnalytics(env){
+  const accountTag=String(env.CF_ANALYTICS_ACCOUNT_ID||'').trim();
+  const siteTag=String(env.CF_ANALYTICS_SITE_TAG||'').trim();
+  const token=String(env.CF_ANALYTICS_READ_TOKEN||'').trim();
+  if(!accountTag || !siteTag || !token) return {configured:false,days:[]};
+  if(!/^[a-f0-9]{32}$/i.test(accountTag) || !/^[a-f0-9]{32}$/i.test(siteTag))
+    throw serviceError('Analytics configuration is invalid.',{status:503,code:'analytics-configuration-invalid'});
+
+  const today=new Date();
+  const tomorrow=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate()+1));
+  const start=new Date(tomorrow.getTime()-7*86400000);
+  const dateKey=(date)=>date.toISOString().slice(0,10);
+  const query=`query PortfolioVisitorSummary($accountTag: string!, $siteTag: string!, $start: Time!, $end: Time!) {
+    viewer { accounts(filter: { accountTag: $accountTag }) {
+      rumPageloadEventsAdaptiveGroups(filter: {siteTag: $siteTag, datetime_geq: $start, datetime_lt: $end}, limit: 7, orderBy: [date_ASC]) {
+        dimensions { date }
+        count
+        sum { visits }
+      }
+    }}
+  }`;
+  const upstream=await fetch('https://api.cloudflare.com/client/v4/graphql',{
+    method:'POST',
+    headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+    body:JSON.stringify({query,variables:{accountTag,siteTag,start:start.toISOString(),end:tomorrow.toISOString()}}),
+    signal:AbortSignal.timeout(9000)
+  }).catch(()=>null);
+  if(!upstream) throw serviceError('Analytics provider is unavailable.',{status:502,code:'analytics-upstream-unavailable'});
+  if(upstream.status===401) throw serviceError('Cloudflare analytics credentials need attention.',{status:502,code:'analytics-token-invalid'});
+  if(upstream.status===403) throw serviceError('Cloudflare analytics permission is insufficient.',{status:502,code:'analytics-token-permission-denied'});
+  if(upstream.status===429) throw serviceError('Cloudflare analytics is rate-limited.',{status:503,code:'analytics-rate-limited'});
+  if(!upstream.ok) throw serviceError('Analytics provider is unavailable.',{status:502,code:'analytics-upstream-unavailable'});
+  const data=await upstream.json().catch(()=>null);
+  if(!data) throw serviceError('Analytics query was not accepted.',{status:502,code:'analytics-query-unavailable'});
+  if(Array.isArray(data.errors)&&data.errors.length){
+    const descriptions=data.errors.map(item=>String(item?.message||'')).join(' ').toLowerCase();
+    if(/not authorized|permission|access denied|forbidden/.test(descriptions))
+      throw serviceError('Cloudflare analytics permission is insufficient.',{status:502,code:'analytics-token-permission-denied'});
+    if(/unauthorized|invalid (?:api )?token|token expired|authentication failed/.test(descriptions))
+      throw serviceError('Cloudflare analytics credentials need attention.',{status:502,code:'analytics-token-invalid'});
+    if(/rate limit|too many|excessive resources/.test(descriptions))
+      throw serviceError('Cloudflare analytics is rate-limited.',{status:503,code:'analytics-rate-limited'});
+    throw serviceError('Analytics query was not accepted.',{status:502,code:'analytics-query-unavailable'});
+  }
+  const groups=data.data?.viewer?.accounts?.[0]?.rumPageloadEventsAdaptiveGroups;
+  if(!Array.isArray(groups)) throw serviceError('Analytics provider returned no valid dataset.',{status:502,code:'analytics-data-invalid'});
+  const countOrZero=(value)=>Number.isSafeInteger(Number(value))&&Number(value)>=0?Number(value):0;
+  const byDay=new Map();
+  for(const group of groups){
+    const day=String(group?.dimensions?.date||'');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+    byDay.set(day,{views:countOrZero(group?.count),visits:countOrZero(group?.sum?.visits)});
+  }
+  const days=Array.from({length:7},(_,i)=>{
+    const date=dateKey(new Date(start.getTime()+i*86400000));
+    return {date,views:byDay.get(date)?.views||0,visits:byDay.get(date)?.visits||0};
+  });
+  return {configured:true,source:'cloudflare-web-analytics',days};
+}
+
 async function handleSecurityRoute(request,env,url,context){
   const origin=allowedOrigin(request.headers.get('Origin')||'',env); if(!origin) return json({error:'Origin is not allowed.',code:'origin-not-allowed'},403);
   try{
@@ -3215,6 +3277,7 @@ async function handleSecurityRoute(request,env,url,context){
 
     const allowLockdown=path==='/security/overview'||path==='/security/lockdown/exit';
     const admin=await requireSecurityApprovedAdministrator(request,env,{allowLockdown});
+    if(path==='/security/analytics/visitor-summary'&&method==='GET') return json(await readCloudflareVisitorAnalytics(env),200,origin);
     if(path==='/security/session/validate'&&method==='GET'){ return json({ok:true,session:{sessionId:admin.session.sessionId,trustLevel:admin.session.trustLevel||'temporary',deviceId:admin.session.deviceId||'',expiresAt:admin.session.expiresAt||''}},200,origin); }
     if(path==='/security/session/end'&&method==='POST'){ await securityPatchDoc(env,SECURITY_COLLECTIONS.sessions,admin.session.sessionId,{active:false,revokedAt:new Date().toISOString()}); await writeSecurityEvent(env,{uid:admin.uid,type:'session-revoked',sessionId:admin.session.sessionId,success:true}); return json({ok:true},200,origin); }
     if(path==='/security/step-up/start'&&method==='POST'){

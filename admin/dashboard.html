@@ -55,32 +55,29 @@
     <p class="welcome-message">Your portfolio is live and ready. Settle in, check the pulse, and create when the idea feels right.</p>
   </div>
 
-  <section aria-labelledby="portfolioPassTitle" class="portfolio-pass command-wallet" data-command-wallet role="button" tabindex="0" aria-label="LΛN Portfolio Pass. Click to flip and view workspace details.">
+  <section aria-labelledby="portfolioPassTitle" class="portfolio-pass command-wallet" data-command-wallet role="button" tabindex="0" aria-label="LΛN Portfolio Pass. Flip to view the seven-day visitor activity graph.">
     <div class="command-wallet-inner">
       <div class="command-wallet-face portfolio-pass-front">
         <div class="portfolio-pass-topline">
           <div><p class="editor-eyebrow">Private admin pass</p><h2 id="portfolioPassTitle">LΛN Portfolio Pass</h2></div>
           <span class="portfolio-pass-live"><i></i> LIVE</span>
         </div>
-        <div class="portfolio-pass-balance"><small>Workspace records</small><strong data-mirror="analyticsTotalCount">—</strong></div>
+        <div class="portfolio-analytics-front" data-visitor-analytics>
+          <div class="portfolio-analytics-total"><small>Portfolio views · Last 7 days</small><strong data-analytics-total-views>—</strong></div>
+          <div class="portfolio-analytics-highlights"><span><small>Today</small><b data-analytics-today>—</b></span><span><small>Visits · 7d</small><b data-analytics-week-visits>—</b></span></div>
+          <div class="portfolio-analytics-control-row"><small class="portfolio-analytics-status" data-analytics-status aria-live="polite">Analytics not connected</small><button type="button" class="portfolio-analytics-retry" data-analytics-retry aria-label="Retry visitor analytics connection check">Retry</button></div>
+        </div>
         <div class="portfolio-pass-owner"><span id="portfolioPassName">LΛN</span><small>Administrator</small></div><span aria-hidden="true" class="portfolio-pass-wordmark">LΛN</span>
       </div>
       <div aria-hidden="true" class="command-wallet-face portfolio-pass-back">
         <div class="portfolio-pass-topline">
-          <div><p class="editor-eyebrow">Workspace snapshot</p><h2>Portfolio Pulse</h2></div>
-          <span class="portfolio-pass-live"><i></i> READY</span>
+          <div><p class="editor-eyebrow">Portfolio analytics</p><h2>Last 7 Days</h2></div>
+          <span class="portfolio-pass-live"><i></i> VIEWS</span>
         </div>
-        <div class="portfolio-pass-detail-grid">
-          <span><small>Projects</small><b data-mirror="projectCount">—</b></span>
-          <span><small>Photo Editing</small><b data-mirror="photoSampleCount">—</b></span>
-          <span><small>Experience</small><b data-mirror="experienceCount">—</b></span>
-          <span><small>Resumes</small><b data-mirror="resumeCount">—</b></span>
+        <div class="portfolio-analytics-week-chart" data-analytics-week-chart role="img" aria-label="Seven-day portfolio page-view chart">
+          <span class="portfolio-analytics-no-data">Connect Cloudflare Web Analytics to see visitor activity.</span>
         </div>
-        <div class="portfolio-pass-healthline" aria-label="Connected services">
-          <span><svg aria-hidden="true"><use href="#dash-icon-shield"/></svg><small>Auth</small><b data-mirror="authenticationStatus">Checking</b></span>
-          <span><svg aria-hidden="true"><use href="#dash-icon-database"/></svg><small>Data</small><b data-mirror="firestoreStatus">Checking</b></span>
-          <span><svg aria-hidden="true"><use href="#dash-icon-cloud"/></svg><small>Media</small><b data-mirror="cloudinaryStatus">CHECK</b></span>
-        </div>
+        <div class="portfolio-analytics-back-foot"><small>Daily page views · UTC</small><strong data-analytics-back-total>—</strong></div>
       </div>
     </div>
   </section>

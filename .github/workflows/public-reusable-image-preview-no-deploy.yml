@@ -1,0 +1,57 @@
+name: Public reusable image preview regression (NO DEPLOY)
+on:
+  push:
+    branches: [fix/public-reusable-image-preview-20261106]
+permissions:
+  contents: read
+jobs:
+  public-image-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Regression tests
+        run: node --test tests/public-reusable-image-preview.test.mjs
+      - name: Full repository tests
+        run: node --test tests/*.test.mjs
+      - name: Syntax checks
+        run: |
+          node --check app.js
+          node --check record-media.js
+          node --check tests/public-reusable-image-preview.test.mjs
+      - name: Browser smoke - live DOM in wide, compact, mobile and landscape
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/lan-preview-browser" --no-audit --no-fund playwright-core@1.56.1
+          LAN_PLAYWRIGHT_CORE="$RUNNER_TEMP/lan-preview-browser/node_modules/playwright-core" node scripts/public-image-preview-browser-smoke.mjs
+      - name: Scoped diff check and security filename audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=fef21b141ee992ae1f6db8b7aa4e2d68a30f433f
+          git diff --check "$base" HEAD
+          while IFS= read -r changed; do
+            case "$changed" in
+              app.js|styles.css|tests/public-reusable-image-preview.test.mjs|tests/public-preview-owner-allowlist.mjs|tests/public-message-touch-zoom.test.mjs|tests/live-message-release-regression.test.mjs|scripts/public-image-preview-browser-smoke.mjs|.github/workflows/public-reusable-image-preview-no-deploy.yml) ;;
+              *) echo "Unauthorized changed file: $changed"; exit 1 ;;
+            esac
+          done < <(git diff --name-only "$base" HEAD)
+          if git ls-files | grep -E '(^|/)(\.env|\.dev\.vars|service-account\.json|\.private-key)$'; then
+            echo "Potential secret filename tracked"; exit 1
+          fi
+          echo "Diff security audit: PASS"
+      - name: Archive exact isolated source
+        shell: bash
+        run: |
+          git archive --format=zip HEAD -o "$RUNNER_TEMP/LAN-Public-Image-Viewer-CANDIDATE.zip"
+          unzip -t "$RUNNER_TEMP/LAN-Public-Image-Viewer-CANDIDATE.zip" >/dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LAN-Public-Image-Viewer-CANDIDATE
+          path: ${{ runner.temp }}/LAN-Public-Image-Viewer-CANDIDATE.zip
+          retention-days: 30

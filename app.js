@@ -2209,7 +2209,8 @@ function dynamicAssetMarkup(field, asset, index = 0, options = {}) {
     const imageMarkup = options.gallery
       ? `<span class="public-media-gallery-stage">${publicMediaFrameMarkup(descriptor.publicPresentation, name, { className: "public-media-frame--gallery", fallbackLabel: "Gallery image", purpose: "detail" })}</span>`
       : publicMediaFrameMarkup(descriptor.publicPresentation, name, { className: "public-media-frame--detail", fallbackLabel: "Image asset", purpose: "detail" });
-    return `<figure class="dynamic-asset-preview dynamic-asset-image${galleryCard}">${imageMarkup}${meta}</figure>`;
+    const semanticRole = cleanText(resolveModuleFieldSemanticRole(field));
+    return `<figure class="dynamic-asset-preview dynamic-asset-image${galleryCard}"><button type="button" class="public-image-preview-trigger" data-public-image-preview-trigger data-public-image-preview-role="${escapeHtml(semanticRole)}" aria-label="View ${escapeHtml(name)} full size">${imageMarkup}</button>${meta}</figure>`;
   }
   if (preview.kind === "video") {
     return `<figure class="dynamic-asset-preview dynamic-asset-video">${publicVideoFrameMarkup(descriptor.publicPresentation, name || "Video", { className: "public-media-frame--detail", autoplay: false })}${meta}</figure>`;
@@ -4132,10 +4133,139 @@ function updateThemeIcon() {
   window.lucide?.createIcons();
 }
 
+function bindPublicImagePreviewTriggers(root = document) {
+  root?.querySelectorAll?.("[data-public-image-preview-trigger]").forEach((trigger) => {
+    if (trigger.dataset.publicImagePreviewBound === "true") return;
+    trigger.dataset.publicImagePreviewBound = "true";
+    trigger.addEventListener("click", () => {
+      const role = cleanText(trigger.dataset.publicImagePreviewRole);
+      const detail = trigger.closest(".dynamic-detail-shell");
+      const comparisonCandidates = detail
+        ? [...detail.querySelectorAll('[data-public-image-preview-role="comparison-before"],[data-public-image-preview-role="comparison-after"]')]
+        : [];
+      const hasPair = comparisonCandidates.some((entry) => entry.dataset.publicImagePreviewRole === "comparison-before")
+        && comparisonCandidates.some((entry) => entry.dataset.publicImagePreviewRole === "comparison-after");
+      const comparison = ["comparison-before", "comparison-after"].includes(role) && hasPair;
+      const gallery = trigger.closest(".dynamic-detail-gallery, .project-detail-gallery");
+      const candidates = comparison
+        ? comparisonCandidates.sort((a, b) => (a.dataset.publicImagePreviewRole === "comparison-before" ? 0 : 1)
+          - (b.dataset.publicImagePreviewRole === "comparison-before" ? 0 : 1))
+        : gallery
+          ? [...gallery.querySelectorAll("[data-public-image-preview-trigger]")]
+          : [trigger];
+      const entries = candidates.map((candidate) => {
+        const image = candidate.querySelector("[data-public-media-image]");
+        const asset = cleanText(image?.getAttribute("src"));
+        if (!asset) return null;
+        return {
+          trigger: candidate,
+          asset,
+          fallbackUrl: cleanText(image?.dataset?.publicMediaFallbackSrc),
+          label: cleanText(image?.alt || candidate.getAttribute("aria-label")) || "Image"
+        };
+      }).filter(Boolean);
+      if (!entries.length) return;
+      openPublicImagePreview({
+        items: entries,
+        mode: comparison ? "comparison" : entries.length > 1 ? "gallery" : "single",
+        index: Math.max(0, entries.findIndex((entry) => entry.trigger === trigger)),
+        title: cleanText(detail?.querySelector("h2")?.textContent || trigger.getAttribute("aria-label")) || "Image Preview",
+        opener: trigger
+      });
+    });
+  });
+}
+
+function publicImagePreviewNavigation(index, count) {
+  const total = Math.max(0, Math.trunc(Number(count) || 0));
+  const position = Math.max(0, Math.min(Math.max(0, total - 1), Math.trunc(Number(index) || 0)));
+  return { index: position, hasPrevious: position > 0, hasNext: position < total - 1 };
+}
+
+let publicImagePreviewReturnFocus = null;
+function openPublicImagePreview({ items = [], mode = "single", index = 0, title = "", opener = null } = {}) {
+  const modal = document.querySelector("#modal");
+  const backdrop = modal?.querySelector(".backdrop");
+  if (!modal || !backdrop) return;
+  closePublicImagePreview({ restoreFocus: false });
+  const sources = (Array.isArray(items) ? items : []).filter((entry) => entry && entry.asset);
+  if (!sources.length) return;
+  const comparison = mode === "comparison" && sources.length >= 2;
+  const gallery = mode === "gallery" && sources.length > 1;
+  let selected = publicImagePreviewNavigation(index, sources.length).index;
+  publicImagePreviewReturnFocus = opener || document.activeElement;
+  const overlay = document.createElement("section");
+  overlay.className = "public-image-preview";
+  overlay.dataset.publicImagePreview = "";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", cleanText(title) || "Image preview");
+  overlay.innerHTML = `<div class="public-image-preview-panel">
+    <button class="close public-image-preview-close" type="button" data-public-preview-close aria-label="Close image preview">${icon("x")}</button>
+    <div class="public-image-preview-layout">
+      <button class="carousel-arrow public-image-preview-nav is-prev" type="button" data-public-preview-prev aria-label="Previous image">${icon("chevron-left")}</button>
+      <div class="public-image-preview-stage" data-public-preview-stage></div>
+      <button class="carousel-arrow public-image-preview-nav is-next" type="button" data-public-preview-next aria-label="Next image">${icon("chevron-right")}</button>
+    </div>
+    <footer class="public-image-preview-footer" data-public-preview-caption hidden></footer>
+  </div>`;
+  const stage = overlay.querySelector("[data-public-preview-stage]");
+  const previous = overlay.querySelector("[data-public-preview-prev]");
+  const next = overlay.querySelector("[data-public-preview-next]");
+  const caption = overlay.querySelector("[data-public-preview-caption]");
+  const frame = (entry) => publicMediaFrameMarkup(entry.asset, entry.label, {
+    className: "public-media-frame--preview",
+    fallbackLabel: "Image preview",
+    purpose: "detail",
+    loading: "eager",
+    priority: "high"
+  });
+  const render = () => {
+    const nav = publicImagePreviewNavigation(selected, sources.length);
+    selected = nav.index;
+    const visible = comparison ? sources.slice(0, 2) : [sources[selected]];
+    stage.innerHTML = comparison
+      ? `<div class="public-image-preview-comparison" aria-label="Before and after combined image preview">${visible.map((entry, i) => `<figure class="public-image-preview-image">${frame(entry)}<figcaption>${i === 0 ? "BEFORE" : "AFTER"}</figcaption></figure>`).join("")}</div>`
+      : `<figure class="public-image-preview-image">${frame(visible[0])}</figure>`;
+    stage.querySelectorAll("[data-public-media-frame]").forEach((mediaFrame, i) => {
+      const image = mediaFrame.querySelector("[data-public-media-image]");
+      const fallback = cleanText(visible[i]?.fallbackUrl);
+      if (image && fallback && !image.dataset.publicMediaFallbackSrc && image.getAttribute("src") !== fallback) {
+        image.dataset.publicMediaFallbackSrc = fallback;
+      }
+    });
+    previous.hidden = !gallery || !nav.hasPrevious;
+    next.hidden = !gallery || !nav.hasNext;
+    caption.textContent = gallery ? `Image ${selected + 1} of ${sources.length}` : "";
+    caption.hidden = !gallery;
+    bindPublicMediaFrames(stage);
+  };
+  previous.addEventListener("click", () => { selected -= 1; render(); });
+  next.addEventListener("click", () => { selected += 1; render(); });
+  overlay.querySelector("[data-public-preview-close]")?.addEventListener("click", () => closePublicImagePreview());
+  modal.append(overlay);
+  backdrop.setAttribute("aria-hidden", "true");
+  render();
+  overlay.querySelector("[data-public-preview-close]")?.focus();
+  window.lucide?.createIcons();
+}
+
+function closePublicImagePreview({ restoreFocus = true } = {}) {
+  const modal = document.querySelector("#modal");
+  const overlay = modal?.querySelector("[data-public-image-preview]");
+  if (!overlay) return;
+  overlay.remove();
+  modal.querySelector(".backdrop")?.removeAttribute("aria-hidden");
+  const opener = publicImagePreviewReturnFocus;
+  publicImagePreviewReturnFocus = null;
+  if (restoreFocus) opener?.focus?.();
+}
+
 let modalOpener = null;
 let modalCloseHook = null;
 function closeModal() {
   const modal = document.querySelector("#modal");
+  closePublicImagePreview({ restoreFocus: false });
   const video = modal?.querySelector("video");
   if (video) { video.pause(); video.currentTime = 0; }
   const closeHook = modalCloseHook;
@@ -4149,6 +4279,7 @@ function closeModal() {
 function show(html, className = "", options = {}) {
   const modal = document.querySelector("#modal");
   if (!modal) return;
+  closePublicImagePreview({ restoreFocus: false });
   const replacingOpenModal = document.body.classList.contains("public-modal-open");
   if (!replacingOpenModal) modalOpener = document.activeElement;
   if (replacingOpenModal && modalCloseHook) {
@@ -4168,14 +4299,15 @@ function show(html, className = "", options = {}) {
   modal.querySelector(".backdrop")?.addEventListener("click", (event) => { if (event.target === event.currentTarget) closeModal(); });
   modal.querySelector("[data-modal-close], .public-modal-close-layer > .close")?.focus();
   bindPublicMediaFrames(modal);
+  bindPublicImagePreviewTriggers(modal);
   window.lucide?.createIcons();
 }
 function handleModalKeydown(event) {
-  const photoLightbox = document.querySelector("#modal [data-photo-gallery-lightbox]");
-  if (photoLightbox) {
-    if (event.key === "Escape") { photoLightbox.remove(); return; }
-    if (event.key === "ArrowLeft") { photoLightbox.querySelector("[data-photo-gallery-prev]:not([disabled])")?.click(); return; }
-    if (event.key === "ArrowRight") { photoLightbox.querySelector("[data-photo-gallery-next]:not([disabled])")?.click(); return; }
+  const imagePreview = document.querySelector("#modal [data-public-image-preview]");
+  if (imagePreview) {
+    if (event.key === "Escape") { event.preventDefault(); closePublicImagePreview(); return; }
+    if (event.key === "ArrowLeft") { event.preventDefault(); imagePreview.querySelector("[data-public-preview-prev]:not([hidden])")?.click(); return; }
+    if (event.key === "ArrowRight") { event.preventDefault(); imagePreview.querySelector("[data-public-preview-next]:not([hidden])")?.click(); return; }
   }
   if (event.key === "Escape" && document.querySelector("#modal [data-dynamic-document-overlay]")) {
     closeDynamicDocumentPreview(document.querySelector("#modal .dynamic-module-viewer"));
@@ -4294,7 +4426,7 @@ function photoEditingDetailMediaMarkup(source = {}, role = photoEditingMediaRole
   const gallery = photoGalleryMediaDescriptors(source);
 
   if (role.key === "comparison" && beforeAsset && afterAsset) {
-    return `<section class="photo-detail-media photo-detail-media--comparison" aria-label="Before and after comparison"><div class="public-comparison-pair"><figure class="public-comparison-panel">${publicMediaFrameMarkup(beforeAsset, `Before ${source.title}`, { className: "public-media-frame--detail", fallbackLabel: "Before", purpose: "detail" })}<figcaption class="public-comparison-label">BEFORE</figcaption></figure><figure class="public-comparison-panel">${publicMediaFrameMarkup(afterAsset, `After ${source.title}`, { className: "public-media-frame--detail", fallbackLabel: "After", purpose: "detail" })}<figcaption class="public-comparison-label">AFTER</figcaption></figure></div></section>`;
+    return `<section class="photo-detail-media photo-detail-media--comparison" aria-label="Before and after comparison"><div class="photo-detail-preview-trigger" role="button" tabindex="0" data-photo-preview-open aria-label="View before and after image composition"><div class="public-comparison-pair"><figure class="public-comparison-panel">${publicMediaFrameMarkup(beforeAsset, `Before ${source.title}`, { className: "public-media-frame--detail", fallbackLabel: "Before", purpose: "detail" })}<figcaption class="public-comparison-label">BEFORE</figcaption></figure><figure class="public-comparison-panel">${publicMediaFrameMarkup(afterAsset, `After ${source.title}`, { className: "public-media-frame--detail", fallbackLabel: "After", purpose: "detail" })}<figcaption class="public-comparison-label">AFTER</figcaption></figure></div></div></section>`;
   }
 
   if (role.key === "gallery" && gallery.length) {
@@ -4302,10 +4434,8 @@ function photoEditingDetailMediaMarkup(source = {}, role = photoEditingMediaRole
   }
 
   const finalAsset = afterAsset || source.coverAsset || source.coverImage || cleanText(source.coverImageUrl) || beforeAsset || gallery[0]?.asset || source.singleImage || cleanText(source.singleImageUrl) || null;
-  return `<section class="photo-detail-media photo-detail-media--single" aria-label="Single image showcase"><figure class="photo-detail-single-stage">${publicMediaFrameMarkup(finalAsset, source.title, { className: "public-media-frame--detail", fallbackLabel: "Photo editing media", purpose: "detail", sizing: "intrinsic" })}</figure></section>`;
+  return `<section class="photo-detail-media photo-detail-media--single" aria-label="Single image showcase"><figure class="photo-detail-single-stage photo-detail-preview-trigger" role="button" tabindex="0" data-photo-preview-open aria-label="View full image">${publicMediaFrameMarkup(finalAsset, source.title, { className: "public-media-frame--detail", fallbackLabel: "Photo editing media", purpose: "detail", sizing: "intrinsic" })}</figure></section>`;
 }
-
-
 function photoEditingDetailNavigation(documentId) {
   const sources = photoItems().filter((item) => activeFilter === "All" || item.category === activeFilter);
   if (sources.length < 2) return "";
@@ -4344,7 +4474,7 @@ function openPhotoEditingSource(documentId) {
   const navigation = recordNavigation
     ? `<nav class="photo-detail-record-nav-row" aria-label="Browse photo editing samples">${recordNavigation}</nav>`
     : "";
-  show(`<article class="photo-detail-shell" data-photo-detail-role="${escapeHtml(role.key)}"><header class="photo-detail-head"><div class="photo-detail-head-icon">${icon("camera")}</div><div><div class="photo-detail-kicker">PHOTO EDITING · ${escapeHtml(role.label.toUpperCase())}</div><h2>${escapeHtml(source.title)}</h2><p>${escapeHtml(source.category)}</p></div></header>${media}${navigation}<div class="photo-detail-information">${factMarkup}${descriptionMarkup}${tagsMarkup}</div></article>`, "gallery-viewer photo-detail-viewer");
+  show(`<article class="photo-detail-shell" data-photo-detail-role="${escapeHtml(role.key)}"><header class="photo-detail-head"><div class="photo-detail-head-icon">${icon("camera")}</div><div><div class="photo-detail-kicker">PHOTO EDITING · ${escapeHtml(role.label.toUpperCase())}</div><h2>${escapeHtml(source.title)}</h2><p>${escapeHtml(source.category)}</p></div></header><div class="photo-detail-media-shell">${media}${navigation}</div><div class="photo-detail-information">${factMarkup}${descriptionMarkup}${tagsMarkup}</div></article>`, "gallery-viewer photo-detail-viewer");
 
   const modal = document.querySelector("#modal");
   modal?.querySelectorAll?.("[data-photo-record-nav]").forEach((button) => {
@@ -4352,43 +4482,56 @@ function openPhotoEditingSource(documentId) {
   });
   setupPhotoGalleryMediaShapes(modal);
   if (role.key === "gallery") setupPhotoDetailGalleryViewer(modal, source);
+  else setupPhotoDetailSingleComparisonPreview(modal, source, role);
 }
 
 function setupPhotoDetailGalleryViewer(root, source = {}) {
-  const viewer = root?.querySelector?.(".photo-detail-viewer");
   const gallery = photoGalleryMediaDescriptors(source);
-  if (!viewer || !gallery.length) return;
-
-  const open = (requestedIndex) => {
-    const index = Math.max(0, Math.min(gallery.length - 1, Number(requestedIndex) || 0));
-    const media = gallery[index];
-    let overlay = viewer.querySelector("[data-photo-gallery-lightbox]");
-    if (!overlay) {
-      overlay = document.createElement("div");
-      overlay.className = "photo-gallery-lightbox";
-      overlay.dataset.photoGalleryLightbox = "";
-      overlay.innerHTML = `<button class="close photo-gallery-lightbox-close" type="button" data-photo-gallery-close aria-label="Close image viewer">${icon("x")}</button><button class="carousel-arrow photo-gallery-lightbox-nav is-prev" type="button" data-photo-gallery-prev aria-label="Previous gallery image">${icon("chevron-left")}</button><figure class="photo-gallery-lightbox-stage"><img data-photo-gallery-lightbox-image alt=""><figcaption data-photo-gallery-lightbox-caption></figcaption></figure><button class="carousel-arrow photo-gallery-lightbox-nav is-next" type="button" data-photo-gallery-next aria-label="Next gallery image">${icon("chevron-right")}</button>`;
-      viewer.append(overlay);
-      overlay.querySelector("[data-photo-gallery-close]")?.addEventListener("click", () => overlay.remove());
-      overlay.querySelector("[data-photo-gallery-prev]")?.addEventListener("click", () => open(Number(overlay.dataset.galleryIndex) - 1));
-      overlay.querySelector("[data-photo-gallery-next]")?.addEventListener("click", () => open(Number(overlay.dataset.galleryIndex) + 1));
-    }
-    overlay.dataset.galleryIndex = String(index);
-    const image = overlay.querySelector("[data-photo-gallery-lightbox-image]");
-    if (image) { image.src = media.url; image.alt = `${cleanText(source.title) || "Gallery"} image ${index + 1}`; }
-    const caption = overlay.querySelector("[data-photo-gallery-lightbox-caption]");
-    if (caption) caption.textContent = `Image ${index + 1} of ${gallery.length}`;
-    overlay.querySelector("[data-photo-gallery-prev]")?.toggleAttribute("disabled", index === 0);
-    overlay.querySelector("[data-photo-gallery-next]")?.toggleAttribute("disabled", index === gallery.length - 1);
-    overlay.querySelector("[data-photo-gallery-close]")?.focus();
-    window.lucide?.createIcons();
-  };
-
-  root.querySelectorAll("[data-photo-gallery-open]").forEach((button) => {
-    button.addEventListener("click", () => open(button.dataset.photoGalleryOpen));
+  if (!gallery.length) return;
+  const items = gallery.map((media, index) => ({
+    asset: media.asset,
+    label: `${cleanText(source.title) || "Gallery"} image ${index + 1}`
+  }));
+  root?.querySelectorAll?.("[data-photo-gallery-open]").forEach((button) => {
+    button.addEventListener("click", () => openPublicImagePreview({
+      items,
+      mode: "gallery",
+      index: Number(button.dataset.photoGalleryOpen),
+      title: cleanText(source.title),
+      opener: button
+    }));
   });
 }
 
+function setupPhotoDetailSingleComparisonPreview(root, source = {}, role = {}) {
+  const trigger = root?.querySelector?.("[data-photo-preview-open]");
+  if (!trigger) return;
+  const open = () => {
+    const items = [...trigger.querySelectorAll("[data-public-media-frame]")].map((frame, index) => {
+      const image = frame.querySelector("[data-public-media-image]");
+      const asset = cleanText(image?.getAttribute("src"));
+      if (!asset) return null;
+      return {
+        asset,
+        fallbackUrl: cleanText(image?.dataset?.publicMediaFallbackSrc),
+        label: role.key === "comparison" ? (index === 0 ? "Before" : "After") : cleanText(source.title)
+      };
+    }).filter(Boolean);
+    if (!items.length || (role.key === "comparison" && items.length !== 2)) return;
+    openPublicImagePreview({
+      items,
+      mode: role.key === "comparison" ? "comparison" : "single",
+      title: cleanText(source.title),
+      opener: trigger
+    });
+  };
+  trigger.addEventListener("click", open);
+  trigger.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    open();
+  });
+}
 function projectDetailGalleryMarkup(project = {}) {
   const raw = project.raw || project;
   const gallery = Array.isArray(raw.galleryImages)

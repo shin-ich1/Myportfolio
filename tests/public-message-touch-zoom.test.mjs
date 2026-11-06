@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {execFileSync} from "node:child_process";
+import {withoutAuthorizedPreviewCssOwners} from "./public-preview-owner-allowlist.mjs";
 
 const read = path => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 const css = read("styles.css");
@@ -114,5 +115,5 @@ test("Only approved existing Public Message CSS owners may differ from verified 
     ".public-message-puzzle-slider input::-moz-range-thumb{width:2.75rem;height:2.75rem;border:0;background:transparent}";
   assert.equal(expected.split(nativeInput).length,2,"One native slider owner for CSS thumb insertion");
   expected = expected.replace(nativeInput,nativeInput + nativeThumbOwners);
-  assert.equal(css, expected, "No added CSS patch layer, no wide/compact layout change, no unrelated styling");
+  assert.equal(withoutAuthorizedPreviewCssOwners(css), withoutAuthorizedPreviewCssOwners(expected), "No unrelated CSS owner changed and no patch layer was introduced");
 });

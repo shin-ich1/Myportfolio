@@ -20,7 +20,7 @@ const browserRuntime = [
   const escapeHtml = value => String(value ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   const icon = value => '<span aria-hidden="true">' + value + '</span>';
   const bindPublicMediaFrames = () => {};
-  const publicMediaFrameMarkup = (asset, alt = "") => '<span class="public-media-frame"><img class="public-media-frame__image" data-public-media-image src="' + escapeHtml(typeof asset === "string" ? asset : asset?.url || "") + '" alt="' + escapeHtml(alt) + '"></span>';
+  const publicMediaFrameMarkup = (asset, alt = "") => '<span class="public-media-frame" data-public-media-frame><img class="public-media-frame__image" data-public-media-image src="' + escapeHtml(typeof asset === "string" ? asset : asset?.url || "") + '" alt="' + escapeHtml(alt) + '"></span>';
   const photoGalleryMediaDescriptors = item => (item.galleryImages || []).map((asset, index) => ({asset, index, shape:"square", width:800, height:800}));
   window.lucide = {createIcons() {}};
   `,
@@ -132,7 +132,7 @@ try {
     checks++;
     await page.evaluate(({before, after}) => {
       const {show} = window.__previewTest;
-      const image = src => '<span class="public-media-frame"><img class="public-media-frame__image" data-public-media-image src="' + src + '"></span>';
+      const image = src => '<span class="public-media-frame" data-public-media-frame><img class="public-media-frame__image" data-public-media-image src="' + src + '"></span>';
       show('<div class="dynamic-detail-shell"><h2>Future Module</h2><div class="dynamic-detail-gallery">'
         + '<figure class="dynamic-asset-preview dynamic-asset-image"><button data-public-image-preview-trigger>' + image(before) + '</button></figure>'
         + '<figure class="dynamic-asset-preview dynamic-asset-image"><button data-public-image-preview-trigger>' + image(after) + '</button></figure>'

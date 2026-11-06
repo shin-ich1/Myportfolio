@@ -37,6 +37,10 @@ export function withoutAuthorizedPreviewCssOwners(source) {
     css = css.replace(pattern, "[canonical preview CSS: " + label + "]");
   };
   replaceRule(/^\.public-photo-gallery\s*\{[^}]*\}/gm, "photo gallery overview");
+  replaceRule(/^\.public-comparison-pair\s*\{[^}]*\}/gm, "shared before-after first-level pair sizing");
+  replaceRule(/^\.public-comparison-panel\s*\{[^}]*\}/gm, "shared before-after image aspect");
+  css = css.replace(/^html\[data-lan-public-mode="mobile"\] \.public-comparison-pair \{ height:min\(62dvh,520px\);min-height:300px; \}\n/m, "");
+  css = css.replace(/^  \.public-comparison-pair \{ min-height:240px; \}\n/m, "");
   css = css.replace(/^\.photo-detail-media-shell\s*\{[^}]*\}\n/m, "");
   replaceRule(/^\.photo-detail-record-nav-row\s*\{[^}]*\}/gm, "photo record navigation row");
   replaceRule(/^\.photo-detail-record-nav\s*\{[^}]*\}/gm, "photo record navigation controls");

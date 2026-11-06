@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {execFileSync} from "node:child_process";
-import {createHash} from "node:crypto";
+import {withoutAuthorizedPreviewAppOwners, withoutAuthorizedPreviewCssOwners} from "./public-preview-owner-allowlist.mjs";
+const publicPreviewBaseline = "fef21b141ee992ae1f6db8b7aa4e2d68a30f433f";
 
 const read = relative => readFileSync(new URL("../"+relative,import.meta.url),"utf8");
 const app=read("app.js"), service=read("message-service.js");
@@ -19,13 +20,16 @@ const frozenLiveRegionHash = text => {
   for (let i=0;i<text.length;i++) h=Math.imul(h^text.charCodeAt(i),16777619)>>>0;
   return h.toString(16).padStart(8,"0");
 };
-test("ALL actual LIVE Public source outside the canonical messaging region remains byte-for-byte unchanged",()=>{
+test("Public Message and all unrelated app source remain byte-for-byte unchanged outside approved preview owners",()=>{
+  const liveBase=execFileSync("git",["show",publicPreviewBaseline+":app.js"],{encoding:"utf8"});
   const begin=app.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
-  const end=app.indexOf("\nfunction publicServicesValid(",begin);
-  assert.ok(begin > 0 && end > begin,"Canonical message owner boundaries must be unique");
-  assert.equal(begin,143684,"Do not alter any live functionality or footer before message owner");
-  assert.equal(frozenLiveRegionHash(app.slice(0,begin)),"81403db9");
-  assert.equal(frozenLiveRegionHash(app.slice(end)),"c8365446","Do not alter live sections and startup code after message owner");
+  const end=app.indexOf("\\nfunction publicServicesValid(",begin);
+  const baseBegin=liveBase.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
+  const baseEnd=liveBase.indexOf("\\nfunction publicServicesValid(",baseBegin);
+  assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
+  assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
+  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(liveBase),
+    "Only explicit preview/media owners may change; protect all other Public, startup and security source");
   assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
 });
 
@@ -110,48 +114,21 @@ test("obsolete delayed-warmup constant is removed; one canonical message owner r
   assert.equal((coordinator.match(/if \(op === "puzzle-cooldown-start" \|\| op === "puzzle-cooldown-check"\)/g)||[]).length,1,"Only one canonical coordinator cooldown branch may own security state");
 });
 
-test("LIVE published CSS outside approved canonical touch and slider declarations is preserved exactly",()=>{
+test("All LIVE CSS unrelated to authorized image preview owners stays byte-identical",()=>{
   const css=read("styles.css");
-  let frozenCss=css;
-  const approved = [
-    [";touch-action:manipulation}", "}"],
-    ["font:inherit;font-size:16px;", "font:inherit;"],
-    ["cursor:inherit;touch-action:none;appearance:none;background:transparent}.public-message-puzzle-slider input::-webkit-slider-thumb{appearance:none;width:2.75rem;height:2.75rem;margin:0;border:0;background:transparent}.public-message-puzzle-slider input::-moz-range-thumb{width:2.75rem;height:2.75rem;border:0;background:transparent}", "cursor:inherit}"],
-    ["clip-path:url(#publicMessagePuzzlePieceShape)}.public-message-puzzle-target{",
-     "clip-path:url(#publicMessagePuzzlePieceShape);transition:left .16s var(--ease),top .16s var(--ease),width .16s var(--ease),height .16s var(--ease)}.public-message-puzzle-target{"],
-    [".public-message-puzzle-target{transition:left .16s var(--ease),top .16s var(--ease),width .16s var(--ease),height .16s var(--ease);background:",
-     ".public-message-puzzle-target{background:"],
-    [".public-message-puzzle-piece{transition:top .16s var(--ease),width .16s var(--ease),height .16s var(--ease);overflow:",
-     ".public-message-puzzle-piece{overflow:"],
-    ["box-shadow:0 .25rem .75rem rgba(8,120,227,.28)}.public-message-puzzle-thumb svg",
-     "box-shadow:0 .25rem .75rem rgba(8,120,227,.28);transition:left .06s linear}.public-message-puzzle-thumb svg"]
-  ];
-  for(const [updated,original] of approved) {
-    assert.equal(frozenCss.split(updated).length,2,"Exactly one approved existing CSS owner change: "+updated);
-    frozenCss=frozenCss.replace(updated,original);
-  }
+  const baseline=execFileSync("git",["show",publicPreviewBaseline+":styles.css"],{encoding:"utf8"});
+  assert.equal(withoutAuthorizedPreviewCssOwners(css),withoutAuthorizedPreviewCssOwners(baseline),
+    "No message puzzle, slider, footer, Admin, or unrelated responsive CSS may change");
   const marker=".public-message-puzzle-layer{";
-  const start=frozenCss.indexOf(marker);
-  const end=frozenCss.indexOf("\n",start);
-  assert.ok(start>0 && end>start && frozenCss.split("\n").filter(line=>line.startsWith(marker)).length===1,"Exactly one top-level puzzle rule owner; media-query reuse is expected");
-  const frozenFNV = text => {
-    let h=2166136261;
-    for(let i=0;i<text.length;i++)h=Math.imul(h^text.charCodeAt(i),16777619)>>>0;
-    return h.toString(16).padStart(8,"0");
-  };
-  assert.equal(frozenFNV(frozenCss.slice(0,start)),"7551b6c1","LIVE CSS before puzzle rules changed");
-  assert.equal(frozenFNV(frozenCss.slice(end)),"47763787","LIVE footer/privacy/mobile CSS after puzzle rules changed");
-  assert.match(css,/\.site-footer\.site-footer--storage\{/);
-  assert.match(css,/\.storage-policy-panel/);
-  // Index the candidate CSS independently: approved edits may change its length.
-  // The reconstructed LIVE positions above remain the separate frozen-source guard.
-  const candidateStart=css.indexOf(marker);
-  const candidateEnd=css.indexOf("\n",candidateStart);
-  assert.ok(candidateStart>0 && candidateEnd>candidateStart,"One complete candidate puzzle CSS owner");
-  const puzzle=css.slice(candidateStart,candidateEnd);
-  assert.match(puzzle,/\.public-message-puzzle-card\{[^}]*grid-auto-rows:max-content/);
-  assert.match(puzzle,/\.public-message-puzzle-foot\{position:absolute;width:1px;height:1px;[^}]*overflow:hidden;clip-path:inset\(50%\)/,"The existing status footer is visually hidden without a duplicate CSS override");
-  assert.match(puzzle,/\.public-message-turnstile-slot\{display:grid/);
+  const start=css.indexOf(marker);
+  const end=css.indexOf("\\n",start);
+  assert.ok(start>0 && end>start && css.split("\\n").filter(line=>line.startsWith(marker)).length===1);
+  const puzzle=css.slice(start,end);
+  assert.match(puzzle,/\\.public-message-puzzle-card\\{[^}]*grid-auto-rows:max-content/);
+  assert.match(puzzle,/\\.public-message-puzzle-foot\\{position:absolute;width:1px;height:1px;[^}]*overflow:hidden;clip-path:inset\\(50%\\)/);
+  assert.match(puzzle,/\\.public-message-turnstile-slot\\{display:grid/);
+  assert.match(css,/\\.site-footer\\.site-footer--storage\\{/);
+  assert.match(css,/\\.storage-policy-panel/);
 });
 
 test("published LIVE storage/privacy policy remains exact original release artifact",()=>{

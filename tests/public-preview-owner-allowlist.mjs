@@ -11,7 +11,12 @@ export function withoutAuthorizedPreviewAppOwners(source) {
     text = text.slice(0, a) + "[canonical preview owner: " + label + "]" + text.slice(b);
   };
   removeBetween("function dynamicAssetMarkup(", "\nfunction dynamicValueMarkup(", "dynamic image triggers");
-  removeBetween("function bindPublicImagePreviewTriggers(", "\nlet modalOpener = null;", "shared image preview", true);
+  const sharedStart = text.indexOf("\n\nfunction bindPublicImagePreviewTriggers(");
+  if (sharedStart >= 0) {
+    const sharedEnd = text.indexOf("\n\nlet modalOpener = null;", sharedStart);
+    if (sharedEnd < 0) throw new Error("Unclosed shared image preview owner");
+    text = text.slice(0, sharedStart) + text.slice(sharedEnd);
+  }
   removeBetween("let modalOpener = null;", "\nfunction runAfterSectionRender(", "modal orchestration");
   removeBetween("function photoEditingDetailMediaMarkup(", "\nfunction photoEditingDetailNavigation(", "photo detail media");
   removeBetween("function openPhotoEditingSource(", "\nfunction projectDetailGalleryMarkup(", "photo image preview binding");

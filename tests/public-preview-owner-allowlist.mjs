@@ -37,6 +37,6 @@ export function withoutAuthorizedPreviewCssOwners(source) {
     css = css.replace(pattern, "[canonical preview CSS: " + label + "]");
   };
   replaceRule(/\.public-photo-gallery\s*\{[^}]*\}/g, "photo gallery overview");
-  replaceRule(/\.dynamic-detail-gallery\{[^}]*\}/g, "dynamic gallery overview");
+  replaceRule(/\.dynamic-detail-gallery\{display:grid;[^}]*\}/g, "dynamic gallery overview");
   return css;
 }

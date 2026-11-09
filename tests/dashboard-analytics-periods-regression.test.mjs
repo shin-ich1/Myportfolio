@@ -114,3 +114,17 @@ test('enhanced History control uses the same compact Portfolio Pass sizing as pe
   assert.match(css, /\.portfolio-analytics-period-controls\{[^}]*minmax\(0,1\.6fr\)/,
     'give the longer History label more room than the period buttons');
 });
+
+
+test('History label and chevron remain centered together at compact and wide sizes', () => {
+  const css = read('admin/css/dashboard.css');
+  const trigger = css.match(/^\.portfolio-analytics-period-controls>\.lan-select>\.lan-select-trigger\{([^}]+)\}/m)?.[1] || '';
+  const value = css.match(/^\.portfolio-analytics-period-controls>\.lan-select>\.lan-select-trigger \.lan-select-value\{([^}]+)\}/m)?.[1] || '';
+  const chevron = css.match(/^\.portfolio-analytics-period-controls>\.lan-select>\.lan-select-trigger \.lan-select-chevron\{([^}]+)\}/m)?.[1] || '';
+  assert.match(trigger, /justify-content:center(?:;|\s)/,
+    'center History text and chevron as a single compact group');
+  assert.match(trigger, /gap:4px(?:;|\s)/);
+  assert.match(value, /flex:0 1 auto(?:;|\s)/,
+    'the label must not consume the free space and push the chevron away');
+  assert.match(chevron, /flex:0 0 \.5rem(?:;|\s|$)/);
+});

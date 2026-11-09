@@ -23,8 +23,10 @@ function writeStoredSession(session){
   try { session ? safeSessionStorage()?.setItem(SESSION_KEY, JSON.stringify(session)) : safeSessionStorage()?.removeItem(SESSION_KEY); } catch {}
 }
 
-async function workerRequest(path, { method='POST', body=null, authorization=false }={}) {
-  const url=storageBridgeUrl(path);
+async function workerRequest(path, { method='POST', body=null, authorization=false, query=null }={}) {
+  const baseUrl=storageBridgeUrl(path);
+  const url=query ? new URL(baseUrl) : baseUrl;
+  if (query && baseUrl) for (const [name,value] of Object.entries(query)) url.searchParams.set(name,String(value));
   if (!url) throw Object.assign(new Error('Security Gateway URL is not configured.'),{code:'security/gateway-not-configured'});
   const headers=new Headers({Accept:'application/json'});
   if (body != null) headers.set('Content-Type','application/json');
@@ -257,7 +259,7 @@ export async function changeAdministratorPassword(newPassword){ const proof=requ
 export async function resetAuthenticatorEnrollment(){ const proof=requireRecentStepUp('reset authenticator'); const result=await workerRequest('/security/totp/reset',{body:{proofId:proof.proofId},authorization:true}); await clearLocalTrustedDevice().catch(()=>{}); writeStoredSession(null); stepUpProof=null; await signOutFirebaseAdministrator(); return result; }
 
 // Read-only Cloudflare Web Analytics summary; authorization is server-enforced.
-export const getVisitorAnalyticsSummary=()=>workerRequest('/security/analytics/visitor-summary',{method:'GET',authorization:true});
+export const getVisitorAnalyticsSummary=({period='7d',month=''}={})=>workerRequest('/security/analytics/visitor-summary',{method:'GET',authorization:true,query:{period,...(period==='month'?{month}:{})}});
 export const getSecurityOverview=()=>workerRequest('/security/overview',{method:'GET',authorization:true});
 export const getSecurityAccessState=()=>workerRequest('/security/access-state',{method:'GET',authorization:true});
 export const listTrustedDevices=()=>workerRequest('/security/devices',{method:'GET',authorization:true});

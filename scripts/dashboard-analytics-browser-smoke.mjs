@@ -75,11 +75,16 @@ try {
     await page.locator('[data-analytics-period="7d"]').click();
     await page.waitForTimeout(240);
     assert.equal((await page.evaluate(()=>window.analyticsRequests)).length,2,"Returning to cached 7D must not call Cloudflare");
+    await page.locator('[data-analytics-period="month"]').click();
+    await page.waitForTimeout(240);
+    assert.equal(await page.locator("[data-command-wallet]").evaluate(e=>e.classList.contains("is-flipped")),true,
+      "This Month control must not flip the card");
+    assert.equal((await page.evaluate(()=>window.analyticsRequests)).length,3,"This Month loads only once");
     await page.locator('[data-analytics-month-select]').selectOption({index:1});
     await page.waitForTimeout(240);
     assert.equal(await page.locator("[data-command-wallet]").evaluate(e=>e.classList.contains("is-flipped")),true);
-    assert.equal((await page.evaluate(()=>window.analyticsRequests)).length,3,"One query for selected historical month");
-    checks+=3;
+    assert.equal((await page.evaluate(()=>window.analyticsRequests)).length,4,"One query for selected historical month");
+    checks+=5;
 
     const before=(await page.evaluate(()=>window.analyticsRequests)).length;
     await page.locator(".portfolio-analytics-day").last().click();

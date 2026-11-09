@@ -128,3 +128,22 @@ test('History label and chevron remain centered together at compact and wide siz
     'the label must not consume the free space and push the chevron away');
   assert.match(chevron, /flex:0 0 \.5rem(?:;|\s|$)/);
 });
+
+
+test('mini analytics chart pairs each value with its bar and aligns day labels consistently', () => {
+  const js = read('admin/js/dashboard.js');
+  const css = read('admin/css/dashboard.css');
+  assert.match(js, /plot\.className = "portfolio-analytics-day-plot"/,
+    'canonical chart renderer needs a dedicated value-and-bar plot area');
+  assert.match(js, /plot\.append\(number, value\)/,
+    'count must remain directly above its corresponding bar');
+  assert.match(js, /button\.append\(plot, label\)/,
+    'day labels must use a separate consistent bottom row');
+  assert.match(js, /value\.style\.height = Math\.max\(3, Math\.round\(30 \* bucket\.views \/ peak\)\) \+ "px"/,
+    'bar heights must be tied to a compact fixed plot scale, not percentages of a flex item');
+  assert.match(js, /button\.dataset\.zero = String\(bucket\.views === 0\)/,
+    'zero-count days should have an explicit visual indicator');
+  assert.match(css, /\.portfolio-analytics-day-plot\{[^}]*justify-content:flex-end;[^}]*gap:3px/);
+  assert.match(css, /\.portfolio-analytics-day\[data-zero="true"\] \.portfolio-analytics-day-bar\{[^}]*opacity:/);
+  assert.match(css, /\.portfolio-analytics-day strong\{[^}]*font-variant-numeric:tabular-nums/);
+});

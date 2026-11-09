@@ -44,6 +44,11 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/lan-preview-browser" --no-audit --no-fund playwright-core@1.56.1
           LAN_PLAYWRIGHT_CORE="$RUNNER_TEMP/lan-preview-browser/node_modules/playwright-core" node scripts/public-image-preview-browser-smoke.mjs
 
+      - name: Admin analytics flip and mobile interaction smoke (mocked data, NO DEPLOY)
+        shell: bash
+        run: |
+          LAN_PLAYWRIGHT_CORE="$RUNNER_TEMP/lan-preview-browser/node_modules/playwright-core" node scripts/dashboard-analytics-browser-smoke.mjs
+
       - name: Tracked secret filename and high-confidence signature audit
         run: node scripts/audit-repository-security.mjs
 

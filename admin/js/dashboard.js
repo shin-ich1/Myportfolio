@@ -1032,13 +1032,18 @@
   }
 
   function syncVisitorAnalyticsControls() {
+    const today = new Date();
+    const currentMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)).toISOString().slice(0, 7);
+    const isHistory = visitorAnalyticsView.period === "month" && visitorAnalyticsView.month !== currentMonth;
     document.querySelectorAll("[data-analytics-period]").forEach(button => {
-      button.setAttribute("aria-pressed", String(button.dataset.analyticsPeriod === visitorAnalyticsView.period));
+      const active = button.dataset.analyticsPeriod === visitorAnalyticsView.period
+        && (button.dataset.analyticsPeriod !== "month" || !isHistory);
+      button.setAttribute("aria-pressed", String(active));
     });
     const select = document.querySelector("[data-analytics-month-select]");
     if (select) {
-      select.dataset.selected = String(visitorAnalyticsView.period === "month");
-      select.value = visitorAnalyticsView.period === "month" && select.querySelector('option[value="' + visitorAnalyticsView.month + '"]')
+      select.dataset.selected = String(isHistory);
+      select.value = isHistory && select.querySelector('option[value="' + visitorAnalyticsView.month + '"]')
         ? visitorAnalyticsView.month : "";
     }
   }

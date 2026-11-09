@@ -79,8 +79,8 @@ try {
       "Card must fit horizontal viewport: "+JSON.stringify({viewport,bounds}));
     checks+=3;
 
-    // Regression: 4 compact controls must have equal cells, with no wider History
-    // and no theme-dependent overflow, even at narrow portrait viewports.
+    // Regression: 7 Days / 30 Days / Month share equal columns; History deliberately
+    // gets the canonical 1.6fr column for month/year text. All four must fit.
     for(const theme of ["dark","light"]) {
       await page.evaluate(value=>{ document.documentElement.dataset.theme=value; },theme);
       const controls=await page.locator(".portfolio-analytics-period-controls").evaluate(node=>{
@@ -90,12 +90,16 @@ try {
         return {widths:cells.map(r=>r.width),lefts:cells.map(r=>r.left),right:parent.right,
           selectScheme:getComputedStyle(node.querySelector("select")).colorScheme};
       });
-      assert.ok(Math.max(...controls.widths)-Math.min(...controls.widths)<=2,
-        "History must use the same width as 7 Days/30 Days/Month: "+JSON.stringify({viewport,theme,controls}));
+      assert.equal(controls.widths.length,4,"The analytics period controls must retain four columns");
+      const periodWidths=controls.widths.slice(0,3);
+      assert.ok(Math.max(...periodWidths)-Math.min(...periodWidths)<=2,
+        "7 Days/30 Days/Month must have equal widths: "+JSON.stringify({viewport,theme,controls}));
+      assert.ok(controls.widths[0]>0 && Math.abs(controls.widths[3]/controls.widths[0]-1.6)<=0.05,
+        "History must retain its intended 1.6fr column: "+JSON.stringify({viewport,theme,controls}));
       assert.ok(Math.max(...controls.lefts.map((left,i)=>left+controls.widths[i]))<=controls.right+1,
         "Controls must fit in the original card: "+JSON.stringify({viewport,theme,controls}));
       assert.equal(controls.selectScheme,theme,"Native history menu must follow the active theme");
-      checks+=3;
+      checks+=5;
     }
     await page.evaluate(()=>{ document.documentElement.dataset.theme="dark"; });
 

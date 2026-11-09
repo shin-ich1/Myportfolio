@@ -1078,10 +1078,10 @@
     const days = visitorAnalyticsShown.days;
     period.textContent = days[0].date + " – " + days[days.length - 1].date + " (UTC)";
     list.replaceChildren();
-    const rows = [["UTC day", "Views", "Visits"], ...days.map(day => [
+    const rows = [["UTC day", "Views"], ...days.map(day => [
       new Date(day.date + "T12:00:00Z").toLocaleDateString("en-US", {
         weekday: "short", month: "short", day: "numeric", timeZone: "UTC"
-      }), formatAnalyticsCount(day.views), formatAnalyticsCount(day.visits)
+      }), formatAnalyticsCount(day.views)
     ])];
     for (const row of rows) {
       const element = document.createElement("div");

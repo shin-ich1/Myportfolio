@@ -18,7 +18,7 @@ test('existing flip card has non-flipping period controls and accessible daily d
   assert.match(js, /data-analytics-period/);
   assert.match(js, /data-analytics-day-summary/);
   assert.match(js, /data-analytics-open-details/);
-  assert.match(js, /data-analytics-day-bar/);
+  assert.match(js, /dataset\.analyticsDayBar/);
 });
 
 test('monthly query splits 31-day months to avoid exceeding 30-day GraphQL window', async () => {

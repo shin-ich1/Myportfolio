@@ -924,6 +924,8 @@
     chart.setAttribute("aria-label", message);
     if (total) total.textContent = "—";
     if (summary) summary.textContent = "Daily page views · UTC";
+    const details = document.querySelector("[data-analytics-open-details]");
+    if (details) details.disabled = true;
     visitorAnalyticsShown = null;
   }
 
@@ -959,6 +961,8 @@
     }
     const days = payload.days;
     visitorAnalyticsShown = payload;
+    const details = document.querySelector("[data-analytics-open-details]");
+    if (details) details.disabled = false;
     visitorAnalyticsBucketIndex = -1;
     const views = days.reduce((sum, day) => sum + day.views, 0);
     backTotal.textContent = formatAnalyticsCount(views);
@@ -1048,6 +1052,7 @@
     syncVisitorAnalyticsControls();
     const heading = document.querySelector("[data-analytics-period-title]");
     if (heading) heading.textContent = period === "7d" ? "Last 7 Days" : period === "30d" ? "Last 30 Days" : "Monthly";
+    renderVisitorAnalyticsFailure("Loading visitor activity…");
     if (visitorAnalyticsFetchTimer) window.clearTimeout(visitorAnalyticsFetchTimer);
     visitorAnalyticsFetchTimer = window.setTimeout(() => {
       visitorAnalyticsFetchTimer = null;
@@ -1143,7 +1148,13 @@
 
   function bindVisitorAnalyticsRetry() {
     const retryButton = document.querySelector("[data-analytics-retry]");
-    if (retryButton) retryButton.addEventListener("click", () => { void loadVisitorAnalytics({ force: true }); });
+    if (retryButton) retryButton.addEventListener("click", () => {
+      if (visitorAnalyticsFetchTimer) window.clearTimeout(visitorAnalyticsFetchTimer);
+      visitorAnalyticsFetchTimer = null;
+      visitorAnalyticsView = { period: "7d", month: "" };
+      syncVisitorAnalyticsControls();
+      void loadVisitorAnalytics({ force: true });
+    });
     document.querySelectorAll("[data-analytics-period]").forEach(button => {
       button.addEventListener("click", () => selectVisitorAnalyticsView(button.dataset.analyticsPeriod));
     });

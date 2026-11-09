@@ -214,6 +214,7 @@
       faces.forEach((face, index) => {
         const active = flipped ? index === 1 : index === 0;
         face.setAttribute("aria-hidden", String(!active));
+        face.inert = !active;
       });
     };
 
@@ -872,94 +873,280 @@
      ========================================================= */
 
   let visitorAnalyticsRequestInFlight = false;
+  let visitorAnalyticsRequestId = 0;
+  let visitorAnalyticsFetchTimer = null;
+  let visitorAnalyticsView = { period: "7d", month: "" };
+  let visitorAnalyticsShown = null;
+  let visitorAnalyticsBucketIndex = 0;
+  // One in-memory owner. Selecting cached periods or inspecting bars costs no requests.
+  const visitorAnalyticsCache = new Map();
+  const formatAnalyticsCount = value => new Intl.NumberFormat("en-US").format(value);
 
-  function renderVisitorAnalytics(payload) {
+  function validVisitorAnalytics(payload, period) {
+    if (payload?.configured !== true || !Array.isArray(payload.days)) return false;
+    const count = payload.days.length;
+    if (count < 1 || count > 31 || (period === "7d" && count !== 7) || (period === "30d" && count !== 30)) return false;
+    return payload.days.every((day, index) =>
+      /^\d{4}-\d{2}-\d{2}$/.test(String(day.date || "")) &&
+      Number.isSafeInteger(day.views) && day.views >= 0 &&
+      Number.isSafeInteger(day.visits) && day.visits >= 0 &&
+      (index === 0 || day.date > payload.days[index - 1].date));
+  }
+
+  function renderVisitorAnalyticsFront(payload) {
     const status = document.querySelector("[data-analytics-status]");
     const total = document.querySelector("[data-analytics-total-views]");
     const today = document.querySelector("[data-analytics-today]");
     const visits = document.querySelector("[data-analytics-week-visits]");
-    const backTotal = document.querySelector("[data-analytics-back-total]");
-    const chart = document.querySelector("[data-analytics-week-chart]");
-    if (!chart || !total || !today || !visits || !backTotal || !status) return;
-
-    const valid = payload?.configured === true && Array.isArray(payload.days)
-      && payload.days.length === 7
-      && payload.days.every((day) => /^\d{4}-\d{2}-\d{2}$/.test(String(day.date || ""))
-        && Number.isSafeInteger(day.views) && day.views >= 0);
-    if (!valid) {
-      for (const node of [total, today, visits, backTotal]) node.textContent = "—";
+    if (!total || !today || !visits || !status) return;
+    if (!validVisitorAnalytics(payload, "7d")) {
+      for (const node of [total, today, visits]) node.textContent = "—";
       status.textContent = "Analytics not connected";
-      chart.replaceChildren();
-      const empty = document.createElement("span");
-      empty.className = "portfolio-analytics-no-data";
-      empty.textContent = "Connect Cloudflare Web Analytics to see visitor activity.";
-      chart.append(empty);
-      chart.setAttribute("aria-label", "Analytics not connected");
       return;
     }
-
-    const format = (value) => new Intl.NumberFormat("en-US").format(value);
     const days = payload.days;
-    const totalViews = days.reduce((sum, day) => sum + day.views, 0);
-    const visitCount = days.reduce((sum, day) => sum + Math.max(0, Number(day.visits) || 0), 0);
-    total.textContent = format(totalViews);
-    today.textContent = format(days[days.length - 1].views);
-    visits.textContent = format(visitCount);
-    backTotal.textContent = format(totalViews);
+    total.textContent = formatAnalyticsCount(days.reduce((sum, day) => sum + day.views, 0));
+    today.textContent = formatAnalyticsCount(days[days.length - 1].views);
+    visits.textContent = formatAnalyticsCount(days.reduce((sum, day) => sum + day.visits, 0));
     status.textContent = "Cloudflare · Page views";
-
-    const peak = Math.max(1, ...days.map((day) => day.views));
-    const bars = document.createElement("div");
-    bars.className = "portfolio-analytics-bars";
-    for (const day of days) {
-      const bar = document.createElement("span");
-      bar.className = "portfolio-analytics-day";
-      const value = document.createElement("i");
-      value.className = "portfolio-analytics-day-bar";
-      value.style.height = `${Math.max(3, 100 * day.views / peak)}%`;
-      value.title = `${day.date}: ${format(day.views)} page views`;
-      const dayName = document.createElement("small");
-      dayName.textContent = new Date(`${day.date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
-      bar.append(value, dayName);
-      bars.append(bar);
-    }
-    chart.replaceChildren(bars);
-    chart.setAttribute("aria-label", `${format(totalViews)} page views across the last seven UTC days`);
   }
 
-  async function loadVisitorAnalytics() {
-    if (visitorAnalyticsRequestInFlight) return;
+  function renderVisitorAnalyticsFailure(message = "Connect Cloudflare Web Analytics to see visitor activity.") {
+    const chart = document.querySelector("[data-analytics-week-chart]");
+    const total = document.querySelector("[data-analytics-back-total]");
+    const summary = document.querySelector("[data-analytics-day-summary]");
+    if (!chart) return;
+    chart.replaceChildren();
+    const empty = document.createElement("span");
+    empty.className = "portfolio-analytics-no-data";
+    empty.textContent = message;
+    chart.append(empty);
+    chart.setAttribute("aria-label", message);
+    if (total) total.textContent = "—";
+    if (summary) summary.textContent = "Daily page views · UTC";
+    visitorAnalyticsShown = null;
+  }
+
+  function analyticsBuckets(days, period) {
+    const size = period === "7d" ? 1 : 7;
+    const result = [];
+    for (let offset = 0; offset < days.length; offset += size) {
+      const slice = days.slice(offset, offset + size);
+      const first = slice[0].date;
+      const last = slice[slice.length - 1].date;
+      const label = size === 1
+        ? new Date(first + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })
+        : String(Number(first.slice(-2))) + "–" + String(Number(last.slice(-2)));
+      result.push({
+        first, last, label,
+        views: slice.reduce((sum, day) => sum + day.views, 0),
+        visits: slice.reduce((sum, day) => sum + day.visits, 0)
+      });
+    }
+    return result;
+  }
+
+  function renderVisitorAnalytics(payload) {
+    const chart = document.querySelector("[data-analytics-week-chart]");
+    const backTotal = document.querySelector("[data-analytics-back-total]");
+    const daySummary = document.querySelector("[data-analytics-day-summary]");
+    const heading = document.querySelector("[data-analytics-period-title]");
+    if (!chart || !backTotal || !daySummary || !heading) return;
+    const period = visitorAnalyticsView.period;
+    if (!validVisitorAnalytics(payload, period)) {
+      renderVisitorAnalyticsFailure();
+      return;
+    }
+    const days = payload.days;
+    visitorAnalyticsShown = payload;
+    visitorAnalyticsBucketIndex = -1;
+    const views = days.reduce((sum, day) => sum + day.views, 0);
+    backTotal.textContent = formatAnalyticsCount(views);
+    heading.textContent = period === "7d" ? "Last 7 Days" : period === "30d" ? "Last 30 Days" :
+      new Date(visitorAnalyticsView.month + "-01T12:00:00Z").toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+    const buckets = analyticsBuckets(days, period);
+    const peak = Math.max(1, ...buckets.map(bucket => bucket.views));
+    const bars = document.createElement("div");
+    bars.className = "portfolio-analytics-bars";
+    bars.style.gridTemplateColumns = "repeat(" + buckets.length + ",minmax(0,1fr))";
+    const buttons = [];
+
+    const choose = index => {
+      visitorAnalyticsBucketIndex = index;
+      const bucket = buckets[index];
+      if (!bucket) return;
+      buttons.forEach((button, i) => button.setAttribute("aria-pressed", String(i === index)));
+      const dateRange = bucket.first === bucket.last ? bucket.first : bucket.first + " to " + bucket.last;
+      daySummary.textContent = dateRange + " · " + formatAnalyticsCount(bucket.visits) + " visits";
+      daySummary.title = dateRange + ": " + formatAnalyticsCount(bucket.views) + " page views, " +
+        formatAnalyticsCount(bucket.visits) + " visits";
+    };
+
+    for (const [index, bucket] of buckets.entries()) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "portfolio-analytics-day";
+      button.setAttribute("aria-label", bucket.first + (bucket.first === bucket.last ? "" : " to " + bucket.last) +
+        ": " + formatAnalyticsCount(bucket.views) + " page views and " +
+        formatAnalyticsCount(bucket.visits) + " visits");
+      button.setAttribute("aria-pressed", "false");
+      const number = document.createElement("strong");
+      number.textContent = formatAnalyticsCount(bucket.views);
+      const value = document.createElement("i");
+      value.className = "portfolio-analytics-day-bar";
+      value.dataset.analyticsDayBar = "";
+      value.style.height = Math.max(3, 100 * bucket.views / peak) + "%";
+      const label = document.createElement("small");
+      label.textContent = bucket.label;
+      button.append(number, value, label);
+      button.addEventListener("click", () => choose(index));
+      bars.append(button);
+      buttons.push(button);
+    }
+    chart.replaceChildren(bars);
+    chart.setAttribute("aria-label", formatAnalyticsCount(views) + " page views in " + days.length + " UTC days");
+    choose(buckets.length - 1);
+  }
+
+  function fillVisitorAnalyticsMonths() {
+    const select = document.querySelector("[data-analytics-month-select]");
+    if (!select) return;
+    const now = new Date();
+    select.replaceChildren();
+    for (let offset = 0; offset < 6; offset++) {
+      const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
+      const value = date.toISOString().slice(0, 7);
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = offset === 0 ? "This Month" :
+        date.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+      select.append(option);
+    }
+    select.value = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 7);
+  }
+
+  function syncVisitorAnalyticsControls() {
+    document.querySelectorAll("[data-analytics-period]").forEach(button => {
+      button.setAttribute("aria-pressed", String(button.dataset.analyticsPeriod === visitorAnalyticsView.period));
+    });
+    const select = document.querySelector("[data-analytics-month-select]");
+    if (select) {
+      select.dataset.selected = String(visitorAnalyticsView.period === "month");
+      if (visitorAnalyticsView.period === "month") select.value = visitorAnalyticsView.month;
+    }
+  }
+
+  function selectVisitorAnalyticsView(period, month = "") {
+    if (visitorAnalyticsView.period === period && (period !== "month" || visitorAnalyticsView.month === month)) return;
+    visitorAnalyticsView = { period, month: period === "month" ? month : "" };
+    visitorAnalyticsRequestId++; // invalidate an earlier response before any debounce
+    syncVisitorAnalyticsControls();
+    const heading = document.querySelector("[data-analytics-period-title]");
+    if (heading) heading.textContent = period === "7d" ? "Last 7 Days" : period === "30d" ? "Last 30 Days" : "Monthly";
+    if (visitorAnalyticsFetchTimer) window.clearTimeout(visitorAnalyticsFetchTimer);
+    visitorAnalyticsFetchTimer = window.setTimeout(() => {
+      visitorAnalyticsFetchTimer = null;
+      void loadVisitorAnalytics();
+    }, 120);
+  }
+
+  function showVisitorAnalyticsDetails() {
+    if (!visitorAnalyticsShown || !validVisitorAnalytics(visitorAnalyticsShown, visitorAnalyticsView.period)) return;
+    const dialog = document.querySelector("[data-analytics-detail-dialog]");
+    const list = document.querySelector("[data-analytics-day-list]");
+    const period = document.querySelector("[data-analytics-detail-period]");
+    if (!dialog || !list || !period) return;
+    const days = visitorAnalyticsShown.days;
+    period.textContent = days[0].date + " – " + days[days.length - 1].date + " (UTC)";
+    list.replaceChildren();
+    const rows = [["UTC day", "Views", "Visits"], ...days.map(day => [
+      new Date(day.date + "T12:00:00Z").toLocaleDateString("en-US", {
+        weekday: "short", month: "short", day: "numeric", timeZone: "UTC"
+      }), formatAnalyticsCount(day.views), formatAnalyticsCount(day.visits)
+    ])];
+    for (const row of rows) {
+      const element = document.createElement("div");
+      for (const [index, value] of row.entries()) {
+        const cell = document.createElement(index === 0 ? "span" : "b");
+        cell.textContent = value;
+        element.append(cell);
+      }
+      list.append(element);
+    }
+    if (!dialog.open) dialog.showModal();
+  }
+
+  async function loadVisitorAnalytics({ force = false } = {}) {
+    const view = { ...visitorAnalyticsView };
+    const key = view.period === "month" ? "month:" + view.month : view.period;
+    const now = Date.now();
+    const cached = visitorAnalyticsCache.get(key);
+    if (!force && cached && cached.expiresAt > now) {
+      renderVisitorAnalytics(cached.payload);
+      return;
+    }
+    const requestId = ++visitorAnalyticsRequestId;
     visitorAnalyticsRequestInFlight = true;
     const retryButton = document.querySelector("[data-analytics-retry]");
     const status = document.querySelector("[data-analytics-status]");
     if (retryButton) { retryButton.disabled = true; retryButton.textContent = "Checking…"; }
-    if (status) status.textContent = "Checking analytics…";
+    if (view.period === "7d" && status) status.textContent = "Checking analytics…";
+    const chart = document.querySelector("[data-analytics-week-chart]");
+    if (chart) renderVisitorAnalyticsFailure("Loading visitor activity…");
     try {
-      renderVisitorAnalytics(await getVisitorAnalyticsSummary());
+      const payload = await getVisitorAnalyticsSummary(view);
+      if (!validVisitorAnalytics(payload, view.period)) {
+        if (requestId === visitorAnalyticsRequestId) renderVisitorAnalyticsFailure();
+        if (view.period === "7d") renderVisitorAnalyticsFront(null);
+        return;
+      }
+      // Five-minute cache or UTC midnight, whichever comes first. No Firestore writes.
+      const nextUtcMidnight = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(),
+        new Date().getUTCDate() + 1);
+      visitorAnalyticsCache.set(key, { payload, expiresAt: Math.min(Date.now() + 5 * 60 * 1000, nextUtcMidnight) });
+      if (view.period === "7d") renderVisitorAnalyticsFront(payload);
+      if (requestId === visitorAnalyticsRequestId) renderVisitorAnalytics(payload);
     } catch (error) {
-      renderVisitorAnalytics(null);
+      if (requestId !== visitorAnalyticsRequestId) return;
       const code = String(error?.code || "");
       const message = ({
         "analytics-token-invalid": "Cloudflare token invalid · Replace secret",
         "analytics-token-permission-denied": "Cloudflare Analytics Read access required",
         "analytics-rate-limited": "Cloudflare is busy · Retry later",
         "analytics-configuration-invalid": "Analytics config needs attention",
+        "analytics-period-invalid": "This month is unavailable",
         "security/session-required": "Admin session required",
       })[code] || (error?.status === 401 || error?.status === 403
         ? "Admin session needs attention"
         : "Connection check failed · Retry");
-      if (status) status.textContent = message;
+      renderVisitorAnalyticsFailure(message);
+      if (view.period === "7d") {
+        renderVisitorAnalyticsFront(null);
+        if (status) status.textContent = message;
+      }
       console.warn("Read-only visitor analytics could not be loaded:", code || error?.status || "unavailable");
     } finally {
-      visitorAnalyticsRequestInFlight = false;
-      if (retryButton) { retryButton.disabled = false; retryButton.textContent = "Retry"; }
+      if (requestId === visitorAnalyticsRequestId) {
+        visitorAnalyticsRequestInFlight = false;
+        if (retryButton) { retryButton.disabled = false; retryButton.textContent = "Retry"; }
+      }
     }
   }
 
   function bindVisitorAnalyticsRetry() {
     const retryButton = document.querySelector("[data-analytics-retry]");
-    if (!retryButton) return;
-    retryButton.addEventListener("click", () => { void loadVisitorAnalytics(); });
+    retryButton?.addEventListener("click", () => { void loadVisitorAnalytics({ force: true }); });
+    document.querySelectorAll("[data-analytics-period]").forEach(button => {
+      button.addEventListener("click", () => selectVisitorAnalyticsView(button.dataset.analyticsPeriod));
+    });
+    const monthSelect = document.querySelector("[data-analytics-month-select]");
+    monthSelect?.addEventListener("change", () => selectVisitorAnalyticsView("month", monthSelect.value));
+    document.querySelector("[data-analytics-open-details]")?.addEventListener("click", showVisitorAnalyticsDetails);
+    document.querySelector("[data-analytics-close-details]")?.addEventListener("click", () => {
+      document.querySelector("[data-analytics-detail-dialog]")?.close();
+    });
+    fillVisitorAnalyticsMonths();
+    syncVisitorAnalyticsControls();
   }
 
   /* =========================================================

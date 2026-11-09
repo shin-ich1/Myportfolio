@@ -10,6 +10,8 @@ const js = read("admin/js/dashboard.js");
 const card = html.match(/<section aria-labelledby="portfolioPassTitle"[\s\S]*?<\/section>/)?.[0];
 const dialog = html.match(/<dialog class="portfolio-analytics-detail-dialog"[\s\S]*?<\/dialog>/)?.[0];
 assert.ok(card && dialog, "Use the real Dashboard card and daily details markup");
+assert.ok(html.indexOf('<dialog class="portfolio-analytics-detail-dialog"') > html.indexOf("</main>"),
+  "The native dialog must not be a child of the Dashboard scroll area, which stretches direct children");
 
 function extract(start, end) {
   const from = js.indexOf(start);
@@ -133,12 +135,15 @@ try {
     await page.locator(".portfolio-analytics-day").last().click();
     await page.locator("[data-analytics-open-details]").click();
     assert.equal(await page.locator("[data-analytics-detail-dialog]").evaluate(e=>e.open),true);
+    const modalBounds=await page.locator("[data-analytics-detail-dialog]").boundingBox();
+    assert.ok(modalBounds && modalBounds.width<=442 && modalBounds.x>=0 && modalBounds.x+modalBounds.width<=viewport.width+1,
+      "Details modal must stay within original 440px maximum: "+JSON.stringify({viewport,modalBounds}));
     const expectedDays=await page.locator(".portfolio-analytics-detail-list>div").count()-1;
     assert.ok(expectedDays>=28&&expectedDays<=31,"Historical month must expose exact daily rows");
     assert.equal((await page.evaluate(()=>window.analyticsRequests)).length,before,"Details and bar clicks are request-free");
     await page.locator("[data-analytics-close-details]").click();
     assert.equal(await page.locator("[data-analytics-detail-dialog]").evaluate(e=>e.open),false);
-    checks+=4;
+    checks+=5;
 
     await page.locator(".portfolio-pass-back .portfolio-pass-topline").click();
     await page.waitForTimeout(580);

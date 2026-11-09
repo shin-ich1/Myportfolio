@@ -88,7 +88,7 @@ test('one-click recovery reports Cloudflare auth vs transient failures without t
 test('Cloudflare analytics provider failures have distinct safe diagnostic codes', async () => {
   const { runInNewContext } = await import('node:vm');
   const worker = read('telemetry-worker/src/index.js');
-  const begin = worker.indexOf('async function readCloudflareVisitorAnalytics(env){');
+  const begin = worker.indexOf('async function readCloudflareVisitorAnalytics(env');
   const end = worker.indexOf('async function handleSecurityRoute(', begin);
   assert.ok(begin > 0 && end > begin, 'Canonical worker function is extractable');
   const fnCode = worker.slice(begin, end);

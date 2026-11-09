@@ -235,3 +235,83 @@ test('selecting another period resets visible enhanced History dropdown while pr
   assert.equal(buttons[2].state, 'true');
   assert.deepEqual(dispatched, ['lan:select-sync', 'lan:select-sync', 'lan:select-sync']);
 });
+
+
+test('overlapping UTC page views stay consistent across seven-day, thirty-day and month reports', async () => {
+  const source = read('telemetry-worker/src/index.js');
+  const from = source.indexOf('async function readCloudflareVisitorAnalytics(env');
+  const to = source.indexOf('async function handleSecurityRoute(', from);
+  assert.ok(from >= 0 && to > from);
+  const calls = [];
+  const FixedDate = class extends Date {
+    constructor(...args) { super(...(args.length ? args : ['2026-11-09T09:00:00Z'])); }
+  };
+  const base = {
+    '2026-11-01': { views: 2, visits: 1 },
+    '2026-11-08': { views: 1, visits: 1 },
+    '2026-11-09': { views: 4, visits: 2 }
+  };
+  const fn = runInNewContext(source.slice(from, to) + ';readCloudflareVisitorAnalytics', {
+    Date: FixedDate,
+    fetch: async (_url, options) => {
+      const { variables } = JSON.parse(options.body);
+      calls.push([variables.start, variables.end]);
+      // Emulate Adaptive Bit Rate sampling: wider-than-week windows may
+      // estimate different values for exactly the same UTC calendar date.
+      const scale = Date.parse(variables.end) - Date.parse(variables.start) > 7 * 86400000 ? 2 : 1;
+      return { ok: true, status: 200, json: async () => ({ data: { viewer: { accounts: [{
+        rumPageloadEventsAdaptiveGroups: Object.entries(base)
+          .filter(([date]) => date >= variables.start.slice(0, 10) && date < variables.end.slice(0, 10))
+          .map(([date, values]) => ({
+            dimensions: { date }, count: values.views * scale,
+            sum: { visits: values.visits * scale }
+          }))
+      }] } } }) };
+    },
+    AbortSignal: { timeout: () => undefined },
+    serviceError: (message, details) => Object.assign(new Error(message), details)
+  });
+  const env = {
+    CF_ANALYTICS_ACCOUNT_ID: 'a'.repeat(32),
+    CF_ANALYTICS_SITE_TAG: 'b'.repeat(32),
+    CF_ANALYTICS_READ_TOKEN: 'unit-test-fake'
+  };
+  const reports = {};
+  const windows = {};
+  for (const [label, options] of [
+    ['seven', { period: '7d' }],
+    ['thirty', { period: '30d' }],
+    ['month', { period: 'month', month: '2026-11' }]
+  ]) {
+    const before = calls.length;
+    reports[label] = await fn(env, options);
+    windows[label] = calls.slice(before);
+  }
+  const day = (report, date) => report.days.find(item => item.date === date);
+  for (const date of ['2026-11-08', '2026-11-09']) {
+    assert.deepEqual(
+      [day(reports.seven, date).views, day(reports.thirty, date).views, day(reports.month, date).views],
+      [base[date].views, base[date].views, base[date].views],
+      'The same UTC date should not change views merely because a wider period is selected'
+    );
+    assert.deepEqual(
+      [day(reports.seven, date).visits, day(reports.thirty, date).visits, day(reports.month, date).visits],
+      [base[date].visits, base[date].visits, base[date].visits],
+      'The same UTC date should not change visits merely because a wider period is selected'
+    );
+  }
+  assert.equal(day(reports.thirty, '2026-11-01').views, day(reports.month, '2026-11-01').views);
+  for (const [label, ranges] of Object.entries(windows)) {
+    assert.ok(ranges.length > 1, label + ' must use short shared week windows');
+    assert.ok(ranges.every(([start, end]) => Date.parse(end) - Date.parse(start) <= 7 * 86400000),
+      label + ' must never send a greater-than-seven-day sampling window');
+  }
+  const week = ['2026-11-02T00:00:00.000Z', '2026-11-09T00:00:00.000Z'];
+  const today = ['2026-11-09T00:00:00.000Z', '2026-11-10T00:00:00.000Z'];
+  for (const label of ['seven', 'thirty', 'month']) {
+    assert.ok(windows[label].some(range => range.join('|') === week.join('|')),
+      'Shared dates must use the identical completed UTC calendar week on ' + label);
+    assert.ok(windows[label].some(range => range.join('|') === today.join('|')),
+      'Current partial UTC week must use the identical end boundary on ' + label);
+  }
+});

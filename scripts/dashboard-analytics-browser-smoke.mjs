@@ -49,16 +49,53 @@ try {
     const page=await browser.newPage({viewport,hasTouch:viewport.width<=844});
     page.on("pageerror",error=>{ throw error; });
     await page.setContent('<!doctype html><html><body class="dashboard-page"><main class="dashboard-welcome" style="position:relative;min-height:680px;width:100%;">'+card+'</main>'+dialog+'</body></html>');
-    await page.addStyleTag({content:read("admin/css/dashboard.css")+"\n"+read("admin/css/admin-layout.css")});
-    await page.evaluate(()=>{ window.analyticsRequests=[]; });
+    await page.addStyleTag({content:read("admin/css/theme.css")+"\n"+read("admin/css/dashboard.css")+"\n"+read("admin/css/admin-layout.css")});
+    await page.evaluate(()=>{ window.analyticsRequests=[]; document.documentElement.dataset.theme="dark"; });
     await page.addScriptTag({content:program});
     await page.waitForSelector(".portfolio-analytics-day");
     assert.equal(await page.locator(".portfolio-analytics-day").count(),7,"7-day graph must be ready");
     assert.equal((await page.evaluate(()=>window.analyticsRequests)).length,1,"Initial Dashboard load uses one request");
+    const originalPalette=await page.locator(".portfolio-analytics-day-bar").evaluateAll(nodes=>
+      nodes.map(node=>getComputedStyle(node).backgroundImage));
+    assert.equal(new Set(originalPalette).size,7,"The seven-day bars must use seven distinct brand-compatible series colors");
+    await page.evaluate(()=>{document.documentElement.dataset.theme="light";});
+    const lightPalette=await page.locator(".portfolio-analytics-day-bar").evaluateAll(nodes=>
+      nodes.map(node=>getComputedStyle(node).backgroundImage));
+    assert.equal(new Set(lightPalette).size,7,"Light mode must preserve distinct bar colors");
+    assert.notDeepEqual(lightPalette,originalPalette,"Chart colors must respond to theme changes");
+    const dialogTheme=await page.locator("[data-analytics-detail-dialog]").evaluate(node=>({
+      background:getComputedStyle(node).backgroundColor,
+      backdropBlur:getComputedStyle(node,"::backdrop").backdropFilter
+    }));
+    assert.equal(dialogTheme.backdropBlur,"none","Details backdrop must avoid duplicate native menu/3D blur compositing");
+    await page.evaluate(()=>{document.documentElement.dataset.theme="dark";});
+    const dialogDark=await page.locator("[data-analytics-detail-dialog]").evaluate(node=>getComputedStyle(node).backgroundColor);
+    assert.notEqual(dialogTheme.background,dialogDark,"Details dialog must match light and dark modes");
+    checks+=5;
     const bounds=await page.locator("[data-command-wallet]").boundingBox();
     assert.ok(bounds && bounds.x>=-1 && bounds.x+bounds.width<=viewport.width+1,
       "Card must fit horizontal viewport: "+JSON.stringify({viewport,bounds}));
     checks+=3;
+
+    // Regression: 4 compact controls must have equal cells, with no wider History
+    // and no theme-dependent overflow, even at narrow portrait viewports.
+    for(const theme of ["dark","light"]) {
+      await page.evaluate(value=>{ document.documentElement.dataset.theme=value; },theme);
+      const controls=await page.locator(".portfolio-analytics-period-controls").evaluate(node=>{
+        const buttons=[...node.children];
+        const cells=buttons.map(el=>el.getBoundingClientRect());
+        const parent=node.getBoundingClientRect();
+        return {widths:cells.map(r=>r.width),lefts:cells.map(r=>r.left),right:parent.right,
+          selectScheme:getComputedStyle(node.querySelector("select")).colorScheme};
+      });
+      assert.ok(Math.max(...controls.widths)-Math.min(...controls.widths)<=2,
+        "History must use the same width as 7 Days/30 Days/Month: "+JSON.stringify({viewport,theme,controls}));
+      assert.ok(Math.max(...controls.lefts.map((left,i)=>left+controls.widths[i]))<=controls.right+1,
+        "Controls must fit in the original card: "+JSON.stringify({viewport,theme,controls}));
+      assert.equal(controls.selectScheme,theme,"Native history menu must follow the active theme");
+      checks+=3;
+    }
+    await page.evaluate(()=>{ document.documentElement.dataset.theme="dark"; });
 
     await page.locator(".portfolio-pass-front .portfolio-pass-owner").click();
     await page.waitForTimeout(580);
@@ -80,11 +117,17 @@ try {
     assert.equal(await page.locator("[data-command-wallet]").evaluate(e=>e.classList.contains("is-flipped")),true,
       "This Month control must not flip the card");
     assert.equal((await page.evaluate(()=>window.analyticsRequests)).length,3,"This Month loads only once");
+    assert.equal(await page.locator('[data-analytics-period="month"]').getAttribute("aria-pressed"),"true");
+    assert.equal(await page.locator('[data-analytics-month-select]').getAttribute("data-selected"),"false",
+      "History must not also be selected for the current month");
     await page.locator('[data-analytics-month-select]').selectOption({index:1});
     await page.waitForTimeout(240);
     assert.equal(await page.locator("[data-command-wallet]").evaluate(e=>e.classList.contains("is-flipped")),true);
     assert.equal((await page.evaluate(()=>window.analyticsRequests)).length,4,"One query for selected historical month");
-    checks+=5;
+    assert.equal(await page.locator('[data-analytics-period="month"]').getAttribute("aria-pressed"),"false",
+      "History selection must replace, not duplicate, Month activation");
+    assert.equal(await page.locator('[data-analytics-month-select]').getAttribute("data-selected"),"true");
+    checks+=9;
 
     const before=(await page.evaluate(()=>window.analyticsRequests)).length;
     await page.locator(".portfolio-analytics-day").last().click();

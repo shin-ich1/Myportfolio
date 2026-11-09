@@ -97,3 +97,20 @@ test('Portfolio Pass reporting controls retain compact height despite shared inp
     'History label must not be rendered as H…');
   assert.match(css, /\.portfolio-analytics-period-controls\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\) minmax\(0,1\.2fr\)/);
 });
+
+
+test('enhanced History control uses the same compact Portfolio Pass sizing as period buttons', () => {
+  const css = read('admin/css/dashboard.css');
+  const adminUi = read('admin/js/admin-ui.js');
+  assert.match(adminUi, /trigger\.className = "lan-select-trigger"/,
+    'global Admin UI enhances the native select into a visible custom trigger');
+  assert.match(adminUi, /wrapper\.className = "lan-select"/);
+  assert.match(css, /\.portfolio-analytics-period-controls>\.lan-select\{[^}]*min-width:0;[^}]*width:100%/);
+  const trigger = css.match(/\.portfolio-analytics-period-controls>button,\.portfolio-analytics-period-controls>select,\.portfolio-analytics-period-controls>\.lan-select>\.lan-select-trigger\{([^}]+)\}/)?.[1] || '';
+  assert.match(trigger, /min-height:24px/);
+  assert.match(trigger, /height:24px/);
+  assert.match(trigger, /padding:0 3px/);
+  assert.match(css, /\.portfolio-analytics-period-controls>\.lan-select>\.lan-select-trigger\{[^}]*gap:4px/);
+  assert.match(css, /\.portfolio-analytics-period-controls\{[^}]*minmax\(0,1\.6fr\)/,
+    'give the longer History label more room than the period buttons');
+});

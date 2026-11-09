@@ -3022,9 +3022,9 @@ async function readCloudflareVisitorAnalytics(env, options = {}) {
   const countOrZero = value => Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0;
 
   // Query canonical UTC calendar weeks instead of one query per selected period.
-  // Cloudflare adaptively samples wider windows: identical dates otherwise get
-  // different estimates in 7d/30d/month. Aligned Monday windows keep shared
-  // dates on the same short GraphQL query, regardless of the selected report.
+  // Cloudflare adaptively samples wider windows: the same UTC date can
+  // differ across report periods. Aligned Monday boundaries reuse equivalent
+  // short query windows to reduce (not eliminate) sampling variation.
   const oldestAllowed = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1);
   const windows = [];
   for (let cursor = start.getTime(); cursor < end.getTime();) {

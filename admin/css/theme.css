@@ -92,6 +92,16 @@
   --danger: #f0667a;
   --info: #4da8ff;
   --cyan: #3fc2ff;
+
+  /* Portfolio Analytics: distinct brand data series, not status indicators. */
+  --analytics-series-1: #3fc2ff;
+  --analytics-series-2: #3478ff;
+  --analytics-series-3: #9c86ff;
+  --analytics-series-4: #2dd391;
+  --analytics-series-5: #f1b447;
+  --analytics-series-6: #e75d9c;
+  --analytics-series-7: #7fa7ff;
+
   --success-soft: rgba(45,211,145,.11);
   --warning-soft: rgba(241,180,71,.11);
   --danger-soft: rgba(240,102,122,.11);
@@ -264,6 +274,16 @@
   --danger: #b8344a;
   --info: #176bd7;
   --cyan: #087ea8;
+
+  /* Higher-chroma on the cinematic card; readable across the light UI. */
+  --analytics-series-1: #30bde7;
+  --analytics-series-2: #5692fa;
+  --analytics-series-3: #ad94ff;
+  --analytics-series-4: #35c99b;
+  --analytics-series-5: #edb249;
+  --analytics-series-6: #e47dad;
+  --analytics-series-7: #91b0ff;
+
   --accent-soft: rgba(23,107,215,.11);
   --accent-soft-2: rgba(94,75,215,.10);
   --accent-2-soft: rgba(94,75,215,.10);

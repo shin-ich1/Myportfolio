@@ -1143,7 +1143,7 @@
 
   function bindVisitorAnalyticsRetry() {
     const retryButton = document.querySelector("[data-analytics-retry]");
-    retryButton?.addEventListener("click", () => { void loadVisitorAnalytics({ force: true }); });
+    if (retryButton) retryButton.addEventListener("click", () => { void loadVisitorAnalytics({ force: true }); });
     document.querySelectorAll("[data-analytics-period]").forEach(button => {
       button.addEventListener("click", () => selectVisitorAnalyticsView(button.dataset.analyticsPeriod));
     });

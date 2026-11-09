@@ -3032,9 +3032,9 @@ async function readCloudflareVisitorAnalytics(env, options = {}) {
       signal: AbortSignal.timeout(9000)
     }).catch(() => null);
     if (!upstream) throw serviceError('Analytics provider is unavailable.', { status: 502, code: 'analytics-upstream-unavailable' });
-    if (upstream.status === 401) throw serviceError('Cloudflare analytics credentials need attention.', { status: 502, code: 'analytics-token-invalid' });
-    if (upstream.status === 403) throw serviceError('Cloudflare analytics permission is insufficient.', { status: 502, code: 'analytics-token-permission-denied' });
-    if (upstream.status === 429) throw serviceError('Cloudflare analytics is rate-limited.', { status: 503, code: 'analytics-rate-limited' });
+    if(upstream.status===401) throw serviceError('Cloudflare analytics credentials need attention.', { status: 502, code: 'analytics-token-invalid' });
+    if(upstream.status===403) throw serviceError('Cloudflare analytics permission is insufficient.', { status: 502, code: 'analytics-token-permission-denied' });
+    if(upstream.status===429) throw serviceError('Cloudflare analytics is rate-limited.', { status: 503, code: 'analytics-rate-limited' });
     if (!upstream.ok) throw serviceError('Analytics provider is unavailable.', { status: 502, code: 'analytics-upstream-unavailable' });
     const data = await upstream.json().catch(() => null);
     if (!data) throw serviceError('Analytics query was not accepted.', { status: 502, code: 'analytics-query-unavailable' });

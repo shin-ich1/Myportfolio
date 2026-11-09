@@ -25,9 +25,9 @@ function writeStoredSession(session){
 
 async function workerRequest(path, { method='POST', body=null, authorization=false, query=null }={}) {
   const baseUrl=storageBridgeUrl(path);
+  if (!baseUrl) throw Object.assign(new Error('Security Gateway URL is not configured.'),{code:'security/gateway-not-configured'});
   const url=query ? new URL(baseUrl) : baseUrl;
-  if (query && baseUrl) for (const [name,value] of Object.entries(query)) url.searchParams.set(name,String(value));
-  if (!url) throw Object.assign(new Error('Security Gateway URL is not configured.'),{code:'security/gateway-not-configured'});
+  if (query) for (const [name,value] of Object.entries(query)) url.searchParams.set(name,String(value));
   const headers=new Headers({Accept:'application/json'});
   if (body != null) headers.set('Content-Type','application/json');
   if (authorization) {

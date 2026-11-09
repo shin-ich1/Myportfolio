@@ -86,7 +86,7 @@ test('admin-only analytics request preserves authenticated Worker ownership and 
 
 test('Portfolio Pass reporting controls retain compact height despite shared input/select defaults', () => {
   const css = read('admin/css/dashboard.css');
-  const controls = css.match(/\.portfolio-analytics-period-controls>button,\.portfolio-analytics-period-controls>select\{([^}]+)\}/)?.[1] || '';
+  const controls = css.match(/\.portfolio-analytics-period-controls>button,\.portfolio-analytics-period-controls>select,\.portfolio-analytics-period-controls>\.lan-select>\.lan-select-trigger\{([^}]+)\}/)?.[1] || '';
   const history = css.match(/^\.portfolio-analytics-period-controls>select\{([^}]+)\}/m)?.[1] || '';
   assert.match(controls, /min-height\s*:\s*24px\s*;/,
     'explicit min-height must override the shared select minimum');
@@ -95,7 +95,7 @@ test('Portfolio Pass reporting controls retain compact height despite shared inp
     'remove the inherited oversized select arrow artwork');
   assert.match(history, /text-overflow\s*:\s*clip\s*;/,
     'History label must not be rendered as H…');
-  assert.match(css, /\.portfolio-analytics-period-controls\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\) minmax\(0,1\.2fr\)/);
+  assert.match(css, /\.portfolio-analytics-period-controls\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\) minmax\(0,1\.6fr\)/);
 });
 
 

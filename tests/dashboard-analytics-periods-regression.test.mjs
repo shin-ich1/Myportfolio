@@ -168,3 +168,70 @@ test('daily details keeps one right-aligned Views column without hiding the unde
   assert.match(css, /\.portfolio-analytics-detail-list b\{[^}]*font-variant-numeric:tabular-nums;[^}]*text-align:right/);
   assert.match(js, /day\.visits/, 'other analytics features retain their existing visits metric');
 });
+
+
+test('portfolio analytics headings use exact UTC date ranges and selected calendar months', () => {
+  const source = read('admin/js/dashboard.js');
+  const from = source.indexOf('  function formatVisitorAnalyticsHeading(');
+  const to = source.indexOf('  function analyticsBuckets(', from);
+  assert.ok(from >= 0 && to > from, 'canonical heading formatter must be present');
+  const formatHeading = runInNewContext(source.slice(from, to) + ';formatVisitorAnalyticsHeading', { Date });
+  const dates = (start, count) => Array.from({length: count}, (_, offset) => ({
+    date: new Date(Date.parse(start + 'T00:00:00Z') + offset * 86400000).toISOString().slice(0, 10)
+  }));
+  assert.equal(formatHeading(dates('2026-11-03', 7), '7d'), 'Nov 3–9');
+  assert.equal(formatHeading(dates('2026-10-11', 30), '30d'), 'Oct 11–Nov 9');
+  assert.equal(formatHeading(dates('2026-06-29', 30), '30d'), 'Jun 29–Jul 28');
+  assert.equal(formatHeading(dates('2026-12-28', 7), '7d'), 'Dec 28 ’26–Jan 3 ’27');
+  assert.equal(formatHeading(dates('2026-11-01', 9), 'month'), 'November 2026');
+  assert.equal(formatHeading(dates('2026-10-01', 31), 'month'), 'October 2026');
+  assert.match(source, /heading\.textContent = formatVisitorAnalyticsHeading\(days, period\)/);
+  assert.match(source, /heading\.title = days\[0\]\.date \+ " – " \+ days\[days\.length - 1\]\.date \+ " \(UTC\)"/);
+});
+
+test('selecting another period resets visible enhanced History dropdown while preserving chosen month', () => {
+  const source = read('admin/js/dashboard.js');
+  const from = source.indexOf('  function syncVisitorAnalyticsControls()');
+  const to = source.indexOf('  function selectVisitorAnalyticsView(', from);
+  assert.ok(from >= 0 && to > from, 'canonical reporting control owner must be present');
+  const adminUi = read('admin/js/admin-ui.js');
+  assert.match(adminUi, /select\.addEventListener\("lan:select-sync", instance\.sync\)/);
+  const buttons = ['7d', '30d', 'month'].map(period => ({
+    dataset: { analyticsPeriod: period },
+    state: '',
+    setAttribute(key, value) { if (key === 'aria-pressed') this.state = value; }
+  }));
+  const dispatched = [];
+  const select = {
+    dataset: {}, value: '',
+    querySelector(selector) { return selector === 'option[value="2026-10"]' ? {} : null; },
+    dispatchEvent(event) { dispatched.push(event.type); }
+  };
+  const FixedDate = class extends Date {
+    constructor(...args) { super(...(args.length ? args : ['2026-11-09T09:00:00Z'])); }
+  };
+  const ctx = {
+    Date: FixedDate,
+    Event: class { constructor(type) { this.type = type; } },
+    visitorAnalyticsView: { period: 'month', month: '2026-10' },
+    document: {
+      querySelectorAll: () => buttons,
+      querySelector: () => select
+    }
+  };
+  const sync = runInNewContext(source.slice(from, to) + ';syncVisitorAnalyticsControls', ctx);
+  sync();
+  assert.equal(select.value, '2026-10', 'selected month must stay visible');
+  assert.equal(select.dataset.selected, 'true');
+  assert.equal(buttons[2].state, 'false', 'Month must not appear active during History');
+  ctx.visitorAnalyticsView = {period:'7d', month:''};
+  sync();
+  assert.equal(select.value, '', 'History placeholder returns on 7 Days');
+  assert.equal(select.dataset.selected, 'false');
+  assert.equal(buttons[0].state, 'true');
+  ctx.visitorAnalyticsView = {period:'month', month:'2026-11'};
+  sync();
+  assert.equal(select.value, '', 'current Month also resets History placeholder');
+  assert.equal(buttons[2].state, 'true');
+  assert.deepEqual(dispatched, ['lan:select-sync', 'lan:select-sync', 'lan:select-sync']);
+});

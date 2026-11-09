@@ -71,13 +71,22 @@
       </div>
       <div aria-hidden="true" class="command-wallet-face portfolio-pass-back">
         <div class="portfolio-pass-topline">
-          <div><p class="editor-eyebrow">Portfolio analytics</p><h2>Last 7 Days</h2></div>
+          <div><p class="editor-eyebrow">Portfolio analytics</p><h2 data-analytics-period-title>Last 7 Days</h2></div>
           <span class="portfolio-pass-live"><i></i> VIEWS</span>
         </div>
-        <div class="portfolio-analytics-week-chart" data-analytics-week-chart role="img" aria-label="Seven-day portfolio page-view chart">
+        <div class="portfolio-analytics-period-controls" role="group" aria-label="Analytics reporting period">
+          <button type="button" data-analytics-period="7d" aria-pressed="true">7 Days</button>
+          <button type="button" data-analytics-period="30d" aria-pressed="false">30 Days</button>
+          <select data-analytics-month-select aria-label="Select reporting month"><option value="">This Month</option></select>
+        </div>
+        <div class="portfolio-analytics-week-chart" data-analytics-week-chart role="group" aria-label="Seven-day portfolio page-view chart">
           <span class="portfolio-analytics-no-data">Connect Cloudflare Web Analytics to see visitor activity.</span>
         </div>
-        <div class="portfolio-analytics-back-foot"><small>Daily page views · UTC</small><strong data-analytics-back-total>—</strong></div>
+        <div class="portfolio-analytics-back-foot">
+          <small data-analytics-day-summary>Daily page views · UTC</small>
+          <button type="button" data-analytics-open-details>Details</button>
+          <strong data-analytics-back-total>—</strong>
+        </div>
       </div>
     </div>
   </section>
@@ -89,6 +98,16 @@
     <article class="pulse-card pulse-card-live"><div class="pulse-card-icon"><svg><use href="#dash-icon-publish"/></svg></div><div><small>Public portfolio</small><strong>LIVE</strong><span>updated <time id="lastAccessText">Loading latest access…</time></span></div><a href="../index.html" target="_blank" rel="noopener" aria-label="Open public portfolio">↗</a></article>
   </div>
 </section>
+
+<dialog class="portfolio-analytics-detail-dialog" data-analytics-detail-dialog aria-labelledby="analyticsDetailTitle">
+  <div class="portfolio-analytics-detail-header">
+    <div><p class="editor-eyebrow">Cloudflare Web Analytics · UTC</p><h2 id="analyticsDetailTitle">Daily visitor activity</h2></div>
+    <button type="button" data-analytics-close-details aria-label="Close daily visitor activity">Close</button>
+  </div>
+  <p class="portfolio-analytics-detail-period" data-analytics-detail-period></p>
+  <div class="portfolio-analytics-detail-list" data-analytics-day-list aria-label="Views and visits by date"></div>
+  <p class="portfolio-analytics-detail-note">Visits are not necessarily unique people. Older Cloudflare Web Analytics reports may use sampled data.</p>
+</dialog>
 
 <div aria-hidden="true" class="dashboard-data-hooks">
   <span id="projectCount">—</span><span id="photoSampleCount">—</span><span id="experienceCount">—</span><span id="resumeCount">—</span>

@@ -1,15 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {execFileSync} from "node:child_process";
-import {withoutAuthorizedPreviewCssOwners} from "./public-preview-owner-allowlist.mjs";
+import {normalizeRepoText, readReviewedPublicSource} from "./public-reviewed-baseline.mjs";
 
-const read = path => readFileSync(new URL("../" + path, import.meta.url), "utf8");
+const read = path => normalizeRepoText(readFileSync(new URL("../" + path, import.meta.url), "utf8"));
 const css = read("styles.css");
 const html = read("index.html");
 const app = read("app.js");
-const liveBaseline = "4d96a5314bbb060cd74a1cf7726b385e92f78b24";
-const originalCss = execFileSync("git", ["show", liveBaseline + ":styles.css"], {encoding:"utf8"});
+const reviewedCss = readReviewedPublicSource("styles.css");
 
 function rule(selector, text=css) {
   const needle = selector + "{";
@@ -86,34 +84,18 @@ test("Visible puzzle piece and slider thumb follow native range input directly w
   assert.match(app,/slider\.oninput = \(\) => setPublicMessagePuzzleSlider\(slider, slider\.value\)/);
 });
 
-test("Only approved existing Public Message CSS owners may differ from verified LIVE source",()=>{
-  const changes = [
-    [".public-message-dialog", "min-width:0}", "min-width:0;touch-action:manipulation}"],
-    [".public-message-form input,.public-message-form textarea,.public-private-reply textarea", "font:inherit;outline:0;", "font:inherit;font-size:16px;outline:0;"],
-    [".public-message-puzzle-slider input", "opacity:0;cursor:inherit}", "opacity:0;cursor:inherit;touch-action:none;appearance:none;background:transparent}"],
-    [".public-message-puzzle-target,.public-message-puzzle-piece",
-      "clip-path:url(#publicMessagePuzzlePieceShape);transition:left .16s var(--ease),top .16s var(--ease),width .16s var(--ease),height .16s var(--ease)}",
-      "clip-path:url(#publicMessagePuzzlePieceShape)}"],
-    [".public-message-puzzle-target", "background:",
-      "transition:left .16s var(--ease),top .16s var(--ease),width .16s var(--ease),height .16s var(--ease);background:"],
-    [".public-message-puzzle-piece", "overflow:hidden;",
-      "transition:top .16s var(--ease),width .16s var(--ease),height .16s var(--ease);overflow:hidden;"],
-    [".public-message-puzzle-thumb", ";transition:left .06s linear}", "}"]
-  ];
-  let expected = originalCss;
-  for (const [selector, before, after] of changes) {
-    const current = rule(selector, expected);
-    const original = selector + "{" + current + "}";
-    assert.ok(original.includes(before), "Baseline CSS selector changed: " + selector);
-    const replacement = original.replace(before, after);
-    assert.notEqual(original, replacement, "No change to " + selector);
-    expected = expected.replace(original,replacement);
-  }
-  const nativeInput = ".public-message-puzzle-slider input{" + rule(".public-message-puzzle-slider input", expected) + "}";
-  const nativeThumbOwners =
-    ".public-message-puzzle-slider input::-webkit-slider-thumb{appearance:none;width:2.75rem;height:2.75rem;margin:0;border:0;background:transparent}" +
-    ".public-message-puzzle-slider input::-moz-range-thumb{width:2.75rem;height:2.75rem;border:0;background:transparent}";
-  assert.equal(expected.split(nativeInput).length,2,"One native slider owner for CSS thumb insertion");
-  expected = expected.replace(nativeInput,nativeInput + nativeThumbOwners);
-  assert.equal(withoutAuthorizedPreviewCssOwners(css), withoutAuthorizedPreviewCssOwners(expected), "No unrelated CSS owner changed and no patch layer was introduced");
+test("Public Message slider, footer, and all other CSS remain identical to reviewed main",()=>{
+  // The reviewed main source already includes the authorized iOS touch/zoom
+  // and native-slider fixes. Compare the complete current stylesheet, not a
+  // transformation of the obsolete pre-fix commit; no CSS owner is exempt.
+  assert.equal(css, reviewedCss,
+    "An unrelated Public CSS owner changed after the reviewed main baseline");
+});
+
+test("Public CSS baseline checks tolerate Windows CRLF but still detect edits",()=>{
+  const winCheckout=css.replace(/\n/g,"\r\n");
+  assert.equal(normalizeRepoText(winCheckout),reviewedCss,
+    "Checkout line endings must not create false Public CSS regression failures");
+  assert.notEqual(normalizeRepoText(winCheckout+"\r\n.unapproved-override{display:none}"),reviewedCss,
+    "A real unexpected CSS override must still fail the baseline check");
 });

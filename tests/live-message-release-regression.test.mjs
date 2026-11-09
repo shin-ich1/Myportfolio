@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {execFileSync} from "node:child_process";
 import {withoutAuthorizedPreviewAppOwners, withoutAuthorizedPreviewCssOwners} from "./public-preview-owner-allowlist.mjs";
-const publicPreviewBaseline = "fef21b141ee992ae1f6db8b7aa4e2d68a30f433f";
+import {normalizeRepoText, readReviewedPublicSource} from "./public-reviewed-baseline.mjs";
 
-const read = relative => readFileSync(new URL("../"+relative,import.meta.url),"utf8");
+const read = relative => normalizeRepoText(readFileSync(new URL("../"+relative,import.meta.url),"utf8"));
 const app=read("app.js"), service=read("message-service.js");
 const worker=read("telemetry-worker/src/index.js");
 const coordinator=read("telemetry-worker/src/security-coordinator.js");
@@ -20,8 +20,8 @@ const frozenLiveRegionHash = text => {
   for (let i=0;i<text.length;i++) h=Math.imul(h^text.charCodeAt(i),16777619)>>>0;
   return h.toString(16).padStart(8,"0");
 };
-test("Public Message and all unrelated app source remain byte-for-byte unchanged outside approved preview owners",()=>{
-  const liveBase=execFileSync("git",["show",publicPreviewBaseline+":app.js"],{encoding:"utf8"});
+test("Public Message and unrelated app source match the reviewed main baseline outside preview owners",()=>{
+  const liveBase=readReviewedPublicSource("app.js");
   const begin=app.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
   const end=app.indexOf("\nfunction publicServicesValid(",begin);
   const baseBegin=liveBase.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
@@ -114,9 +114,9 @@ test("obsolete delayed-warmup constant is removed; one canonical message owner r
   assert.equal((coordinator.match(/if \(op === "puzzle-cooldown-start" \|\| op === "puzzle-cooldown-check"\)/g)||[]).length,1,"Only one canonical coordinator cooldown branch may own security state");
 });
 
-test("All LIVE CSS unrelated to authorized image preview owners stays byte-identical",()=>{
+test("Unrelated Public CSS matches the reviewed main baseline outside preview owners",()=>{
   const css=read("styles.css");
-  const baseline=execFileSync("git",["show",publicPreviewBaseline+":styles.css"],{encoding:"utf8"});
+  const baseline=readReviewedPublicSource("styles.css");
   assert.equal(withoutAuthorizedPreviewCssOwners(css),withoutAuthorizedPreviewCssOwners(baseline),
     "No message puzzle, slider, footer, Admin, or unrelated responsive CSS may change");
   const marker=".public-message-puzzle-layer{";

@@ -147,3 +147,24 @@ test('mini analytics chart pairs each value with its bar and aligns day labels c
   assert.match(css, /\.portfolio-analytics-day\[data-zero="true"\] \.portfolio-analytics-day-bar\{[^}]*opacity:/);
   assert.match(css, /\.portfolio-analytics-day strong\{[^}]*font-variant-numeric:tabular-nums/);
 });
+
+
+test('daily details keeps one right-aligned Views column without hiding the underlying visits metric', () => {
+  const js = read('admin/js/dashboard.js');
+  const css = read('admin/css/dashboard.css');
+  const html = read('admin/dashboard.html');
+  const start = js.indexOf('function showVisitorAnalyticsDetails()');
+  const end = js.indexOf('async function loadVisitorAnalytics(', start);
+  assert.ok(start > -1 && end > start, 'inspect the canonical details renderer');
+  const details = js.slice(start, end);
+  assert.match(details, /const rows = \[\["UTC day", "Views"\], \.\.\.days\.map\(day => \[/);
+  assert.match(details, /formatAnalyticsCount\(day\.views\)/);
+  assert.doesNotMatch(details, /formatAnalyticsCount\(day\.visits\)|"Visits"/);
+  assert.match(html, /data-analytics-day-list aria-label="Page views by date"/);
+  assert.doesNotMatch(html, /Visits are not necessarily unique people/);
+  const rowRule = css.match(/^\.portfolio-analytics-detail-list>div\{([^}]+)\}/m)?.[1] || '';
+  assert.match(rowRule, /grid-template-columns:minmax\(0,1fr\) 64px;/,
+    'both header and daily values must use the same fixed-aligned metric column');
+  assert.match(css, /\.portfolio-analytics-detail-list b\{[^}]*font-variant-numeric:tabular-nums;[^}]*text-align:right/);
+  assert.match(js, /day\.visits/, 'other analytics features retain their existing visits metric');
+});

@@ -929,6 +929,23 @@
     visitorAnalyticsShown = null;
   }
 
+
+  function formatVisitorAnalyticsHeading(days, period) {
+    const first = new Date(days[0].date + "T12:00:00Z");
+    const last = new Date(days[days.length - 1].date + "T12:00:00Z");
+    if (period === "month") {
+      return first.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+    }
+    const shortMonth = date => date.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
+    const crossingYear = first.getUTCFullYear() !== last.getUTCFullYear();
+    const yearSuffix = date => crossingYear ? " ’" + String(date.getUTCFullYear()).slice(-2) : "";
+    const firstLabel = shortMonth(first) + " " + first.getUTCDate() + yearSuffix(first);
+    const lastLabel = first.getUTCMonth() === last.getUTCMonth() && !crossingYear
+      ? String(last.getUTCDate())
+      : shortMonth(last) + " " + last.getUTCDate() + yearSuffix(last);
+    return firstLabel + "–" + lastLabel;
+  }
+
   function analyticsBuckets(days, period) {
     const size = period === "7d" ? 1 : 7;
     const result = [];
@@ -966,8 +983,8 @@
     visitorAnalyticsBucketIndex = -1;
     const views = days.reduce((sum, day) => sum + day.views, 0);
     backTotal.textContent = formatAnalyticsCount(views);
-    heading.textContent = period === "7d" ? "Last 7 Days" : period === "30d" ? "Last 30 Days" :
-      new Date(visitorAnalyticsView.month + "-01T12:00:00Z").toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+    heading.textContent = formatVisitorAnalyticsHeading(days, period);
+    heading.title = days[0].date + " – " + days[days.length - 1].date + " (UTC)";
     const buckets = analyticsBuckets(days, period);
     const peak = Math.max(1, ...buckets.map(bucket => bucket.views));
     const bars = document.createElement("div");
@@ -1049,6 +1066,7 @@
       select.dataset.selected = String(isHistory);
       select.value = isHistory && select.querySelector('option[value="' + visitorAnalyticsView.month + '"]')
         ? visitorAnalyticsView.month : "";
+      select.dispatchEvent(new Event("lan:select-sync"));
     }
   }
 

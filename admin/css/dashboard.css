@@ -78,7 +78,7 @@ body.dashboard-page{overflow:hidden}
 .portfolio-analytics-detail-header button{border:1px solid var(--input-border);border-radius:8px;padding:6px 12px;background:var(--surface-elevated);color:var(--text-primary);cursor:pointer}
 .portfolio-analytics-detail-period{margin:8px 0 12px;color:var(--text-secondary);font-size:.78rem}
 .portfolio-analytics-detail-list{display:grid;gap:4px}
-.portfolio-analytics-detail-list>div{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-soft);font-size:.75rem}
+.portfolio-analytics-detail-list>div{display:grid;grid-template-columns:minmax(0,1fr) 64px;gap:12px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-soft);font-size:.75rem}
 .portfolio-analytics-detail-list>div:first-child{color:var(--accent);font-weight:700}
 .portfolio-analytics-detail-list b{font-variant-numeric:tabular-nums;text-align:right}
 .portfolio-analytics-detail-list small{color:var(--text-secondary);font-size:inherit}

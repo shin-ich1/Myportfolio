@@ -110,7 +110,7 @@ test('enhanced History control uses the same compact Portfolio Pass sizing as pe
   assert.match(trigger, /min-height:24px/);
   assert.match(trigger, /height:24px/);
   assert.match(trigger, /padding:0 3px/);
-  assert.match(css, /\.portfolio-analytics-period-controls>\.lan-select>\.lan-select-trigger\{[^}]*gap:4px/);
+  assert.match(css, /^\.portfolio-analytics-period-controls>\.lan-select>\.lan-select-trigger\{[^}]*gap:4px/m);
   assert.match(css, /\.portfolio-analytics-period-controls\{[^}]*minmax\(0,1\.6fr\)/,
     'give the longer History label more room than the period buttons');
 });

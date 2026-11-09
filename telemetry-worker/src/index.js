@@ -3021,14 +3021,28 @@ async function readCloudflareVisitorAnalytics(env, options = {}) {
   const byDay = new Map();
   const countOrZero = value => Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0;
 
-  // Full 31-day months are split into 30+1 days. Never make a single
-  // GraphQL request wider than 30 days; no requests are made for invalid ranges.
+  // Query canonical UTC calendar weeks instead of one query per selected period.
+  // Cloudflare adaptively samples wider windows: identical dates otherwise get
+  // different estimates in 7d/30d/month. Aligned Monday windows keep shared
+  // dates on the same short GraphQL query, regardless of the selected report.
+  const oldestAllowed = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1);
+  const windows = [];
   for (let cursor = start.getTime(); cursor < end.getTime();) {
-    const next = Math.min(cursor + 30 * dayMs, end.getTime());
+    const date = new Date(cursor);
+    const weekStart = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(),
+      date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+    const next = weekStart + 7 * dayMs;
+    windows.push({
+      start: new Date(Math.max(weekStart, oldestAllowed)).toISOString(),
+      end: new Date(Math.min(next, tomorrow.getTime())).toISOString()
+    });
+    cursor = Math.min(next, end.getTime());
+  }
+  await Promise.all(windows.map(async window => {
     const upstream = await fetch('https://api.cloudflare.com/client/v4/graphql', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, variables: { accountTag, siteTag, start: new Date(cursor).toISOString(), end: new Date(next).toISOString() } }),
+      body: JSON.stringify({ query, variables: { accountTag, siteTag, start: window.start, end: window.end } }),
       signal: AbortSignal.timeout(9000)
     }).catch(() => null);
     if (!upstream) throw serviceError('Analytics provider is unavailable.', { status: 502, code: 'analytics-upstream-unavailable' });
@@ -3052,12 +3066,11 @@ async function readCloudflareVisitorAnalytics(env, options = {}) {
     if (!Array.isArray(groups)) throw serviceError('Analytics provider returned no valid dataset.', { status: 502, code: 'analytics-data-invalid' });
     for (const group of groups) {
       const day = String(group?.dimensions?.date || '');
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < dateKey(start) || day >= dateKey(end)) continue;
       const prior = byDay.get(day) || { views: 0, visits: 0 };
       byDay.set(day, { views: prior.views + countOrZero(group?.count), visits: prior.visits + countOrZero(group?.sum?.visits) });
     }
-    cursor = next;
-  }
+  }));
   const length = Math.round((end.getTime() - start.getTime()) / dayMs);
   const days = Array.from({ length }, (_, i) => {
     const date = dateKey(new Date(start.getTime() + i * dayMs));

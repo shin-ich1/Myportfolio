@@ -87,7 +87,7 @@ test('admin-only analytics request preserves authenticated Worker ownership and 
 test('Portfolio Pass reporting controls retain compact height despite shared input/select defaults', () => {
   const css = read('admin/css/dashboard.css');
   const controls = css.match(/\.portfolio-analytics-period-controls>button,\.portfolio-analytics-period-controls>select\{([^}]+)\}/)?.[1] || '';
-  const history = css.match(/\.portfolio-analytics-period-controls>select\{([^}]+)\}/)?.[1] || '';
+  const history = css.match(/^\.portfolio-analytics-period-controls>select\{([^}]+)\}/m)?.[1] || '';
   assert.match(controls, /min-height\s*:\s*24px\s*;/,
     'explicit min-height must override the shared select minimum');
   assert.match(controls, /height\s*:\s*24px\s*;/);

@@ -21,7 +21,7 @@ test('existing flip card has non-flipping period controls and accessible daily d
   assert.match(js, /dataset\.analyticsDayBar/);
 });
 
-test('monthly query splits 31-day months to avoid exceeding 30-day GraphQL window', async () => {
+test('monthly and rolling analytics query fixed UTC-week windows without exceeding seven days', async () => {
   const source = read('telemetry-worker/src/index.js');
   const from = source.indexOf('async function readCloudflareVisitorAnalytics(env');
   const to = source.indexOf('async function handleSecurityRoute(', from);
@@ -56,16 +56,22 @@ test('monthly query splits 31-day months to avoid exceeding 30-day GraphQL windo
   assert.equal(previous.days[0].views,2);
   assert.equal(previous.days[30].views,5);
   assert.equal(previous.days[30].visits,3);
-  assert.equal(calls.length,2,'31-day historical month requires exactly two bounded queries');
-  assert.ok(calls.every(c => Date.parse(c.end)-Date.parse(c.start) <= 30*86400000));
+  assert.equal(calls.length,5,'October spans five bounded UTC calendar weeks');
+  assert.ok(calls.every(c => Date.parse(c.end)-Date.parse(c.start) <= 7*86400000));
+  assert.equal(calls[0].start,'2026-09-28T00:00:00.000Z');
+  assert.equal(calls[4].end,'2026-11-02T00:00:00.000Z');
   calls.length=0;
   const current=await fn(env,{period:'month',month:'2026-11'});
   assert.equal(current.days.length,9);
-  assert.equal(calls.length,1);
+  assert.equal(calls.length,3);
+  assert.equal(calls[0].start,'2026-10-26T00:00:00.000Z');
+  assert.equal(calls[2].end,'2026-11-10T00:00:00.000Z');
   calls.length=0;
   const weekly=await fn(env);
   assert.equal(weekly.days.length,7);
-  assert.equal(calls.length,1);
+  assert.equal(calls.length,2);
+  assert.equal(calls[0].start,'2026-11-02T00:00:00.000Z');
+  assert.equal(calls[1].end,'2026-11-10T00:00:00.000Z');
   calls.length=0;
   await assert.rejects(fn(env,{period:'month',month:'2018-10'}),error=>error.code==='analytics-period-invalid');
   assert.equal(calls.length,0,'out-of-range queries must fail before Cloudflare request');

@@ -1013,16 +1013,18 @@
     if (!select) return;
     const now = new Date();
     select.replaceChildren();
-    for (let offset = 0; offset < 6; offset++) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "History";
+    select.append(placeholder);
+    for (let offset = 1; offset < 6; offset++) {
       const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
-      const value = date.toISOString().slice(0, 7);
       const option = document.createElement("option");
-      option.value = value;
-      option.textContent = offset === 0 ? "This Month" :
-        date.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+      option.value = date.toISOString().slice(0, 7);
+      option.textContent = date.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
       select.append(option);
     }
-    select.value = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 7);
+    select.value = "";
   }
 
   function syncVisitorAnalyticsControls() {
@@ -1032,13 +1034,16 @@
     const select = document.querySelector("[data-analytics-month-select]");
     if (select) {
       select.dataset.selected = String(visitorAnalyticsView.period === "month");
-      if (visitorAnalyticsView.period === "month") select.value = visitorAnalyticsView.month;
+      select.value = visitorAnalyticsView.period === "month" && select.querySelector('option[value="' + visitorAnalyticsView.month + '"]')
+        ? visitorAnalyticsView.month : "";
     }
   }
 
   function selectVisitorAnalyticsView(period, month = "") {
     if (visitorAnalyticsView.period === period && (period !== "month" || visitorAnalyticsView.month === month)) return;
-    visitorAnalyticsView = { period, month: period === "month" ? month : "" };
+    const selectedMonth = period === "month" ? (month || new Date(Date.UTC(
+      new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString().slice(0, 7)) : "";
+    visitorAnalyticsView = { period, month: selectedMonth };
     visitorAnalyticsRequestId++; // invalidate an earlier response before any debounce
     syncVisitorAnalyticsControls();
     const heading = document.querySelector("[data-analytics-period-title]");
@@ -1082,6 +1087,9 @@
     const now = Date.now();
     const cached = visitorAnalyticsCache.get(key);
     if (!force && cached && cached.expiresAt > now) {
+      visitorAnalyticsRequestInFlight = false;
+      const retry = document.querySelector("[data-analytics-retry]");
+      if (retry) { retry.disabled = false; retry.textContent = "Retry"; }
       renderVisitorAnalytics(cached.payload);
       return;
     }

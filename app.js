@@ -844,26 +844,17 @@ async function loadPublicPortfolioData(deadline = 0) {
   publicFeatureSections = [];
   publicServices = null;
 
-  const [homeResult, profileResult, contactResult, servicesResult] = await Promise.allSettled([
+  const singletonWork = Promise.allSettled([
     loadPublicSingleton("home", deadline),
     loadPublicSingleton("profile", deadline),
     loadPublicSingleton("contact", deadline),
     loadPublicSingleton("services", deadline)
   ]);
 
-  const home = homeResult.status === "fulfilled" ? homeResult.value : {};
-  const profile = profileResult.status === "fulfilled" ? profileResult.value : {};
-  const contact = contactResult.status === "fulfilled" ? contactResult.value : {};
-  const services = servicesResult.status === "fulfilled" ? servicesResult.value : {};
-  publicServices = Object.keys(services).length ? normalizeServices(services) : null;
-  [homeResult, profileResult, contactResult, servicesResult].forEach((result) => {
-    if (result.status === "rejected") console.warn("A public singleton could not be loaded.", result.reason);
-  });
-  if (deadline && (homeResult.status === "rejected" || profileResult.status === "rejected")) {
-    throw new Error("Public portfolio core content could not load before the startup deadline.");
-  }
-  applySingletonContent(home, profile, contact);
 
+  // These published collection/capability reads do not depend on core singleton results.
+  // Launch them during the same network phase without changing request filters,
+  // failure handling, or the order in which results are consumed.
   const registry = portfolioModuleRegistry.filter((module) => module.active);
   const collectionNames = [...new Set([
     "experiences",
@@ -883,6 +874,20 @@ async function loadPublicPortfolioData(deadline = 0) {
   // cannot become an unhandled promise while collection reads are in flight.
   const capabilityWork = Promise.allSettled([loadPublicCapabilities(deadline)]);
   const collectionWork = Promise.allSettled(collectionNames.map(async (name) => [name, await loadPublicCollection(name, deadline)]));
+  const [homeResult, profileResult, contactResult, servicesResult] = await singletonWork;
+  const home = homeResult.status === "fulfilled" ? homeResult.value : {};
+  const profile = profileResult.status === "fulfilled" ? profileResult.value : {};
+  const contact = contactResult.status === "fulfilled" ? contactResult.value : {};
+  const services = servicesResult.status === "fulfilled" ? servicesResult.value : {};
+  publicServices = Object.keys(services).length ? normalizeServices(services) : null;
+  [homeResult, profileResult, contactResult, servicesResult].forEach((result) => {
+    if (result.status === "rejected") console.warn("A public singleton could not be loaded.", result.reason);
+  });
+  if (deadline && (homeResult.status === "rejected" || profileResult.status === "rejected")) {
+    throw new Error("Public portfolio core content could not load before the startup deadline.");
+  }
+  applySingletonContent(home, profile, contact);
+
   const results = await collectionWork;
   const loaded = new Map();
   for (const result of results) {

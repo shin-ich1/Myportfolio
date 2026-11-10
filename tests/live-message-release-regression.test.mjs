@@ -20,6 +20,33 @@ const frozenLiveRegionHash = text => {
   for (let i=0;i<text.length;i++) h=Math.imul(h^text.charCodeAt(i),16777619)>>>0;
   return h.toString(16).padStart(8,"0");
 };
+// The only candidate change to Public source is a verified reordering of
+// independent startup reads. Construct the exact expected candidate from the
+// pinned reviewed baseline; all other Public, Message, and security code must
+// remain byte-identical after the existing media-preview owner exclusions.
+function reviewedStartupOverlapCandidate(baseline) {
+  const first = "  const [homeResult, profileResult, contactResult, servicesResult] = await Promise.allSettled([";
+  const second = "  const home = homeResult.status === \"fulfilled\" ? homeResult.value : {};";
+  const third = "  const registry = portfolioModuleRegistry.filter((module) => module.active);";
+  const fourth = "  const results = await collectionWork;";
+  const a = baseline.indexOf(first);
+  const b = baseline.indexOf(second,a);
+  const c = baseline.indexOf(third,b);
+  const d = baseline.indexOf(fourth,c);
+  assert.ok(a>=0 && b>a && c>b && d>c,"Approved startup owner boundaries must match pinned baseline");
+  const singleton=baseline.slice(a,b).replace(first,"  const singletonWork = Promise.allSettled([");
+  const independent=baseline.slice(c,d);
+  const normalized=baseline.slice(b,c);
+  const candidate=singleton+
+    "\n  // These published collection/capability reads do not depend on core singleton results.\n"+
+    "  // Launch them during the same network phase without changing request filters,\n"+
+    "  // failure handling, or the order in which results are consumed.\n"+
+    independent+
+    "  const [homeResult, profileResult, contactResult, servicesResult] = await singletonWork;\n"+
+    normalized;
+  return baseline.slice(0,a)+candidate+baseline.slice(d);
+}
+
 test("Public Message and unrelated app source match the reviewed main baseline outside preview owners",()=>{
   const liveBase=readReviewedPublicSource("app.js");
   const begin=app.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
@@ -28,7 +55,7 @@ test("Public Message and unrelated app source match the reviewed main baseline o
   const baseEnd=liveBase.indexOf("\nfunction publicServicesValid(",baseBegin);
   assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
   assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
-  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(liveBase),
+  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedStartupOverlapCandidate(liveBase)),
     "Only explicit preview/media owners may change; protect all other Public, startup and security source");
   assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
 });

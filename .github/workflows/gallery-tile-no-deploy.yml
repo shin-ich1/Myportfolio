@@ -1,0 +1,50 @@
+name: Responsive Gallery Tile Regression — NO DEPLOY
+
+on:
+  push:
+    branches: [perf/public-gallery-tile-srcset-20261111]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Responsive gallery tile regression
+        run: node --test tests/public-gallery-tile-rendition.test.mjs
+      - name: Full repository regression suite
+        run: node --test tests/*.test.mjs
+      - name: Syntax checks
+        run: |
+          node --check app.js
+          node --check asset-resolver.js
+          node --check storage-asset.js
+          node --check record-media.js
+          node --check tests/public-gallery-tile-rendition.test.mjs
+      - name: Strict changed-file audit
+        shell: bash
+        run: |
+          git diff --name-only f20280e3a11f0c3c1824de219cedec0b3e65daf9..HEAD
+          if git diff --name-only f20280e3a11f0c3c1824de219cedec0b3e65daf9..HEAD | grep -Ev '^((app|record-media|asset-resolver|storage-asset)\.js|tests/(public-gallery-tile-rendition|live-message-release-regression)\.test\.mjs|release-reports/gallery-tile-renditions-20261111\.md|\.github/workflows/gallery-tile-no-deploy\.yml)$'; then
+            echo "Unexpected changes outside approved gallery media owner scope" >&2
+            exit 1
+          fi
+      - name: Package one source ZIP without deployment
+        run: |
+          mkdir -p "$RUNNER_TEMP/lan-gallery-source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/lan-gallery-source"
+          (cd "$RUNNER_TEMP/lan-gallery-source" && zip -q -r "$RUNNER_TEMP/LAN-GALLERY-OPTIMIZED-CANDIDATE.zip" .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LAN-Gallery-Optimized-Candidate
+          path: ${{ runner.temp }}/LAN-GALLERY-OPTIMIZED-CANDIDATE.zip
+          if-no-files-found: error
+          retention-days: 14

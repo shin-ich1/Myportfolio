@@ -73,3 +73,26 @@ test("Public Hero markup reserves portrait dimensions before loading without a n
   assert.doesNotMatch(app, /hero-img[^\n]*style="(?:width|height|aspect-ratio)/,
     "Keep existing responsive layout rather than inventing a CSS override");
 });
+
+
+test("Managed replacement portraits inherit their own dimensions and legacy unknown URLs are not guessed", async () => {
+  const { normalizeStorageAsset } = await import("../storage-asset.js");
+  const { staticImageDimensions } = await import("../static-image-renditions.js");
+  const source = owner("function portraitIntrinsicDimensions(", "\nfunction browserPdfViewerSource(");
+  const helpers = new Function("normalizeStorageAsset", "staticImageDimensions",
+    source + "\nreturn { portraitIntrinsicDimensions, portraitDimensionAttributes };"
+  )(normalizeStorageAsset, staticImageDimensions);
+  assert.deepEqual(helpers.portraitIntrinsicDimensions("assets/images/hero.png"), {width:960,height:1443});
+  assert.deepEqual(helpers.portraitIntrinsicDimensions("./assets/images/hero.png"), {width:960,height:1443});
+  const portrait = {provider:"cloudinary", resourceType:"image",
+    url:"https://res.cloudinary.com/lan/image/upload/v1/hero.png",
+    width:1800, height:2700};
+  assert.deepEqual(helpers.portraitIntrinsicDimensions(portrait), {width:1800,height:2700});
+  assert.equal(helpers.portraitDimensionAttributes(helpers.portraitIntrinsicDimensions(portrait)),
+    ' width="1800" height="2700"');
+  assert.equal(helpers.portraitIntrinsicDimensions("https://example.com/unknown.jpg"), null,
+    "Do not invent geometry for dimensionless external images");
+  assert.equal(helpers.portraitDimensionAttributes({width:0,height:2700}), "");
+  assert.equal(helpers.portraitDimensionAttributes({width:Infinity,height:2700}), "");
+  assert.equal(helpers.portraitDimensionAttributes({width:90000,height:2700}), "");
+});

@@ -1411,7 +1411,9 @@ function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabe
   const requestedLoading = loading === "eager" ? "eager" : "lazy";
   const loadingMode = priorityMode === "high" ? "eager" : requestedLoading;
   const fallbackAttribute = deliveryFallback ? ` data-public-media-fallback-src="${escapeHtml(deliveryFallback)}"` : "";
-  const priorityAttribute = priorityMode ? ` fetchpriority="${priorityMode}"` : "";
+  // Native low priority keeps offscreen media from contending with the eager Hero.
+  // The existing visibility owner promotes already-visible cards without changing loading behavior.
+  const priorityAttribute = priorityMode ? ` fetchpriority="${priorityMode}"` : (loadingMode === "lazy" ? ' fetchpriority="low"' : "");
   // Decorative fill reuses the foreground image after it loads. Screenshots stay uncropped.
   const ambient = fillBackdrop && deliveryPurpose === "card"
     ? '<img class="public-media-frame__ambient" data-public-media-ambient alt="" aria-hidden="true" decoding="async">'
@@ -1446,7 +1448,7 @@ function publicVideoFrameMarkup(source, label = "Video", { className = "", autop
   const safeClass = cleanText(className).replace(/[^a-zA-Z0-9_-]+/g, " ").trim();
   const classes = ["public-media-frame", "public-media-frame--video", safeClass, url ? "media-loading" : "media-fallback"].filter(Boolean).join(" ");
   const fallback = `<span class="public-media-frame__fallback"><strong>LΛN</strong><small>${escapeHtml(label)}</small></span>`;
-  const posterMarkup = posterUrl ? `<img class="public-media-frame__poster" data-public-media-poster src="${escapeHtml(posterUrl)}" alt="" aria-hidden="true" loading="lazy" decoding="async">` : "";
+  const posterMarkup = posterUrl ? `<img class="public-media-frame__poster" data-public-media-poster src="${escapeHtml(posterUrl)}" alt="" aria-hidden="true" loading="lazy" decoding="async" fetchpriority="low">` : "";
   if (!url) return `<span class="${classes}" data-public-media-frame>${fallback}${posterMarkup}</span>`;
   const autoplayAttrs = autoplay ? " autoplay muted loop" : " controls";
   const posterAttr = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
@@ -1477,8 +1479,9 @@ function prioritizePublicMediaInView(root = document) {
     for (const media of [image, poster]) {
       if (!media) continue;
       media.loading = "eager";
-      // User-opened media deserves high priority, but not every visible card.
+      // A visible card returns to normal priority; only the user-opened modal becomes high.
       if (viewer) media.fetchPriority = "high";
+      else if (media.fetchPriority === "low") media.fetchPriority = "auto";
     }
   });
 }
@@ -2501,7 +2504,7 @@ function render() {
     publicLayoutItems.push(publicLayoutItemMarkup({ key, presentation, recordCount, layoutMode:composition.layoutMode||"auto", layoutPreset:composition.layoutPreset||"", overflowMode:composition.overflowMode||"auto", rowPairing:composition.rowPairing||"none", rowPairingExplicit:composition.rowPairingExplicit===true, rowPartnerKey:composition.rowPartnerKey||"", order:sectionOrder(key,fallbackOrder), markup }));
   };
 
-  if (aboutVisible) pushCore('about','text-section',1,100,`<article id="about" class="panel portfolio-panel about-panel"><h2>${icon("user")} About Me</h2><div class="about public-section-scroll" data-about-layout>${content.about.image ? `<div class="about-photo" data-about-photo><img src="${escapeHtml(mediaUrl(staticImageRendition(content.about.image, "card"), { delivery: "card" }))}" data-public-static-fallback="${escapeHtml(content.about.image)}" loading="lazy" decoding="async" alt="${escapeHtml(content.about.imageAlt || "Rolando Lagmay Jr.")}"></div>` : ""}<div class="about-copy"><p>${escapeHtml(content.about.text || content.about.shortText)}</p></div></div></article>`);
+  if (aboutVisible) pushCore('about','text-section',1,100,`<article id="about" class="panel portfolio-panel about-panel"><h2>${icon("user")} About Me</h2><div class="about public-section-scroll" data-about-layout>${content.about.image ? `<div class="about-photo" data-about-photo><img src="${escapeHtml(mediaUrl(staticImageRendition(content.about.image, "card"), { delivery: "card" }))}" data-public-static-fallback="${escapeHtml(content.about.image)}" loading="lazy" decoding="async" fetchpriority="low" alt="${escapeHtml(content.about.imageAlt || "Rolando Lagmay Jr.")}"></div>` : ""}<div class="about-copy"><p>${escapeHtml(content.about.text || content.about.shortText)}</p></div></div></article>`);
   if (experienceVisible) pushCore('experience','timeline',experiences.length,200,`<article id="experience" class="panel portfolio-panel experience-panel"><h2>${icon("briefcase-business")} Experience</h2><div class="timeline public-section-scroll">${experiences.map((item) => `<div class="timeline-item" data-experience-id="${escapeHtml(item.id || "")}"><span></span><div><div class="exp-head"><h3>${escapeHtml(item.role)}</h3><time>${escapeHtml(item.date)}</time></div>${item.company ? `<a>${escapeHtml(item.company)}</a>` : ""}<p>${escapeHtml(item.details)}</p></div></div>`).join("")}</div></article>`);
   if (projectsVisible) pushCore('projects','carousel',projects.length,300,`<section id="projects" class="panel portfolio-panel projects-section"><h2>${icon("folder-git-2")} Projects</h2><div class="project-showcase-shell public-card-carousel-shell"><button class="carousel-arrow project-showcase-arrow project-showcase-left" type="button" aria-label="Previous projects">${icon("chevron-left")}</button><div class="projects project-showcase-track public-card-carousel-track" aria-label="Project showcase">${projects.map((project) => `<article class="card public-footprint-card public-content-budget-card project-content-budget-card"><button class="media" type="button" data-open-project="${escapeHtml(project.id)}">${projectCardMediaMarkup(project)}</button><div class="card-body"><h3 class="public-content-budget-title">${escapeHtml(project.title)}</h3><p class="public-content-budget-summary">${escapeHtml(project.description)}</p><div class="tags project-capabilities public-content-budget-flex${(project.capabilities || []).length ? " has-capabilities" : ""}" data-project-capabilities data-public-budget-group="capabilities" data-project-id="${escapeHtml(project.id)}">${projectCapabilityTagsMarkup(project.capabilities || [], true)}</div><div class="actions public-content-budget-actions">${projectActionMarkup(project)}</div></div></article>`).join("")}</div><button class="carousel-arrow project-showcase-arrow project-showcase-right" type="button" aria-label="Next projects">${icon("chevron-right")}</button></div></section>`);
   if (photoEditingVisible) pushCore('photo-editing','media-gallery',photos.length,400,`<section id="photo-editing" class="panel portfolio-panel photo-portfolio-section"><h2>${icon("camera")} Photo Editing Portfolio</h2><div class="filters">${categories.map((category) => `<button class="filter ${category === activeFilter ? "active" : ""}" data-filter="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}</div><div class="editing-carousel-shell public-card-carousel-shell"><button class="carousel-arrow carousel-left" type="button" aria-label="Previous editing projects">${icon("chevron-left")}</button><div class="editing-carousel public-card-carousel-track" aria-label="Photo editing projects">${photoGalleryCardsMarkup(gallery)}</div><button class="carousel-arrow carousel-right" type="button" aria-label="Next editing projects">${icon("chevron-right")}</button></div></section>`);

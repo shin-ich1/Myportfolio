@@ -24,14 +24,24 @@
   <script type="module" src="web-analytics-beacon.js"></script>
   <script>
     document.querySelector("[data-loader-retry]")?.addEventListener("click", function () { location.reload(); });
+    // A seven-second slow connection is not a startup failure.
+    // Keep the existing loader visible without a premature retry prompt.
     setTimeout(function () {
       var loader = document.getElementById('siteLoader');
       if (!loader || loader.classList.contains('is-hidden')) return;
       var status = loader.querySelector('[data-loader-status]');
-      if (status) status.textContent = 'The portfolio is taking longer to load.';
+      if (status) status.textContent = 'Still loading portfolio…';
+    }, 7000);
+    // Only expose manual recovery after a prolonged stall. A successful render
+    // hides the canonical loader; these callbacks then leave it untouched.
+    setTimeout(function () {
+      var loader = document.getElementById('siteLoader');
+      if (!loader || loader.classList.contains('is-hidden')) return;
+      var status = loader.querySelector('[data-loader-status]');
+      if (status) status.textContent = 'The portfolio is taking longer than expected.';
       var retry = loader.querySelector('[data-loader-retry]');
       if (retry) retry.hidden = false;
-    }, 7000);
+    }, 35000);
   </script>
 </body>
 </html>

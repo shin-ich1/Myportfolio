@@ -113,6 +113,29 @@ function reviewedPortraitDeliveryCandidate(baseline) {
   }
   return expected;
 }
+function reviewedGalleryTileCandidate(baseline) {
+  // Exact reviewed gallery media delta; unrelated Public, Message and security
+  // source must still match the frozen main baseline byte-for-byte.
+  const replacements = [
+    ["  const deliveryPurpose = [\"detail\", \"original\"].includes(cleanText(purpose).toLowerCase()) ? cleanText(purpose).toLowerCase() : \"card\";",
+     "  const deliveryPurpose = [\"detail\", \"original\", \"tile\"].includes(cleanText(purpose).toLowerCase()) ? cleanText(purpose).toLowerCase() : \"card\";"],
+    ["  const priorityAttribute = priorityMode ? ` fetchpriority=\"${priorityMode}\"` : \"\";\n  // Decorative fill",
+     "  const priorityAttribute = priorityMode ? ` fetchpriority=\"${priorityMode}\"` : \"\";\n  // Keep high-fidelity card delivery as the normal fallback, but offer native\n  // responsive selection for small, known gallery tiles only. No CSS changes.\n  const tileSrcset = deliveryPurpose === \"tile\" && presentation.publicTileUrl\n    && presentation.publicCardUrl && presentation.publicTileUrl !== presentation.publicCardUrl\n      ? ` srcset=\"${escapeHtml(presentation.publicTileUrl)} 480w, ${escapeHtml(presentation.publicCardUrl)} 1200w\" sizes=\"(max-width: 760px) 50vw, 135px\"`\n      : \"\";\n  // Decorative fill"],
+    ["data-public-media-image src=\"${escapeHtml(url)}\"${fallbackAttribute}",
+     "data-public-media-image src=\"${escapeHtml(url)}\"${tileSrcset}${fallbackAttribute}"],
+    ["    const layout = photoGalleryPreviewLayout(preview);\n    const remaining = Math.max(0, gallery.length - preview.length);",
+     "    const layout = photoGalleryPreviewLayout(preview);\n    const tilePurpose = layout.variant === \"two-columns\" || layout.variant === \"quad\" ? \"tile\" : \"card\";\n    const remaining = Math.max(0, gallery.length - preview.length);"],
+    ["className: \"public-media-frame--gallery\", fallbackLabel: \"Gallery image\" })",
+     "className: \"public-media-frame--gallery\", fallbackLabel: \"Gallery image\", purpose: tilePurpose })"]
+  ];
+  let expected = baseline;
+  for (const [before, after] of replacements) {
+    assert.equal(expected.split(before).length, 2, "Unique approved gallery owner boundary");
+    expected = expected.replace(before, after);
+  }
+  return expected;
+}
+
 test("Public Message and unrelated app source match the reviewed main baseline outside preview owners",()=>{
   const liveBase=readReviewedPublicSource("app.js");
   const begin=app.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
@@ -121,7 +144,7 @@ test("Public Message and unrelated app source match the reviewed main baseline o
   const baseEnd=liveBase.indexOf("\nfunction publicServicesValid(",baseBegin);
   assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
   assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
-  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase)))),
+  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedGalleryTileCandidate(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase))))),
     "Only explicit preview/media owners may change; protect all other Public, startup and security source");
   assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
 });

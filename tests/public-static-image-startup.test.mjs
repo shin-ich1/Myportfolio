@@ -105,3 +105,20 @@ test("Collection reads and capability reads begin concurrently without extra cal
   assert.equal(settled.length, 8);
   assert.ok(settled.every(result => result.status === "fulfilled"));
 });
+
+test("Hero and About portraits use card delivery for replaceable Cloudinary images without changing fallback", async () => {
+  // Both portraits come from Home CMS fields. A new Cloudinary PNG must not
+  // bypass the canonical card rendition simply because it is not bundled.
+  const heroSource = 'src="${escapeHtml(mediaUrl(staticImageRendition(content.hero.image, "card"), { delivery: "card" }))}"';
+  const aboutSource = 'src="${escapeHtml(mediaUrl(staticImageRendition(content.about.image, "card"), { delivery: "card" }))}"';
+  assert.ok(app.includes(heroSource), "Hero must request optimized delivery for future CMS uploads");
+  assert.ok(app.includes(aboutSource), "About must request optimized delivery for future CMS uploads");
+  assert.ok(app.includes('data-public-static-fallback="${escapeHtml(content.hero.image)}"'), "Hero retains its original fallback");
+  assert.ok(app.includes('data-public-static-fallback="${escapeHtml(content.about.image)}"'), "About retains its original fallback");
+
+  const { resolveAssetUrl } = await import("../asset-resolver.js");
+  const remoteOriginal = "https://res.cloudinary.com/fmbcpufk/image/upload/v1793876456/xutw6xnj5gddfnrec9nf.png";
+  const card = resolveAssetUrl(remoteOriginal, "card");
+  assert.match(card, /^https:\/\/res\.cloudinary\.com\/fmbcpufk\/image\/upload\/c_limit,w_1200,h_1200,f_auto,q_auto:best\/v1793876456\//);
+  assert.equal(resolveAssetUrl(remoteOriginal, "original"), remoteOriginal, "Keep original quality and download source intact");
+});

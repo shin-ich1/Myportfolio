@@ -1,0 +1,48 @@
+name: Public Startup Network Priority - NO DEPLOY
+
+on:
+  push:
+    branches: [perf/startup-network-priority-20261111]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Failing-first startup regression
+        run: node --test tests/public-startup-network-priority.test.mjs
+      - name: Full repository test suite
+        run: node --test tests/*.test.mjs
+      - name: JavaScript syntax checks
+        run: |
+          node --check app.js
+          node --check tests/public-startup-network-priority.test.mjs
+          node --check tests/live-message-release-regression.test.mjs
+      - name: Protected diff audit
+        shell: bash
+        run: |
+          git diff --name-only f20280e3a11f0c3c1824de219cedec0b3e65daf9..HEAD
+          if git diff --name-only f20280e3a11f0c3c1824de219cedec0b3e65daf9..HEAD | grep -Ev '^(index\.html|app\.js|tests/(live-message-release-regression|public-startup-network-priority)\.test\.mjs|\.github/workflows/startup-network-priority-no-deploy\.yml|release-reports/startup-network-priority-20261111\.md)$'; then
+            echo "Protected/unknown file changed" >&2
+            exit 1
+          fi
+      - name: Package one source ZIP without deployment
+        run: |
+          mkdir -p "$RUNNER_TEMP/lan-startup-candidate"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/lan-startup-candidate"
+          (cd "$RUNNER_TEMP/lan-startup-candidate" && zip -q -r "$RUNNER_TEMP/LAN-STARTUP-NETWORK-CANDIDATE.zip" .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LAN-Startup-Network-Candidate
+          path: ${{ runner.temp }}/LAN-STARTUP-NETWORK-CANDIDATE.zip
+          if-no-files-found: error
+          retention-days: 14

@@ -20,6 +20,22 @@ const frozenLiveRegionHash = text => {
   for (let i=0;i<text.length;i++) h=Math.imul(h^text.charCodeAt(i),16777619)>>>0;
   return h.toString(16).padStart(8,"0");
 };
+// Only the two authorized source attributes may differ from the pinned reviewed
+// Public baseline in this performance branch. Keep all other Public, Message,
+// Admin and security source byte-identical after existing preview exclusions.
+function reviewedPortraitDeliveryCandidate(baseline) {
+  const replacements = [
+    ["src=\"${escapeHtml(staticImageRendition(content.hero.image, \"card\"))}\"", "src=\"${escapeHtml(mediaUrl(staticImageRendition(content.hero.image, \"card\"), { delivery: \"card\" }))}\""],
+    ["src=\"${escapeHtml(staticImageRendition(content.about.image, \"card\"))}\"", "src=\"${escapeHtml(mediaUrl(staticImageRendition(content.about.image, \"card\"), { delivery: \"card\" }))}\""]
+  ];
+  let expected = baseline;
+  for (const [original, optimized] of replacements) {
+    assert.equal(expected.split(original).length - 1, 1, "Reviewed baseline must contain one canonical portrait source");
+    assert.equal(app.split(optimized).length - 1, 1, "Optimized source must not duplicate a portrait owner");
+    expected = expected.replace(original, optimized);
+  }
+  return expected;
+}
 test("Public Message and unrelated app source match the reviewed main baseline outside preview owners",()=>{
   const liveBase=readReviewedPublicSource("app.js");
   const begin=app.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
@@ -28,7 +44,7 @@ test("Public Message and unrelated app source match the reviewed main baseline o
   const baseEnd=liveBase.indexOf("\nfunction publicServicesValid(",baseBegin);
   assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
   assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
-  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(liveBase),
+  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedPortraitDeliveryCandidate(liveBase)),
     "Only explicit preview/media owners may change; protect all other Public, startup and security source");
   assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
 });

@@ -184,8 +184,10 @@ function cloudinaryImageDeliveryUrl(asset = {}, purpose = 'display') {
   const resourceType = lower(asset.resourceType || 'image');
   if (resourceType && resourceType !== 'image') return base;
   const kind = lower(purpose);
-  const transform = kind === 'card'
-    ? 'c_limit,w_1200,h_1200,f_auto,q_auto:best'
+  const transform = kind === 'tile'
+    ? 'c_limit,w_480,h_480,f_auto,q_auto:best'
+    : kind === 'card'
+      ? 'c_limit,w_1200,h_1200,f_auto,q_auto:best'
     : kind === 'detail'
       ? 'c_limit,w_2400,h_2400,f_auto,q_auto:best'
       : '';
@@ -228,6 +230,7 @@ export function storageAssetUrl(value, purpose = 'display') {
     const browserVideo = cloudinaryVideoDeliveryUrl(asset);
     if (browserVideo && !(kind === 'card' && asset.cardUrl) && !(kind === 'detail' && asset.detailUrl)) return browserVideo;
   }
+  if (kind === 'tile') return text(asset.cardUrl || cloudinaryImageDeliveryUrl(asset, 'tile') || asset.previewUrl || asset.url || asset.secureUrl);
   if (kind === 'card') return text(asset.cardUrl || cloudinaryImageDeliveryUrl(asset, 'card') || asset.previewUrl || asset.url || asset.secureUrl);
   if (kind === 'detail') return text(asset.detailUrl || cloudinaryImageDeliveryUrl(asset, 'detail') || asset.previewUrl || asset.url || asset.secureUrl);
   if (['preview', 'pdf-preview', 'office-preview'].includes(kind)) return text(asset.previewUrl || asset.cardUrl || asset.url || asset.secureUrl);

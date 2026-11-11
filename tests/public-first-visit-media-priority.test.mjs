@@ -36,3 +36,40 @@ test("Public document warms media and Firebase module origins without preloading
   assert.match(html, /rel="preconnect" href="https:\/\/www\.gstatic\.com"/);
   assert.doesNotMatch(html, /rel="preload"[^>]+as="video"/);
 });
+
+
+function webpDimensions(path) {
+  const bytes = readFileSync(new URL(path, import.meta.url));
+  assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
+  assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
+  const codec = bytes.toString("ascii", 12, 16);
+  if (codec === "VP8X") return { width: 1 + bytes.readUIntLE(24, 3), height: 1 + bytes.readUIntLE(27, 3) };
+  if (codec === "VP8 ") return { width: bytes.readUInt16LE(26) & 0x3fff, height: bytes.readUInt16LE(28) & 0x3fff };
+  if (codec === "VP8L") {
+    const bits = bytes.readUInt32LE(21);
+    return { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 };
+  }
+  throw new Error("Unexpected WebP format for prepared Hero");
+}
+
+test("Prepared Hero publishes its exact intrinsic dimensions for layout reservation", async () => {
+  const { STATIC_IMAGE_RENDITIONS } = await import("../static-image-renditions.js");
+  const image = STATIC_IMAGE_RENDITIONS["assets/images/hero.png"];
+  assert.ok(image, "Hero rendition must exist");
+  const actual = webpDimensions("../assets/images/hero.card.webp");
+  assert.deepEqual({ width: image.width, height: image.height }, actual,
+    "Hero dimension hints must match actual published card bytes without distorting the portrait");
+});
+
+test("Public Hero markup reserves portrait dimensions before loading without a new fixed-size CSS override", () => {
+  assert.match(app, /function portraitIntrinsicDimensions\(/, "Canonical portrait metadata owner must exist");
+  assert.match(app, /portraitDimensions:\s*portraitIntrinsicDimensions\(/,
+    "Preserve source image width and height before converting its reference to a URL");
+  assert.match(app, /imageDimensions:\s*home\.portraitDimensions/,
+    "Hero renderer must receive intrinsic metadata");
+  const hero = app.match(/\$\{content\.hero\.image \? `<div class="hero-img">[\s\S]*?\} : ""\}/)?.[0] || "";
+  assert.match(hero, /portraitDimensionAttributes\(content\.hero\.imageDimensions\)/,
+    "Native image must receive width and height before its first paint");
+  assert.doesNotMatch(app, /hero-img[^\n]*style="(?:width|height|aspect-ratio)/,
+    "Keep existing responsive layout rather than inventing a CSS override");
+});

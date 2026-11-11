@@ -66,6 +66,7 @@ export function resolvePortfolioAssetPresentation(asset = null, options = {}) {
       || resolveAssetUrl(prior.asset, 'admin-read')
     );
     const cardUrl = clean(resolveAssetUrl(prior.asset, 'card') || resolveAssetUrl(prior.asset, 'preview') || displayUrl);
+    const tileUrl = clean(resolveAssetUrl(prior.asset, 'tile') || cardUrl);
     const detailUrl = clean(resolveAssetUrl(prior.asset, 'detail') || displayUrl);
     const originalUrl = clean(resolveAssetUrl(prior.asset, 'original') || displayUrl);
     const renderable = Boolean(prior.asset) && (
@@ -76,6 +77,7 @@ export function resolvePortfolioAssetPresentation(asset = null, options = {}) {
     const adminUrl = prior.family === 'image' ? (cardUrl || displayUrl) : displayUrl;
     const publicDisplayUrl = renderable && prior.publicAllowed ? displayUrl : '';
     const publicCardUrl = renderable && prior.publicAllowed ? cardUrl : '';
+    const publicTileUrl = renderable && prior.publicAllowed ? tileUrl : '';
     const publicDetailUrl = renderable && prior.publicAllowed ? detailUrl : '';
     const publicOriginalUrl = renderable && prior.publicAllowed ? originalUrl : '';
     return Object.freeze({
@@ -83,10 +85,12 @@ export function resolvePortfolioAssetPresentation(asset = null, options = {}) {
       displayUrl,
       adminUrl,
       cardUrl,
+      tileUrl,
       detailUrl,
       originalUrl,
       publicDisplayUrl,
       publicCardUrl,
+      publicTileUrl,
       publicDetailUrl,
       publicOriginalUrl,
       publicUrl: publicDisplayUrl,
@@ -122,6 +126,7 @@ export function resolvePortfolioAssetPresentation(asset = null, options = {}) {
     ? clean(resolveAssetUrl(asset, 'display') || resolveAssetUrl(asset, 'preview') || resolveAssetUrl(asset, 'admin-read'))
     : '';
   const cardUrl = asset ? clean(resolveAssetUrl(asset, 'card') || resolveAssetUrl(asset, 'preview') || displayUrl) : '';
+  const tileUrl = asset ? clean(resolveAssetUrl(asset, 'tile') || cardUrl) : '';
   const detailUrl = asset ? clean(resolveAssetUrl(asset, 'detail') || displayUrl) : '';
   const originalUrl = asset ? clean(resolveAssetUrl(asset, 'original') || displayUrl) : '';
   const renderable = Boolean(asset) && (['image', 'video', 'audio'].includes(family) ? Boolean(displayUrl) : true);
@@ -131,6 +136,7 @@ export function resolvePortfolioAssetPresentation(asset = null, options = {}) {
   const adminUrl = family === 'image' ? (cardUrl || displayUrl) : displayUrl;
   const publicDisplayUrl = renderable && publicAllowed ? displayUrl : '';
   const publicCardUrl = renderable && publicAllowed ? cardUrl : '';
+  const publicTileUrl = renderable && publicAllowed ? tileUrl : '';
   const publicDetailUrl = renderable && publicAllowed ? detailUrl : '';
   const publicOriginalUrl = renderable && publicAllowed ? originalUrl : '';
 
@@ -142,10 +148,12 @@ export function resolvePortfolioAssetPresentation(asset = null, options = {}) {
     displayUrl,
     adminUrl,
     cardUrl,
+    tileUrl,
     detailUrl,
     originalUrl,
     publicDisplayUrl,
     publicCardUrl,
+    publicTileUrl,
     publicDetailUrl,
     publicOriginalUrl,
     publicUrl: publicDisplayUrl,

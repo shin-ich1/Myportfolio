@@ -67,8 +67,8 @@ test("Public Hero markup reserves portrait dimensions before loading without a n
     "Preserve source image width and height before converting its reference to a URL");
   assert.match(app, /imageDimensions:\s*home\.portraitDimensions/,
     "Hero renderer must receive intrinsic metadata");
-  const hero = app.match(/\$\{content\.hero\.image \? `<div class="hero-img">[\s\S]*?\} : ""\}/)?.[0] || "";
-  assert.match(hero, /portraitDimensionAttributes\(content\.hero\.imageDimensions\)/,
+  const hero = app.split("\n").find(line => line.includes('class="hero-img"><img')) || "";
+  assert.ok(hero.includes('${portraitDimensionAttributes(content.hero.imageDimensions)} data-public-static-fallback'),
     "Native image must receive width and height before its first paint");
   assert.doesNotMatch(app, /hero-img[^\n]*style="(?:width|height|aspect-ratio)/,
     "Keep existing responsive layout rather than inventing a CSS override");

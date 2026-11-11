@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {execFileSync} from "node:child_process";
 import {withoutAuthorizedPreviewAppOwners, withoutAuthorizedPreviewCssOwners} from "./public-preview-owner-allowlist.mjs";
-import {normalizeRepoText, readReviewedPublicSource} from "./public-reviewed-baseline.mjs";
+import {normalizeRepoText, readReviewedPublicSource, reviewedHeroReservedCssCandidate} from "./public-reviewed-baseline.mjs";
 
 const read = relative => normalizeRepoText(readFileSync(new URL("../"+relative,import.meta.url),"utf8"));
 const app=read("app.js"), service=read("message-service.js");
@@ -87,7 +87,11 @@ function reviewedHeroIntrinsicCandidate(baseline) {
     const height = Number(dimensions?.height);
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
         width <= 0 || height <= 0 || width > 32768 || height > 32768) return "";
-    return \` width="\${width}" height="\${height}"\`;
+    // The existing Hero CSS uses auto sizing, so width/height HTML hints alone
+    // do not reserve its box before the image bytes arrive. Reserve the exact
+    // border-box width at the current responsive height cap (1px border/side),
+    // without changing its final appearance, native dimensions, or other media.
+    return \` width="\${width}" height="\${height}" style="--portrait-render-width:min(\${width + 2}px,calc(2px + (var(--portrait-max-height) - 2px) * \${width} / \${height}))"\`;
   }
 
   `.replace(/^  /gm, "");
@@ -206,7 +210,7 @@ test("obsolete delayed-warmup constant is removed; one canonical message owner r
 test("Unrelated Public CSS matches the reviewed main baseline outside preview owners",()=>{
   const css=read("styles.css");
   const baseline=readReviewedPublicSource("styles.css");
-  assert.equal(withoutAuthorizedPreviewCssOwners(css),withoutAuthorizedPreviewCssOwners(baseline),
+  assert.equal(withoutAuthorizedPreviewCssOwners(css),withoutAuthorizedPreviewCssOwners(reviewedHeroReservedCssCandidate(baseline)),
     "No message puzzle, slider, footer, Admin, or unrelated responsive CSS may change");
   const marker=".public-message-puzzle-layer{";
   const start=css.indexOf(marker);

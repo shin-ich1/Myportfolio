@@ -23,6 +23,32 @@ const frozenLiveRegionHash = text => {
 // Only the two authorized source attributes may differ from the pinned reviewed
 // Public baseline in this performance branch. Keep all other Public, Message,
 // Admin and security source byte-identical after existing preview exclusions.
+
+function reviewedStartupOverlapCandidate(baseline) {
+  // Reconstruct precisely the approved Firestore scheduling reordering.
+  // Every other Public/Message/security owner remains baseline-identical.
+  const first = '  const [homeResult, profileResult, contactResult, servicesResult] = await Promise.allSettled([';
+  const second = '  const home = homeResult.status === "fulfilled" ? homeResult.value : {};';
+  const third = '  const registry = portfolioModuleRegistry.filter((module) => module.active);';
+  const fourth = '  const results = await collectionWork;';
+  const a = baseline.indexOf(first);
+  const b = baseline.indexOf(second, a);
+  const c = baseline.indexOf(third, b);
+  const d = baseline.indexOf(fourth, c);
+  assert.ok(a >= 0 && b > a && c > b && d > c, "Startup baseline boundaries must be unique and ordered");
+  const singleton = baseline.slice(a, b).replace(first, "  const singletonWork = Promise.allSettled([");
+  const independent = baseline.slice(c, d);
+  const normalized = baseline.slice(b, c);
+  const candidate = singleton
+    + "\n  // Published collection and capability reads are independent of the core\n"
+    + "  // singleton values. Launch them together, preserving query filters,\n"
+    + "  // fail-closed core validation, and result consumption order.\n"
+    + independent
+    + "  const [homeResult, profileResult, contactResult, servicesResult] = await singletonWork;\n"
+    + normalized;
+  return baseline.slice(0, a) + candidate + baseline.slice(d);
+}
+
 function reviewedPortraitDeliveryCandidate(baseline) {
   const replacements = [
     ["src=\"${escapeHtml(staticImageRendition(content.hero.image, \"card\"))}\"", "src=\"${escapeHtml(mediaUrl(staticImageRendition(content.hero.image, \"card\"), { delivery: \"card\" }))}\""],
@@ -44,7 +70,7 @@ test("Public Message and unrelated app source match the reviewed main baseline o
   const baseEnd=liveBase.indexOf("\nfunction publicServicesValid(",baseBegin);
   assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
   assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
-  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedPortraitDeliveryCandidate(liveBase)),
+  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase))),
     "Only explicit preview/media owners may change; protect all other Public, startup and security source");
   assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
 });

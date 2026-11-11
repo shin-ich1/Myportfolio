@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { runInNewContext } from "node:vm";
 
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const STORAGE = new URL("../assets/images/", import.meta.url);
@@ -121,4 +122,76 @@ test("Hero and About portraits use card delivery for replaceable Cloudinary imag
   const card = resolveAssetUrl(remoteOriginal, "card");
   assert.match(card, /^https:\/\/res\.cloudinary\.com\/fmbcpufk\/image\/upload\/c_limit,w_1200,h_1200,f_auto,q_auto:best\/v1793876456\//);
   assert.equal(resolveAssetUrl(remoteOriginal, "original"), remoteOriginal, "Keep original quality and download source intact");
+});
+
+test("Independent public collections and capabilities launch before core singleton requests settle", async () => {
+  // Execute the real startup owner with read-only mocked Firestore calls.
+  const begin = app.indexOf("async function loadPublicPortfolioData(deadline = 0) {");
+  const end = app.indexOf("  const featureEntries =", begin);
+  assert.ok(begin >= 0 && end > begin);
+  const fragment = app.slice(begin, end) + "  return loaded;\n}\n";
+  const operations = [];
+  const pending = new Map();
+  const state = {
+    Date, Map, Set, Promise,
+    loadedPublicCollections: new Set(),
+    sourceMaps: new Map(),
+    dynamicPortfolioModuleRegistry: [],
+    publicFeatureSections: [],
+    publicServices: null,
+    portfolioModuleRegistry: [{ active: true, collection: "projects" }],
+    normalizeServices: value => value,
+    applySingletonContent: () => { operations.push("normalize-core"); },
+    loadPublicSingleton: name => {
+      operations.push("singleton:" + name);
+      return new Promise((fulfill, reject) => pending.set(name, { fulfill, reject }));
+    },
+    loadPublicCollection: async name => {
+      operations.push("collection:" + name);
+      return [{ id: name + "-fixture", status: "published", visible: true }];
+    },
+    loadPublicCapabilities: async () => { operations.push("capabilities"); },
+    console: { warn() {}, log() {} }
+  };
+  runInNewContext(fragment, state);
+  const request = state.loadPublicPortfolioData(Date.now() + 2000);
+  await Promise.resolve();
+  await Promise.resolve();
+  const beforeRelease = [...operations];
+  for (const controller of pending.values()) controller.fulfill({});
+  const loaded = await request;
+  assert.equal(beforeRelease.filter(value => value.startsWith("singleton:")).length, 4);
+  assert.ok(beforeRelease.some(value => value.startsWith("collection:")),
+    "Independent collection requests must not wait behind the four singleton round trips");
+  assert.ok(beforeRelease.includes("capabilities"),
+    "Capabilities must start in the same startup network phase");
+  assert.ok(loaded.has("projects"));
+  assert.ok(operations.includes("normalize-core"));
+});
+
+test("Startup overlap preserves fail-closed core content when a deadline is active", async () => {
+  const begin = app.indexOf("async function loadPublicPortfolioData(deadline = 0) {");
+  const end = app.indexOf("  const featureEntries =", begin);
+  assert.ok(begin >= 0 && end > begin);
+  const fragment = app.slice(begin, end) + "  return loaded;\n}\n";
+  const pending = new Map();
+  const state = {
+    Date, Map, Set, Promise, loadedPublicCollections: new Set(), sourceMaps: new Map(),
+    dynamicPortfolioModuleRegistry: [], publicFeatureSections: [], publicServices: null,
+    portfolioModuleRegistry: [],
+    loadPublicSingleton: name => new Promise((fulfill, reject) => pending.set(name, {fulfill, reject})),
+    loadPublicCollection: async () => [],
+    loadPublicCapabilities: async () => {},
+    normalizeServices: value => value,
+    applySingletonContent: () => {},
+    console: {warn() {}, log() {}}
+  };
+  runInNewContext(fragment, state);
+  const request = state.loadPublicPortfolioData(Date.now() + 2000);
+  await Promise.resolve();
+  for(const [name, controller] of pending) {
+    if(name === "home") controller.reject(new Error("offline simulated"));
+    else controller.fulfill({});
+  }
+  await assert.rejects(request, /core content could not load before the startup deadline/i);
 });

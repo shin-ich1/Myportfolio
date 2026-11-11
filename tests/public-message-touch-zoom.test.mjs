@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {normalizeRepoText, readReviewedPublicSource} from "./public-reviewed-baseline.mjs";
+import {normalizeRepoText, readReviewedPublicSource, reviewedHeroReservedCssCandidate} from "./public-reviewed-baseline.mjs";
 
 const read = path => normalizeRepoText(readFileSync(new URL("../" + path, import.meta.url), "utf8"));
 const css = read("styles.css");
@@ -85,17 +85,17 @@ test("Visible puzzle piece and slider thumb follow native range input directly w
 });
 
 test("Public Message slider, footer, and all other CSS remain identical to reviewed main",()=>{
-  // The reviewed main source already includes the authorized iOS touch/zoom
-  // and native-slider fixes. Compare the complete current stylesheet, not a
-  // transformation of the obsolete pre-fix commit; no CSS owner is exempt.
-  assert.equal(css, reviewedCss,
+  // Keep the full stylesheet byte-identical to reviewed main except the
+  // exact, proven Hero sizing change. Message, footer, and all other rules
+  // remain protected; do not exempt an entire section or stylesheet.
+  assert.equal(css, reviewedHeroReservedCssCandidate(reviewedCss),
     "An unrelated Public CSS owner changed after the reviewed main baseline");
 });
 
 test("Public CSS baseline checks tolerate Windows CRLF but still detect edits",()=>{
   const winCheckout=css.replace(/\n/g,"\r\n");
-  assert.equal(normalizeRepoText(winCheckout),reviewedCss,
+  assert.equal(normalizeRepoText(winCheckout),reviewedHeroReservedCssCandidate(reviewedCss),
     "Checkout line endings must not create false Public CSS regression failures");
-  assert.notEqual(normalizeRepoText(winCheckout+"\r\n.unapproved-override{display:none}"),reviewedCss,
+  assert.notEqual(normalizeRepoText(winCheckout+"\r\n.unapproved-override{display:none}"),reviewedHeroReservedCssCandidate(reviewedCss),
     "A real unexpected CSS override must still fail the baseline check");
 });

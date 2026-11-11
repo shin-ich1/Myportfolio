@@ -1,0 +1,51 @@
+name: Public Hero early-request regression (NO DEPLOY)
+
+on:
+  push:
+    branches:
+      - perf/hero-request-overlap-20261111
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Hero early-request regression
+        run: node --test tests/public-hero-early-hint.test.mjs
+      - name: Full automated repository suite
+        run: node --test tests/*.test.mjs
+      - name: Syntax checks
+        run: |
+          node --check app.js
+          node --check tests/public-hero-early-hint.test.mjs
+          node --check asset-resolver.js
+          node --check public-adaptive.js
+      - name: Audit scope relative to CLS-fix branch
+        shell: bash
+        run: |
+          git diff --name-only f20280e3a11f0c3c1824de219cedec0b3e65daf9..HEAD
+          if git diff --name-only f20280e3a11f0c3c1824de219cedec0b3e65daf9..HEAD | grep -E '^(admin/|telemetry-worker/|firestore\.rules$|storage\.rules$|firebase\.json$|\.firebaserc$|styles\.css$|public-adaptive\.js$|storage-asset\.js$|asset-resolver\.js$)'; then
+            echo "Unexpected privileged or shared media source change" >&2
+            exit 1
+          fi
+      - name: Build candidate source archive — no deployment
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/lan-hero-early-hint"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/lan-hero-early-hint"
+          (cd "$RUNNER_TEMP/lan-hero-early-hint" && zip -q -r "$RUNNER_TEMP/LAN-HERO-EARLY-HINT-CANDIDATE.zip" .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LAN-Hero-Early-Hint-Candidate
+          path: ${{ runner.temp }}/LAN-HERO-EARLY-HINT-CANDIDATE.zip
+          if-no-files-found: error
+          retention-days: 14

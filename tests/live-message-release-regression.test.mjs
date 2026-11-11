@@ -126,8 +126,8 @@ test("release preserves the actual LIVE footer and production media/startup owne
   assert.match(app,/site-footer--storage/);
   assert.match(app,/storage-privacy\.html/);
   assert.match(app,/LAN Portfolio Storage uses Google Drive access/);
-  assert.match(app,/import \{ storageAssetUrl \} from "\.\/storage-asset\.js"/);
-  assert.match(app,/import \{ staticImageRendition \} from "\.\/static-image-renditions\.js"/);
+  assert.match(app,/import \{ normalizeStorageAsset, storageAssetUrl \} from "\.\/storage-asset\.js"/);
+  assert.match(app,/import \{ staticImageDimensions, staticImageRendition \} from "\.\/static-image-renditions\.js"/);
   assert.match(app,/function withPublicStartupDeadline\(/);
   assert.match(app,/initPublicAdaptiveMode\(\)/);
 });

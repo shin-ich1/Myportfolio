@@ -9,8 +9,8 @@ import { publicSectionEligibility } from "./public-section-eligibility.js";
 import { resolvePublicLayoutPreset, resolvePublicOverflow, placementOrder, publicLayoutSpan, planPublicLayoutRows } from "./public-layout-contract.js";
 import { initPublicAdaptiveMode, isPublicDocumentFlowMode } from "./public-adaptive.js";
 import { resolveModuleRecordMedia, resolveModuleFieldAssetPresentation, resolvePortfolioAssetPresentation } from "./record-media.js";
-import { storageAssetUrl } from "./storage-asset.js";
-import { staticImageRendition } from "./static-image-renditions.js";
+import { normalizeStorageAsset, storageAssetUrl } from "./storage-asset.js";
+import { staticImageDimensions, staticImageRendition } from "./static-image-renditions.js";
 import {
   clearVisitorConversationIdentity,
   createPrivateMessageChallenge,
@@ -58,6 +58,27 @@ const mediaUrl = (value, options = {}) => {
     ? (presentation.publicCardUrl || presentation.publicDisplayUrl)
     : presentation.publicDisplayUrl);
 };
+
+// Preserve actual image proportions before the native Hero image finishes loading.
+// Prepared static assets and managed uploads share one metadata-based size policy.
+// Unknown legacy URL dimensions are left unspecified rather than guessed.
+function portraitIntrinsicDimensions(value) {
+  const asset = normalizeStorageAsset(value);
+  const prepared = staticImageDimensions(value);
+  const width = Number(asset?.width || prepared?.width);
+  const height = Number(asset?.height || prepared?.height);
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+      width <= 0 || height <= 0 || width > 32768 || height > 32768) return null;
+  return { width, height };
+}
+
+function portraitDimensionAttributes(dimensions) {
+  const width = Number(dimensions?.width);
+  const height = Number(dimensions?.height);
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+      width <= 0 || height <= 0 || width > 32768 || height > 32768) return "";
+  return ` width="${width}" height="${height}"`;
+}
 
 function browserPdfViewerSource(source = "") {
   const value = cleanText(source);
@@ -420,6 +441,7 @@ function normalizeHome(raw = {}) {
     roles: Array.isArray(raw.roles) ? raw.roles.map(cleanText).filter(Boolean) : [],
     introduction: cleanText(raw.introduction || raw.intro),
     portrait: mediaUrl(raw.portrait || raw.image),
+    portraitDimensions: portraitIntrinsicDimensions(raw.portrait || raw.image),
     portraitAlt: cleanText(raw.portraitAlt || raw.imageAlt || "Portfolio portrait"),
     primaryCtaLabel: cleanText(raw.primaryCtaLabel || "View My Work"),
     primaryCtaDestination: cleanText(raw.primaryCtaDestination || "#projects"),
@@ -729,6 +751,7 @@ function applySingletonContent(homeRaw = {}, profileRaw = {}, contactRaw = {}) {
       roles: home.roles.length ? home.roles : (profile.featuredRoles || []),
       intro: home.introduction || profile.shortIntroduction,
       image: home.portrait,
+      imageDimensions: home.portraitDimensions,
       imageAlt: home.portraitAlt
     },
     about: {
@@ -2529,7 +2552,7 @@ function render() {
           ${content.site.email ? `<a href="mailto:${escapeHtml(content.site.email)}" aria-label="Email Rolando">${icon("mail")}</a>` : ""}
         </div>
       </div>
-      ${content.hero.image ? `<div class="hero-img"><img src="${escapeHtml(mediaUrl(staticImageRendition(content.hero.image, "card"), { delivery: "card" }))}" data-public-static-fallback="${escapeHtml(content.hero.image)}" alt="${escapeHtml(content.hero.imageAlt || "Rolando Lagmay Jr.")}" loading="eager" fetchpriority="high" decoding="async"></div>` : ""}
+      ${content.hero.image ? `<div class="hero-img"><img src="${escapeHtml(mediaUrl(staticImageRendition(content.hero.image, "card"), { delivery: "card" }))}"${portraitDimensionAttributes(content.hero.imageDimensions)} data-public-static-fallback="${escapeHtml(content.hero.image)}" alt="${escapeHtml(content.hero.imageAlt || "Rolando Lagmay Jr.")}" loading="eager" fetchpriority="high" decoding="async"></div>` : ""}
     </section>
 
     ${publicLayout}

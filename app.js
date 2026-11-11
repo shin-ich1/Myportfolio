@@ -915,6 +915,21 @@ async function loadPublicPortfolioData(deadline = 0) {
   }
   applySingletonContent(home, profile, contact);
 
+  // Request the exact CMS-approved Hero card while slower, independent Public
+  // collections finish. This is a browser resource hint only: the existing
+  // renderer, media fallback, loader, and Firestore query policy are unchanged.
+  if (deadline && typeof document !== "undefined" && document.head && content.hero?.image) {
+    const heroUrl = safeImageSource(mediaUrl(staticImageRendition(content.hero.image, "card"), { delivery: "card" }));
+    if (heroUrl) {
+      const hint = document.createElement("link");
+      hint.rel = "preload";
+      hint.as = "image";
+      hint.fetchPriority = "high";
+      hint.href = heroUrl;
+      document.head.append(hint);
+    }
+  }
+
   const results = await collectionWork;
   const loaded = new Map();
   for (const result of results) {

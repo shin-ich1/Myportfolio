@@ -49,6 +49,53 @@ function reviewedStartupOverlapCandidate(baseline) {
   return baseline.slice(0, a) + candidate + baseline.slice(d);
 }
 
+function reviewedHeroIntrinsicCandidate(baseline) {
+  // Review exact non-security deltas separately from the pinned LIVE source.
+  // A changed Admin, Message, Worker, or unrelated Public owner still fails.
+  const expectedChanges = [
+    ['import { storageAssetUrl } from "./storage-asset.js";',
+     'import { normalizeStorageAsset, storageAssetUrl } from "./storage-asset.js";'],
+    ['import { staticImageRendition } from "./static-image-renditions.js";',
+     'import { staticImageDimensions, staticImageRendition } from "./static-image-renditions.js";'],
+    ['    portrait: mediaUrl(raw.portrait || raw.image),',
+     '    portrait: mediaUrl(raw.portrait || raw.image),\n    portraitDimensions: portraitIntrinsicDimensions(raw.portrait || raw.image),'],
+    ['      image: home.portrait,\n      imageAlt: home.portraitAlt',
+     '      image: home.portrait,\n      imageDimensions: home.portraitDimensions,\n      imageAlt: home.portraitAlt'],
+    ['"${escapeHtml(mediaUrl(staticImageRendition(content.hero.image, "card"), { delivery: "card" }))}" data-public-static-fallback',
+     '"${escapeHtml(mediaUrl(staticImageRendition(content.hero.image, "card"), { delivery: "card" }))}"${portraitDimensionAttributes(content.hero.imageDimensions)} data-public-static-fallback']
+  ];
+  let expected = baseline;
+  for (const [before, after] of expectedChanges) {
+    assert.equal(expected.split(before).length, 2, "Unique approved Hero source boundary");
+    expected = expected.replace(before, after);
+  }
+  const helper = `// Preserve actual image proportions before the native Hero image finishes loading.
+  // Prepared static assets and managed uploads share one metadata-based size policy.
+  // Unknown legacy URL dimensions are left unspecified rather than guessed.
+  function portraitIntrinsicDimensions(value) {
+    const asset = normalizeStorageAsset(value);
+    const prepared = staticImageDimensions(value);
+    const width = Number(asset?.width || prepared?.width);
+    const height = Number(asset?.height || prepared?.height);
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+        width <= 0 || height <= 0 || width > 32768 || height > 32768) return null;
+    return { width, height };
+  }
+
+  function portraitDimensionAttributes(dimensions) {
+    const width = Number(dimensions?.width);
+    const height = Number(dimensions?.height);
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+        width <= 0 || height <= 0 || width > 32768 || height > 32768) return "";
+    return \` width="\${width}" height="\${height}"\`;
+  }
+
+  `.replace(/^  /gm, "");
+  const anchor = "function browserPdfViewerSource(";
+  assert.equal(expected.split(anchor).length, 2);
+  return expected.replace(anchor, helper + anchor);
+}
+
 function reviewedPortraitDeliveryCandidate(baseline) {
   const replacements = [
     ["src=\"${escapeHtml(staticImageRendition(content.hero.image, \"card\"))}\"", "src=\"${escapeHtml(mediaUrl(staticImageRendition(content.hero.image, \"card\"), { delivery: \"card\" }))}\""],
@@ -70,7 +117,7 @@ test("Public Message and unrelated app source match the reviewed main baseline o
   const baseEnd=liveBase.indexOf("\nfunction publicServicesValid(",baseBegin);
   assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
   assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
-  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase))),
+  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase)))),
     "Only explicit preview/media owners may change; protect all other Public, startup and security source");
   assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
 });

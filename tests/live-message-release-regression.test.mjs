@@ -100,6 +100,12 @@ function reviewedHeroIntrinsicCandidate(baseline) {
   return expected.replace(anchor, helper + anchor);
 }
 
+function reviewedHeroRequestOverlapCandidate(source) {
+  const before = "  applySingletonContent(home, profile, contact);\n\n  const results = await collectionWork;";
+  const after = "  applySingletonContent(home, profile, contact);\n\n  // Request the exact CMS-approved Hero card while slower, independent Public\n  // collections finish. This is a browser resource hint only: the existing\n  // renderer, media fallback, loader, and Firestore query policy are unchanged.\n  if (deadline && typeof document !== \"undefined\" && document.head && content.hero?.image) {\n    const heroUrl = safeImageSource(mediaUrl(staticImageRendition(content.hero.image, \"card\"), { delivery: \"card\" }));\n    if (heroUrl) {\n      const hint = document.createElement(\"link\");\n      hint.rel = \"preload\";\n      hint.as = \"image\";\n      hint.fetchPriority = \"high\";\n      hint.href = heroUrl;\n      document.head.append(hint);\n    }\n  }\n\n  const results = await collectionWork;";
+  assert.equal(source.split(before).length, 2, "Only one approved Hero preload boundary may change");
+  return source.replace(before, after);
+}
 function reviewedPortraitDeliveryCandidate(baseline) {
   const replacements = [
     ["src=\"${escapeHtml(staticImageRendition(content.hero.image, \"card\"))}\"", "src=\"${escapeHtml(mediaUrl(staticImageRendition(content.hero.image, \"card\"), { delivery: \"card\" }))}\""],
@@ -121,7 +127,7 @@ test("Public Message and unrelated app source match the reviewed main baseline o
   const baseEnd=liveBase.indexOf("\nfunction publicServicesValid(",baseBegin);
   assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
   assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
-  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase)))),
+  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedHeroRequestOverlapCandidate(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase))))),
     "Only explicit preview/media owners may change; protect all other Public, startup and security source");
   assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
 });

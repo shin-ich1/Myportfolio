@@ -1,0 +1,48 @@
+name: Public Loader False-Retry Regression — NO DEPLOY
+
+on:
+  push:
+    branches: [fix/loader-progress-stall-20261112]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Loader false-retry regression
+        run: node --test tests/public-loader-progress-regression.test.mjs
+      - name: Complete repository regression suite
+        run: node --test tests/*.test.mjs
+      - name: Syntax checks
+        run: |
+          node --check app.js
+          node --check tests/public-loader-progress-regression.test.mjs
+      - name: Strict source scope audit
+        shell: bash
+        run: |
+          git diff --name-only 10c4bd64d0adb6bd0dad4553a133b34ab06624c5..HEAD
+          if git diff --name-only 10c4bd64d0adb6bd0dad4553a133b34ab06624c5..HEAD | grep -Ev '^(index\.html|tests/public-loader-progress-regression\.test\.mjs|\.github/workflows/public-loader-regression-no-deploy\.yml|release-reports/public-loader-progress-20261112\.md)$'; then
+            echo 'Unexpected code, security, Admin or responsive source change' >&2
+            exit 1
+          fi
+      - name: Create one consolidated final source ZIP (no deployment)
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/lan-loader-candidate"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/lan-loader-candidate"
+          (cd "$RUNNER_TEMP/lan-loader-candidate" && zip -q -r "$RUNNER_TEMP/LAN-LOADER-PROGRESS-CANDIDATE.zip" .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LAN-Loader-Progress-Candidate
+          path: ${{ runner.temp }}/LAN-LOADER-PROGRESS-CANDIDATE.zip
+          if-no-files-found: error
+          retention-days: 14

@@ -113,6 +113,29 @@ function reviewedPortraitDeliveryCandidate(baseline) {
   }
   return expected;
 }
+
+function reviewedNativeNetworkPriorityCandidate(baseline) {
+  // Permit only the exact new native fetchpriority policy at the existing media owner.
+  // No other Public, Message, Admin, layout or security source gets an exception.
+  const replacements = [
+    ["  const priorityAttribute = priorityMode ? ` fetchpriority=\"${priorityMode}\"` : \"\";",
+     "  // Native low priority keeps offscreen media from contending with the eager Hero.\n  // The existing visibility owner promotes already-visible cards without changing loading behavior.\n  const priorityAttribute = priorityMode ? ` fetchpriority=\"${priorityMode}\"` : (loadingMode === \"lazy\" ? ' fetchpriority=\"low\"' : \"\");"],
+    ["      // User-opened media deserves high priority, but not every visible card.\n      if (viewer) media.fetchPriority = \"high\";",
+     "      // A visible card returns to normal priority; only the user-opened modal becomes high.\n      if (viewer) media.fetchPriority = \"high\";\n      else if (media.fetchPriority === \"low\") media.fetchPriority = \"auto\";"],
+    ["data-public-media-poster src=\"${escapeHtml(posterUrl)}\" alt=\"\" aria-hidden=\"true\" loading=\"lazy\" decoding=\"async\"",
+     "data-public-media-poster src=\"${escapeHtml(posterUrl)}\" alt=\"\" aria-hidden=\"true\" loading=\"lazy\" decoding=\"async\" fetchpriority=\"low\""],
+    ["data-public-static-fallback=\"${escapeHtml(content.about.image)}\" loading=\"lazy\" decoding=\"async\"",
+     "data-public-static-fallback=\"${escapeHtml(content.about.image)}\" loading=\"lazy\" decoding=\"async\" fetchpriority=\"low\""]
+  ];
+  let expected = baseline;
+  for (const [before, after] of replacements) {
+    assert.equal(expected.split(before).length, 2, "Unique canonical priority owner boundary");
+    assert.equal(app.split(after).length, 2, "Candidate must contain exactly one priority owner");
+    expected = expected.replace(before, after);
+  }
+  return expected;
+}
+
 test("Public Message and unrelated app source match the reviewed main baseline outside preview owners",()=>{
   const liveBase=readReviewedPublicSource("app.js");
   const begin=app.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
@@ -121,7 +144,7 @@ test("Public Message and unrelated app source match the reviewed main baseline o
   const baseEnd=liveBase.indexOf("\nfunction publicServicesValid(",baseBegin);
   assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
   assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
-  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase)))),
+  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedNativeNetworkPriorityCandidate(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase))))),
     "Only explicit preview/media owners may change; protect all other Public, startup and security source");
   assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
 });

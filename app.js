@@ -1389,7 +1389,7 @@ function educationCardMarkup(item = {}) {
 
 function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabel = "Media", loading = "lazy", purpose = "card", priority = "auto", fillBackdrop = false, sizing = "fixed" } = {}) {
   const presentation = mediaPresentation(source, { family: "image", type: "image", access: "public-preview" });
-  const deliveryPurpose = ["detail", "original"].includes(cleanText(purpose).toLowerCase()) ? cleanText(purpose).toLowerCase() : "card";
+  const deliveryPurpose = ["detail", "original", "tile"].includes(cleanText(purpose).toLowerCase()) ? cleanText(purpose).toLowerCase() : "card";
   const url = cleanText(
     deliveryPurpose === "original"
       ? (presentation.publicOriginalUrl || presentation.publicDisplayUrl)
@@ -1412,11 +1412,17 @@ function publicMediaFrameMarkup(source, alt = "", { className = "", fallbackLabe
   const loadingMode = priorityMode === "high" ? "eager" : requestedLoading;
   const fallbackAttribute = deliveryFallback ? ` data-public-media-fallback-src="${escapeHtml(deliveryFallback)}"` : "";
   const priorityAttribute = priorityMode ? ` fetchpriority="${priorityMode}"` : "";
+  // Keep high-fidelity card delivery as the normal fallback, but offer native
+  // responsive selection for small, known gallery tiles only. No CSS changes.
+  const tileSrcset = deliveryPurpose === "tile" && presentation.publicTileUrl
+    && presentation.publicCardUrl && presentation.publicTileUrl !== presentation.publicCardUrl
+      ? ` srcset="${escapeHtml(presentation.publicTileUrl)} 480w, ${escapeHtml(presentation.publicCardUrl)} 1200w" sizes="(max-width: 760px) 50vw, 135px"`
+      : "";
   // Decorative fill reuses the foreground image after it loads. Screenshots stay uncropped.
   const ambient = fillBackdrop && deliveryPurpose === "card"
     ? '<img class="public-media-frame__ambient" data-public-media-ambient alt="" aria-hidden="true" decoding="async">'
     : "";
-  return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}">${fallback}${ambient}<img class="public-media-frame__image" data-public-media-image src="${escapeHtml(url)}"${fallbackAttribute} alt="${escapeHtml(alt)}" loading="${loadingMode}" decoding="async"${priorityAttribute}></span>`;
+  return `<span class="${classes}" data-public-media-frame data-public-media-loading="${loadingMode}">${fallback}${ambient}<img class="public-media-frame__image" data-public-media-image src="${escapeHtml(url)}"${tileSrcset}${fallbackAttribute} alt="${escapeHtml(alt)}" loading="${loadingMode}" decoding="async"${priorityAttribute}></span>`;
 }
 
 function publicVideoPlaybackSources(source) {
@@ -1805,8 +1811,9 @@ function photoCardMediaMarkup(item) {
   if (displayType === "gallery" && gallery.length) {
     const preview = photoGalleryRepresentativeMedia(gallery, 4);
     const layout = photoGalleryPreviewLayout(preview);
+    const tilePurpose = layout.variant === "two-columns" || layout.variant === "quad" ? "tile" : "card";
     const remaining = Math.max(0, gallery.length - preview.length);
-    return `<span class="photo-thumb-gallery" data-photo-gallery-preview data-gallery-count="${gallery.length}" data-gallery-layout="${escapeHtml(layout.variant)}">${preview.map((media, index) => `<span class="photo-thumb-gallery-tile${index === layout.featuredIndex ? " is-featured" : ""}" data-photo-gallery-tile data-gallery-shape="${escapeHtml(media.shape)}" data-media-width="${media.width}" data-media-height="${media.height}">${publicMediaFrameMarkup(media.presentation, `${item.title} gallery image ${index + 1}`, { className: "public-media-frame--gallery", fallbackLabel: "Gallery image" })}${remaining && index === preview.length - 1 ? `<small class="photo-thumb-gallery-more">+${remaining}</small>` : ""}</span>`).join("")}<small class="photo-thumb-gallery-badge">${icon("images")} Gallery · ${gallery.length}</small></span>`;
+    return `<span class="photo-thumb-gallery" data-photo-gallery-preview data-gallery-count="${gallery.length}" data-gallery-layout="${escapeHtml(layout.variant)}">${preview.map((media, index) => `<span class="photo-thumb-gallery-tile${index === layout.featuredIndex ? " is-featured" : ""}" data-photo-gallery-tile data-gallery-shape="${escapeHtml(media.shape)}" data-media-width="${media.width}" data-media-height="${media.height}">${publicMediaFrameMarkup(media.presentation, `${item.title} gallery image ${index + 1}`, { className: "public-media-frame--gallery", fallbackLabel: "Gallery image", purpose: tilePurpose })}${remaining && index === preview.length - 1 ? `<small class="photo-thumb-gallery-more">+${remaining}</small>` : ""}</span>`).join("")}<small class="photo-thumb-gallery-badge">${icon("images")} Gallery · ${gallery.length}</small></span>`;
   }
 
   if (displayType === "comparison" && beforeAsset && afterAsset) {

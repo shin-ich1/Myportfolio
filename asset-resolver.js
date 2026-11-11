@@ -191,6 +191,7 @@ export function resolveAssetUrl(asset, purpose = 'display') {
   const kind = text(purpose).toLowerCase();
   if (kind === 'download') return text(resolved.downloadUrl || resolved.originalUrl || resolved.url || resolved.secureUrl);
   if (kind === 'original') return text(resolved.originalUrl || resolved.url || resolved.secureUrl || resolved.downloadUrl);
+  if (kind === 'tile') return text(resolved.cardUrl || storageAssetUrl(resolved, 'tile') || resolved.previewUrl || resolved.url || resolved.secureUrl);
   if (kind === 'card') return text(resolved.cardUrl || storageAssetUrl(resolved, 'card') || resolved.previewUrl || resolved.url || resolved.secureUrl);
   if (kind === 'detail') return text(resolved.detailUrl || storageAssetUrl(resolved, 'detail') || resolved.previewUrl || resolved.url || resolved.secureUrl);
   if (['preview', 'pdf-preview', 'office-preview', 'admin-read'].includes(kind)) return text(resolved.previewUrl || resolved.cardUrl || resolved.url || resolved.secureUrl);

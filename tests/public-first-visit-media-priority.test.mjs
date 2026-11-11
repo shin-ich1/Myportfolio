@@ -89,7 +89,7 @@ test("Managed replacement portraits inherit their own dimensions and legacy unkn
     width:1800, height:2700};
   assert.deepEqual(helpers.portraitIntrinsicDimensions(portrait), {width:1800,height:2700});
   assert.equal(helpers.portraitDimensionAttributes(helpers.portraitIntrinsicDimensions(portrait)),
-    ' width="1800" height="2700"');
+    ' width="1800" height="2700" style="--portrait-render-width:min(1802px,calc(2px + (var(--portrait-max-height) - 2px) * 1800 / 2700))"');
   assert.equal(helpers.portraitIntrinsicDimensions("https://example.com/unknown.jpg"), null,
     "Do not invent geometry for dimensionless external images");
   assert.equal(helpers.portraitDimensionAttributes({width:0,height:2700}), "");

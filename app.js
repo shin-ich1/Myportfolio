@@ -77,7 +77,11 @@ function portraitDimensionAttributes(dimensions) {
   const height = Number(dimensions?.height);
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
       width <= 0 || height <= 0 || width > 32768 || height > 32768) return "";
-  return ` width="${width}" height="${height}"`;
+  // The existing Hero CSS uses auto sizing, so width/height HTML hints alone
+  // do not reserve its box before the image bytes arrive. Reserve the exact
+  // border-box width at the current responsive height cap (1px border/side),
+  // without changing its final appearance, native dimensions, or other media.
+  return ` width="${width}" height="${height}" style="--portrait-render-width:min(${width + 2}px,calc(2px + (var(--portrait-max-height) - 2px) * ${width} / ${height}))"`;
 }
 
 function browserPdfViewerSource(source = "") {

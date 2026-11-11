@@ -97,7 +97,7 @@ async function main() {
         continue;
       }
       planned.push({ card, detail, cardTemp, detailTemp });
-      manifest[source] = { card, detail };
+      manifest[source] = { card, detail, width: cardResult.width, height: cardResult.height };
       savedCardBytes += original.size - cardResult.size;
       console.log("Optimized:", source, "original:", original.size,
         "card:", cardResult.size, "detail:", detailResult.size);

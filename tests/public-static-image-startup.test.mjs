@@ -195,3 +195,18 @@ test("Startup overlap preserves fail-closed core content when a deadline is acti
   }
   await assert.rejects(request, /core content could not load before the startup deadline/i);
 });
+
+
+test("Critical Public module discovery is not delayed behind the full app import graph", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  // This is a structural guard for the first-visit waterfall observed in
+  // WebPageTest: app.js starts fetching before these critical dependencies.
+  // Actual milliseconds must still be verified in an equivalent Preview run.
+  for (const moduleName of ["module-platform.js", "asset-resolver.js"]) {
+    const hint = '<link rel="modulepreload" href="' + moduleName + '">';
+    assert.equal(html.split(hint).length - 1, 1,
+      "The existing first-render module should be discoverable in head: " + moduleName);
+    assert.ok(html.indexOf(hint) < html.indexOf('<script type="module" src="app.js">'));
+  }
+  assert.match(html, /<script type="module" src="app\.js"><\/script>/);
+});

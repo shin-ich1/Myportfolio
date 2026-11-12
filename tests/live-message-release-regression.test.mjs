@@ -6,7 +6,7 @@ import {withoutAuthorizedPreviewAppOwners, withoutAuthorizedPreviewCssOwners} fr
 import {normalizeRepoText, readReviewedPublicSource, reviewedHeroReservedCssCandidate} from "./public-reviewed-baseline.mjs";
 
 const read = relative => normalizeRepoText(readFileSync(new URL("../"+relative,import.meta.url),"utf8"));
-const app=read("app.js"), service=read("message-service.js");
+const app=read("app.js"), service=read("message-service.js"), visitor=read("message-visitor-service.js");
 const worker=read("telemetry-worker/src/index.js");
 const coordinator=read("telemetry-worker/src/security-coordinator.js");
 const mainConfig=read("telemetry-worker/wrangler.jsonc");
@@ -136,15 +136,68 @@ function reviewedNativeNetworkPriorityCandidate(baseline) {
   return expected;
 }
 
+function reviewedPublicMessagingDemandLoadCandidate(baseline) {
+  // Only the static SDK-owner boundary and the existing conversation-open
+  // call site may move. Every other slider, anti-bot, reply, Admin, or
+  // security byte remains pinned to the actual reviewed main baseline.
+  const changes = [
+    [
+      `import {
+  clearVisitorConversationIdentity,
+  createPrivateMessageChallenge,
+  createPrivateVisitorThread,
+  getPrivateVisitorThread,
+  loadVisitorConversationIdentity,
+  markPrivateVisitorThreadRead,
+  forgetPrivateVisitorThread,
+  sendPrivateVisitorMessage,
+  storeVisitorConversationIdentity,
+  verifyPrivateMessageChallenge,
+  subscribePrivateVisitorThread
+} from "./message-service.js";`,
+      `import {
+  clearVisitorConversationIdentity,
+  createPrivateMessageChallenge,
+  createPrivateVisitorThread,
+  loadVisitorConversationIdentity,
+  markPrivateVisitorThreadRead,
+  forgetPrivateVisitorThread,
+  sendPrivateVisitorMessage,
+  storeVisitorConversationIdentity,
+  verifyPrivateMessageChallenge
+} from "./message-visitor-service.js";`
+    ],
+    [
+      '  let initialThreadReceived = false;\n  // Firestore',
+      '  let initialThreadReceived = false;\n  let messagingLoadTimedOut = false;\n  // Firestore'
+    ],
+    [
+      '  const startupTimeoutId = window.setTimeout(() => {\n    if (initialThreadReceived || !dialog.isConnected) return;\n    publicMessageStop?.();',
+      '  const startupTimeoutId = window.setTimeout(() => {\n    if (initialThreadReceived || !dialog.isConnected) return;\n    messagingLoadTimedOut = true;\n    publicMessageStop?.();'
+    ],
+    [
+      '  try {\n    publicMessageStop = subscribePrivateVisitorThread(identity.id, ({ thread: liveThread, messages }) => {',
+      '  try {\n    // Load Firestore listeners only when a visitor opens an existing conversation.\n    // Puzzle warmup and new-thread requests stay on the lightweight Worker bridge.\n    const { subscribePrivateVisitorThread } = await import("./message-service.js");\n    if (messagingLoadTimedOut || !dialog.isConnected) return;\n    publicMessageStop = subscribePrivateVisitorThread(identity.id, ({ thread: liveThread, messages }) => {'
+    ]
+  ];
+  let candidate = baseline;
+  for (const [original, replacement] of changes) {
+    assert.equal(candidate.split(original).length, 2, "Approved deferred-SDK source owner must be unique");
+    candidate = candidate.replace(original, replacement);
+  }
+  return candidate;
+}
+
 test("Public Message and unrelated app source match the reviewed main baseline outside preview owners",()=>{
   const liveBase=readReviewedPublicSource("app.js");
   const begin=app.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
   const end=app.indexOf("\nfunction publicServicesValid(",begin);
-  const baseBegin=liveBase.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
-  const baseEnd=liveBase.indexOf("\nfunction publicServicesValid(",baseBegin);
+  const reviewedMessaging=reviewedPublicMessagingDemandLoadCandidate(liveBase);
+  const baseBegin=reviewedMessaging.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
+  const baseEnd=reviewedMessaging.indexOf("\nfunction publicServicesValid(",baseBegin);
   assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
-  assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
-  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedNativeNetworkPriorityCandidate(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase))))),
+  assert.equal(app.slice(begin,end),reviewedMessaging.slice(baseBegin,baseEnd),"Only the precisely authorized deferred SDK/timeout source may differ within the message owner");
+  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedNativeNetworkPriorityCandidate(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(reviewedMessaging))))),
     "Only explicit preview/media owners may change; protect all other Public, startup and security source");
   assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
 });
@@ -173,7 +226,7 @@ test("release includes the canonical Public Message cooldown and five-second ima
 
 test("fast wrong-answer path never bypasses server-required Turnstile",()=>{
   assert.match(mainRegion,/requiresBrowserProof \? await runTurnstile\(\) : ""/);
-  assert.match(service,/workerJson\("\/messages\/security\/verify"/);
+  assert.match(visitor,/workerJson\("\/messages\/security\/verify"/);
   assert.doesNotMatch(service,/if \(!response\) throw new Error\("Secure browser verification is still running/);
   assert.match(verify,/await verifyTurnstile\(request,env,body\?\.turnstileToken\)/);
   assert.match(verify,/op:"puzzle-finalize"/);

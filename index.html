@@ -14,9 +14,8 @@
   <title>Rolando Lagmay Jr. | Portfolio</title>
   <script>(function(){try{var t=localStorage.getItem("theme")==="light"?"light":"dark";document.documentElement.dataset.theme=t;document.documentElement.dataset.cmsThemeResolved=t;if(t==="light")document.documentElement.classList.add("light");}catch(e){document.documentElement.dataset.theme="dark";}})();</script>
   <link rel="stylesheet" href="styles.css" />
+  <!-- Start Lucide independently of the Public module graph; bind completion first. -->
   <script>
-    // Begin the existing icon library alongside the Public module graph.
-    // Register completion before the request so even cached failures settle.
     window.lanPublicLucideReady = new Promise((resolve) => {
       const script = document.createElement("script");
       script.src = "https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js";

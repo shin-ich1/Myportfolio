@@ -4883,11 +4883,14 @@ function installPublicPortfolioSync() {
   try {
     const ready = await initFirebase();
     if (!ready) await loadEmergencyFallback("Firebase/Firestore initialization failed");
+    // The icon download overlaps Firestore, but the complete page still reveals at once.
+    await window.lanPublicLucideReady;
     render();
   } catch (error) {
     console.error("Public portfolio startup failed.", error);
     try {
       await loadEmergencyFallback(error);
+      await window.lanPublicLucideReady;
       render();
       } catch (fallbackError) {
       console.error("Emergency portfolio recovery also failed.", fallbackError);

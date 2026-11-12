@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 const app=readFileSync(new URL("../app.js",import.meta.url),"utf8");
-const service=readFileSync(new URL("../message-service.js",import.meta.url),"utf8");
+const service=readFileSync(new URL("../message-visitor-service.js",import.meta.url),"utf8");
 const begin=app.indexOf("async function loadPublicMessagePuzzleChallenge(");
 const end=app.indexOf("\nasync function openPublicMessagePuzzleVerification(",begin);
 assert.ok(begin>=0&&end>begin);

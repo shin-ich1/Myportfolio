@@ -14,7 +14,18 @@
   <title>Rolando Lagmay Jr. | Portfolio</title>
   <script>(function(){try{var t=localStorage.getItem("theme")==="light"?"light":"dark";document.documentElement.dataset.theme=t;document.documentElement.dataset.cmsThemeResolved=t;if(t==="light")document.documentElement.classList.add("light");}catch(e){document.documentElement.dataset.theme="dark";}})();</script>
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
+  <script>
+    // Begin the existing icon library alongside the Public module graph.
+    // Register completion before the request so even cached failures settle.
+    window.lanPublicLucideReady = new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = "https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js";
+      script.async = true;
+      script.addEventListener("load", resolve, { once: true });
+      script.addEventListener("error", resolve, { once: true });
+      document.head.appendChild(script);
+    });
+  </script>
 </head>
 <body>
   <div class="site-loader" id="siteLoader" aria-live="polite"><div class="site-loader-mark">LΛN</div><span data-loader-status>Loading portfolio</span><button class="site-loader-retry" type="button" data-loader-retry hidden>Retry loading</button></div>

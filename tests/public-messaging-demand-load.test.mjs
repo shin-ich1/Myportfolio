@@ -94,3 +94,39 @@ test("Admin subscriptions remain on original authenticated Firestore owner", () 
   assert.match(admin,/from "\.\.\/\.\.\/message-service\.js"/);
   assert.match(full,/onSnapshot\(/);
 });
+
+
+test("Every local static import reachable before first Public render stays free of Firebase SDK", () => {
+  const visited = new Set();
+  const directImports = [];
+  const visit = url => {
+    const key = url.href;
+    if (visited.has(key)) return;
+    visited.add(key);
+    const code = readFileSync(url, "utf8");
+    const pattern = /^import\s+(?:[^;]*?\s+from\s+)?["']([^"']+)["'];/gm;
+    for (const match of code.matchAll(pattern)) {
+      const target = match[1];
+      directImports.push({from: url.pathname.split("/").at(-1), target});
+      assert.doesNotMatch(target, /^https:\/\/www\.gstatic\.com\/firebasejs\//,
+        "Initial Public graph must not statically load the Firebase SDK: " + key);
+      if (target.startsWith("./") || target.startsWith("../")) visit(new URL(target, url));
+    }
+  };
+  visit(new URL("../app.js", import.meta.url));
+  assert.ok(visited.size > 12, "Walk must cover the real initial Public dependency graph");
+  assert.ok(directImports.some(item => item.target === "./message-visitor-service.js"));
+  assert.ok(!directImports.some(item => item.target === "./message-service.js"));
+});
+
+test("Conversation listener import is cancellable after timeout or modal closure", () => {
+  const begin = app.indexOf("async function openPublicMessageComposer() {");
+  const end = app.indexOf("\nasync function submitPublicMessage(", begin);
+  assert.ok(begin >= 0 && end > begin);
+  const source = app.slice(begin,end);
+  assert.match(source,/let messagingLoadTimedOut = false;/);
+  assert.match(source,/messagingLoadTimedOut = true;/);
+  assert.match(source,/if \(messagingLoadTimedOut \|\| !dialog\.isConnected\) return;/);
+  assert.ok(source.indexOf('await import("./message-service.js")') < source.indexOf('publicMessageStop = subscribePrivateVisitorThread'));
+  assert.match(source,/publicMessageStop\?\.\(\);/);
+});

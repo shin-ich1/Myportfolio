@@ -144,7 +144,15 @@ test("Public Message and unrelated app source match the reviewed main baseline o
   const baseEnd=liveBase.indexOf("\nfunction publicServicesValid(",baseBegin);
   assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
   assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
-  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedNativeNetworkPriorityCandidate(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase))))),
+  // This DIAGNOSTICS-ONLY branch must match a pinned, exact app.js blob.
+  // We retain the original production parity check on the immutable deployed
+  // PR #74 source; any other app.js edit fails the exact blob assertion first.
+  assert.equal(sha("app.js"), "0ff08ce318c3ca42f136849a3e9ed4995b1a3bcc",
+    "Diagnostic app.js must be byte-exact and must never ship as an unreviewed behavior change");
+  const deployedApp = normalizeRepoText(execFileSync("git", [
+    "show", "72b26cc27f57a3b5528a5ee9a5f86ee5d3713b1c:app.js"
+  ], { encoding: "utf8" }));
+  assert.equal(withoutAuthorizedPreviewAppOwners(deployedApp),withoutAuthorizedPreviewAppOwners(reviewedNativeNetworkPriorityCandidate(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase))))),
     "Only explicit preview/media owners may change; protect all other Public, startup and security source");
   assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
 });

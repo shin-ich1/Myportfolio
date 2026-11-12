@@ -32,7 +32,7 @@ jobs:
         shell: bash
         run: |
           git diff --name-only cacc5ef931e77f9fd0d8d71f5fd369adeaa442dc..HEAD
-          if git diff --name-only cacc5ef931e77f9fd0d8d71f5fd369adeaa442dc..HEAD | grep -Ev '^(app\.js|message-service\.js|message-visitor-service\.js|tests/public-messaging-demand-load\.test\.mjs|tests/live-message-release-regression\.test\.mjs|\.github/workflows/public-messaging-on-demand-no-deploy\.yml|release-reports/public-messaging-demand-load-20261112\.md)$'; then
+          if git diff --name-only cacc5ef931e77f9fd0d8d71f5fd369adeaa442dc..HEAD | grep -Ev '^(app\.js|message-service\.js|message-visitor-service\.js|tests/public-messaging-demand-load\.test\.mjs|tests/live-message-release-regression\.test\.mjs|tests/public-message-fast-retry-cooldown\.test\.mjs|\.github/workflows/public-messaging-on-demand-no-deploy\.yml|release-reports/public-messaging-demand-load-20261112\.md)$'; then
             echo 'Unexpected source, configuration, Worker, Admin, CSS or security changes.' >&2
             exit 1
           fi

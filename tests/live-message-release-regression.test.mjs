@@ -136,6 +136,28 @@ function reviewedNativeNetworkPriorityCandidate(baseline) {
   return expected;
 }
 
+function reviewedParallelLucideStartupCandidate(baseline) {
+  // Explicitly allow only the two new render gates in this isolated Lucide
+  // experiment. Every other startup, messaging, security and Admin owner
+  // remains protected by the original full-source comparison.
+  const approved = [
+    [
+      '    if (!ready) await loadEmergencyFallback("Firebase/Firestore initialization failed");\n    render();',
+      '    if (!ready) await loadEmergencyFallback("Firebase/Firestore initialization failed");\n    // The icon download overlaps Firestore, but the complete page still reveals at once.\n    await window.lanPublicLucideReady;\n    render();'
+    ],
+    [
+      '      await loadEmergencyFallback(error);\n      render();',
+      '      await loadEmergencyFallback(error);\n      await window.lanPublicLucideReady;\n      render();'
+    ]
+  ];
+  let expected = baseline;
+  for (const [before, after] of approved) {
+    assert.equal(expected.split(before).length, 2, "Lucide gate must update one known render site");
+    expected = expected.replace(before, after);
+  }
+  return expected;
+}
+
 test("Public Message and unrelated app source match the reviewed main baseline outside preview owners",()=>{
   const liveBase=readReviewedPublicSource("app.js");
   const begin=app.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
@@ -144,7 +166,7 @@ test("Public Message and unrelated app source match the reviewed main baseline o
   const baseEnd=liveBase.indexOf("\nfunction publicServicesValid(",baseBegin);
   assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
   assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
-  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedNativeNetworkPriorityCandidate(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase))))),
+  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedParallelLucideStartupCandidate(reviewedNativeNetworkPriorityCandidate(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase)))))),
     "Only explicit preview/media owners may change; protect all other Public, startup and security source");
   assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
 });

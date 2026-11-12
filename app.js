@@ -15,15 +15,13 @@ import {
   clearVisitorConversationIdentity,
   createPrivateMessageChallenge,
   createPrivateVisitorThread,
-  getPrivateVisitorThread,
   loadVisitorConversationIdentity,
   markPrivateVisitorThreadRead,
   forgetPrivateVisitorThread,
   sendPrivateVisitorMessage,
   storeVisitorConversationIdentity,
-  verifyPrivateMessageChallenge,
-  subscribePrivateVisitorThread
-} from "./message-service.js";
+  verifyPrivateMessageChallenge
+} from "./message-visitor-service.js";
 import { disablePortfolioPushForThread, enablePortfolioPush, rehydratePortfolioPush } from "./notification-service.js";
 import { bindMessageComposerKeyboard } from "./message-composer.js";
 
@@ -3311,10 +3309,12 @@ async function openPublicMessageComposer() {
   publicMessagePushState = "unregistered";
   publicMessagePushError = "";
   let initialThreadReceived = false;
+  let messagingLoadTimedOut = false;
   // Firestore's live authorized snapshot is the canonical source. A separate
   // getDoc creates an unnecessary blocking network dependency in in-app browsers.
   const startupTimeoutId = window.setTimeout(() => {
     if (initialThreadReceived || !dialog.isConnected) return;
+    messagingLoadTimedOut = true;
     publicMessageStop?.();
     publicMessageStop = null;
     dialog.innerHTML = `<div class="public-private-error"><strong>Conversation is taking longer than expected</strong><p>Check your connection, then try again. Your private conversation has not been removed.</p><button class="btn" data-retry-private-message type="button">Try again</button></div>`;
@@ -3322,6 +3322,10 @@ async function openPublicMessageComposer() {
   }, 12000);
 
   try {
+    // Load Firestore listeners only when a visitor opens an existing conversation.
+    // Puzzle warmup and new-thread requests stay on the lightweight Worker bridge.
+    const { subscribePrivateVisitorThread } = await import("./message-service.js");
+    if (messagingLoadTimedOut || !dialog.isConnected) return;
     publicMessageStop = subscribePrivateVisitorThread(identity.id, ({ thread: liveThread, messages }) => {
       if (!dialog.isConnected) return;
       if (!initialThreadReceived) {

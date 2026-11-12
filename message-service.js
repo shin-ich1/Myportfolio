@@ -1,24 +1,51 @@
-import { getApps, initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  getFirestore,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  updateDoc,
-  writeBatch
-} from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
 import { firebaseConfig } from "./config.js";
 import { storageBridgeUrl } from "./storage-bridge-url.js";
 
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-const db = getFirestore(app);
+let db = null;
+let firebaseLoad = null;
+let addDoc, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot,
+    orderBy, query, serverTimestamp, updateDoc, writeBatch;
+
+function ensureMessagingFirestore() {
+  if (!firebaseLoad) {
+    firebaseLoad = Promise.all([
+      import("https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js")
+    ]).then(([appModule, firestoreModule]) => {
+      const firebaseApp = appModule.getApps().length
+        ? appModule.getApps()[0]
+        : appModule.initializeApp(firebaseConfig);
+      db = firestoreModule.getFirestore(firebaseApp);
+      ({ addDoc, collection, deleteDoc, doc, getDoc, getDocs,
+         onSnapshot, orderBy, query, serverTimestamp,
+         updateDoc, writeBatch } = firestoreModule);
+    }).catch(error => {
+      firebaseLoad = null;
+      throw error;
+    });
+  }
+  return firebaseLoad;
+}
+
+function deferredFirestoreSubscription(start, onError) {
+  let cancelled = false;
+  let unsubscribe = null;
+  void ensureMessagingFirestore().then(() => {
+    if (cancelled) return;
+    unsubscribe = start();
+    if (cancelled) {
+      unsubscribe?.();
+      unsubscribe = null;
+    }
+  }).catch(error => {
+    if (!cancelled) onError?.(error);
+  });
+  return () => {
+    cancelled = true;
+    unsubscribe?.();
+    unsubscribe = null;
+  };
+}
 
 export const PRIVATE_MESSAGE_COLLECTION = "privateMessageThreads";
 export const PUBLIC_MESSAGE_THREAD_KEY = "lan-private-message-thread-v1";
@@ -147,12 +174,14 @@ export async function createPrivateVisitorThread({ name, message, verificationTo
 }
 
 export async function getPrivateVisitorThread(threadId) {
+  await ensureMessagingFirestore();
   const snapshot = await getDoc(threadRef(threadId));
   if (!snapshot.exists()) return null;
   return normalizePrivateThread(snapshot);
 }
 
 export async function getPrivateThreadMessages(threadId) {
+  await ensureMessagingFirestore();
   const snapshot = await getDocs(query(messagesRef(threadId), orderBy("createdAt", "asc")));
   return snapshot.docs.map((entry) => normalizePrivateMessage(entry));
 }
@@ -160,6 +189,7 @@ export async function getPrivateThreadMessages(threadId) {
 export function subscribePrivateVisitorThread(threadId, onChange, onError) {
   const id = validateThreadId(threadId);
   if (!id) return () => {};
+  return deferredFirestoreSubscription(() => {
   let latestThread = null;
   let latestMessages = [];
   let initialThreadReceived = false;
@@ -168,16 +198,66 @@ export function subscribePrivateVisitorThread(threadId, onChange, onError) {
   const emit = () => {
     if (initialThreadReceived) onChange?.({ thread: latestThread, messages: latestMessages });
   };
-  const stopThread = onSnapshot(threadRef(id), (snapshot) => {
-    latestThread = snapshot.exists() ? normalizePrivateThread(snapshot) : null;
-    initialThreadReceived = true;
-    emit();
+  let stopThread = null;
+  let stopMessages = null;
+  let closed = false;
+
+  const stopBoth = () => {
+    if (closed) return;
+    closed = true;
+    const subscriptions = [stopThread, stopMessages];
+    stopThread = null;
+    stopMessages = null;
+    for (const stop of subscriptions) {
+      try {
+        stop?.();
+      } catch (cleanupError) {
+        console.error("Private messaging listener cleanup failed.", cleanupError);
+      }
+    }
+  };
+
+  const handleListenerError = (error) => {
+    if (closed) return;
+    stopBoth();
+    onError?.(error);
+  };
+
+  const startListener = (subscribe) => {
+    const stop = subscribe();
+    if (closed) {
+      try {
+        stop?.();
+      } catch (cleanupError) {
+        console.error("Private messaging listener cleanup failed.", cleanupError);
+      }
+      return null;
+    }
+    return stop;
+  };
+
+  try {
+    stopThread = startListener(() => onSnapshot(threadRef(id), (snapshot) => {
+      if (closed) return;
+      latestThread = snapshot.exists() ? normalizePrivateThread(snapshot) : null;
+      initialThreadReceived = true;
+      emit();
+    }, handleListenerError));
+
+    if (!closed) {
+      stopMessages = startListener(() => onSnapshot(query(messagesRef(id), orderBy("createdAt", "asc")), (snapshot) => {
+        if (closed) return;
+        latestMessages = snapshot.docs.map((entry) => normalizePrivateMessage(entry));
+        emit();
+      }, handleListenerError));
+    }
+  } catch (error) {
+    stopBoth();
+    throw error;
+  }
+
+  return stopBoth;
   }, onError);
-  const stopMessages = onSnapshot(query(messagesRef(id), orderBy("createdAt", "asc")), (snapshot) => {
-    latestMessages = snapshot.docs.map((entry) => normalizePrivateMessage(entry));
-    emit();
-  }, onError);
-  return () => { stopThread(); stopMessages(); };
 }
 
 export async function sendPrivateVisitorMessage(threadId, message) {
@@ -201,9 +281,10 @@ export async function forgetPrivateVisitorThread(threadId) {
 }
 
 export function subscribeAdminPrivateThreads(onChange, onError) {
-  return onSnapshot(query(collection(db, PRIVATE_MESSAGE_COLLECTION), orderBy("updatedAt", "desc")), (snapshot) => {
-    onChange?.(snapshot.docs.map((entry) => normalizePrivateThread(entry)));
-  }, onError);
+  return deferredFirestoreSubscription(() =>
+    onSnapshot(query(collection(db, PRIVATE_MESSAGE_COLLECTION), orderBy("updatedAt", "desc")), (snapshot) => {
+      onChange?.(snapshot.docs.map((entry) => normalizePrivateThread(entry)));
+    }, onError), onError);
 }
 
 export function subscribeAdminPrivateThread(threadId, onChange, onError) {
@@ -211,6 +292,7 @@ export function subscribeAdminPrivateThread(threadId, onChange, onError) {
 }
 
 export async function sendAdminPrivateReply(threadId, message) {
+  await ensureMessagingFirestore();
   const body = normalizeMessageText(message);
   if (!body) throw new Error("Write a reply first.");
   const ref = threadRef(threadId);
@@ -226,6 +308,7 @@ export async function sendAdminPrivateReply(threadId, message) {
 }
 
 export async function markAdminPrivateThreadRead(threadId) {
+  await ensureMessagingFirestore();
   const ref = threadRef(threadId);
   const current = await getDoc(ref);
   if (!current.exists()) return;
@@ -233,6 +316,7 @@ export async function markAdminPrivateThreadRead(threadId) {
 }
 
 export async function deleteAdminPrivateThread(threadId) {
+  await ensureMessagingFirestore();
   const id = validateThreadId(threadId);
   if (!id) throw new Error("Conversation identity is invalid.");
   const messageSnapshot = await getDocs(messagesRef(id));

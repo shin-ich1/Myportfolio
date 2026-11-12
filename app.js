@@ -958,7 +958,6 @@ async function initFirebase() {
 }
 
 async function loadPublicPortfolioData(deadline = 0) {
-  lanStartupMark("public data processing start");
   loadedPublicCollections.clear();
   sourceMaps.clear();
   dynamicPortfolioModuleRegistry = [];
@@ -1008,10 +1007,8 @@ async function loadPublicPortfolioData(deadline = 0) {
     throw new Error("Public portfolio core content could not load before the startup deadline.");
   }
   applySingletonContent(home, profile, contact);
-  lanStartupMark("singletons applied");
 
   const results = await collectionWork;
-  lanStartupMark("all collections settled");
   const loaded = new Map();
   for (const result of results) {
     if (result.status === "fulfilled") {
@@ -1059,7 +1056,6 @@ async function loadPublicPortfolioData(deadline = 0) {
     .sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));
   if (deadline && Date.now() >= deadline) throw new Error("Public portfolio data load exceeded the startup deadline.");
   const [capabilityResult] = await capabilityWork;
-  lanStartupMark("all capabilities settled");
   if (capabilityResult.status === "rejected") throw capabilityResult.reason;
   if (deadline && Date.now() >= deadline) throw new Error("Public portfolio capabilities exceeded the startup deadline.");
   publicExperiences = rawPublicExperiences.map(normalizeExperience)
@@ -1071,7 +1067,6 @@ async function loadPublicPortfolioData(deadline = 0) {
       ? resolveLinkedProject(project)
       : normalizeStandaloneProject(project)
   )).filter(Boolean);
-  lanStartupMark("public data processing complete");
 }
 
 async function loadEmergencyFallback(reason) {

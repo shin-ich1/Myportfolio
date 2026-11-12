@@ -1,0 +1,52 @@
+name: Isolated Hero cold-load regression (NO DEPLOY)
+
+on:
+  push:
+    branches:
+      - fix/hero-cls-geometry-20261111
+
+permissions:
+  contents: read
+
+jobs:
+  verify-hero-cls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Complete automated repository tests
+        run: node --test tests/*.test.mjs
+      - name: Syntax checks
+        run: |
+          node --check app.js
+          node --check public-adaptive.js
+          node --check static-image-renditions.js
+          node --check scripts/prepare-static-images.mjs
+          node --check tests/public-hero-cold-load-geometry.test.mjs
+      - name: Confirm isolated diff scope
+        shell: bash
+        run: |
+          git diff --name-only 5b2ca75b79edb6aece2fbdfe46a224c0eddfdc4b..HEAD | sort
+          if git diff --name-only 5b2ca75b79edb6aece2fbdfe46a224c0eddfdc4b..HEAD | grep -E '^(admin/|telemetry-worker/|firestore\.rules$|storage\.rules$|firebase\.json$|\.firebaserc$|index\.html$)'; then
+            echo "Unexpected privileged, deployment, or unrelated Public startup file change"
+            exit 1
+          fi
+      - name: Assemble single candidate source ZIP (no deploy)
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/hero-candidate"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/hero-candidate"
+          (cd "$RUNNER_TEMP/hero-candidate" && zip -q -r "$RUNNER_TEMP/LAN-Hero-CLS-20261111-CANDIDATE.zip" .)
+          test -s "$RUNNER_TEMP/LAN-Hero-CLS-20261111-CANDIDATE.zip"
+      - name: Upload candidate source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAN-Hero-CLS-20261111-CANDIDATE
+          path: ${{ runner.temp }}/LAN-Hero-CLS-20261111-CANDIDATE.zip
+          if-no-files-found: error
+          retention-days: 14

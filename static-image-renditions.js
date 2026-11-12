@@ -15,7 +15,9 @@ export const STATIC_IMAGE_RENDITIONS = Object.freeze({
   },
   "assets/images/hero.png": {
     "card": "assets/images/hero.card.webp",
-    "detail": "assets/images/hero.detail.webp"
+    "detail": "assets/images/hero.detail.webp",
+    "width": 960,
+    "height": 1443
   },
   "assets/images/it-support-ojt.jpg": {
     "card": "assets/images/it-support-ojt.card.webp",
@@ -155,13 +157,28 @@ export const STATIC_IMAGE_RENDITIONS = Object.freeze({
   }
 });
 
-export function staticImageRendition(value, purpose = "card") {
-  if (typeof value !== "string" || !value || /[?#]/.test(value)) return value;
+function staticImageEntry(value) {
+  if (typeof value !== "string" || !value || /[?#]/.test(value)) return null;
   const prefix = value.startsWith("./") ? "./" : value.startsWith("/") && !value.startsWith("//") ? "/" : "";
   const key = prefix ? value.slice(prefix.length) : value;
   const entry = Object.prototype.hasOwnProperty.call(STATIC_IMAGE_RENDITIONS, key)
     ? STATIC_IMAGE_RENDITIONS[key] : null;
-  if (!entry) return value;
-  const variant = purpose === "detail" ? entry.detail : entry.card;
-  return variant ? prefix + variant : value;
+  return entry ? { entry, prefix } : null;
+}
+
+export function staticImageRendition(value, purpose = "card") {
+  const match = staticImageEntry(value);
+  if (!match) return value;
+  const variant = purpose === "detail" ? match.entry.detail : match.entry.card;
+  return variant ? match.prefix + variant : value;
+}
+
+// Browser image sizing hints use the exact prepared card geometry without
+// changing the dimensions, fit, or styling of the displayed image.
+export function staticImageDimensions(value) {
+  const match = staticImageEntry(value);
+  const width = Number(match?.entry.width);
+  const height = Number(match?.entry.height);
+  return Number.isSafeInteger(width) && width > 0 &&
+    Number.isSafeInteger(height) && height > 0 ? { width, height } : null;
 }

@@ -315,7 +315,8 @@ nav a:focus-visible {
 }
 .hero-img img {
   display: block;
-  width: auto;
+  --portrait-max-height: 600px;
+  width: var(--portrait-render-width, auto);
   max-width: min(100%, 560px);
   height: auto;
   max-height: 600px;
@@ -1378,7 +1379,7 @@ html[data-lan-public-mode="mobile"] .hero { min-height:auto;grid-template-column
 html[data-lan-public-mode="compact"] .hero-img,
 html[data-lan-public-mode="mobile"] .hero-img { order:-1;width:min(450px,100%); }
 html[data-lan-public-mode="compact"] .hero-img img,
-html[data-lan-public-mode="mobile"] .hero-img img { height:auto;max-height:500px; }
+html[data-lan-public-mode="mobile"] .hero-img img { --portrait-max-height:500px;height:auto;max-height:500px; }
 html[data-lan-public-mode="compact"] .split,
 html[data-lan-public-mode="mobile"] .split { grid-template-columns:1fr; }
 html[data-lan-public-mode="compact"].light .site-header nav,
@@ -1392,7 +1393,7 @@ html[data-lan-public-mode="mobile"] [data-open-work-with-me] svg{width:16px;heig
 html[data-lan-public-mode="mobile"] .hero { gap:28px;padding:34px 0 32px; }
 html[data-lan-public-mode="mobile"] .hero h1 { font-size:clamp(3rem,15cqi,4.4rem); }
 html[data-lan-public-mode="mobile"] .roles { font-size:1rem; }
-html[data-lan-public-mode="mobile"] .hero-img img { max-height:430px; }
+html[data-lan-public-mode="mobile"] .hero-img img { --portrait-max-height:430px;max-height:430px; }
 html[data-lan-public-mode="mobile"] .panel { padding:20px; }
 html[data-lan-public-mode="mobile"] .public-layout-item,
 html[data-lan-public-mode="mobile"] .public-layout-grid > .public-layout-item { height:auto; min-height:0; }

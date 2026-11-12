@@ -15,3 +15,27 @@ export function readReviewedPublicSource(path) {
   return normalizeRepoText(execFileSync("git",
     ["show", PUBLIC_REVIEWED_BASELINE + ":" + path], {encoding: "utf8"}));
 }
+// Exact, reviewed Hero-only CSS delta permitted during cold-load geometry work.
+// Every unrelated byte stays protected by the existing reviewed-main guards.
+export function reviewedHeroReservedCssCandidate(baseline) {
+  const changes = [
+    [
+      "  display: block;\n  width: auto;\n  max-width: min(100%, 560px);\n  height: auto;\n  max-height: 600px;",
+      "  display: block;\n  --portrait-max-height: 600px;\n  width: var(--portrait-render-width, auto);\n  max-width: min(100%, 560px);\n  height: auto;\n  max-height: 600px;"
+    ],
+    [
+      'html[data-lan-public-mode="compact"] .hero-img img,\nhtml[data-lan-public-mode="mobile"] .hero-img img { height:auto;max-height:500px; }',
+      'html[data-lan-public-mode="compact"] .hero-img img,\nhtml[data-lan-public-mode="mobile"] .hero-img img { --portrait-max-height:500px;height:auto;max-height:500px; }'
+    ],
+    [
+      'html[data-lan-public-mode="mobile"] .hero-img img { max-height:430px; }',
+      'html[data-lan-public-mode="mobile"] .hero-img img { --portrait-max-height:430px;max-height:430px; }'
+    ]
+  ];
+  let candidate = baseline;
+  for (const [oldRule, newRule] of changes) {
+    if (candidate.split(oldRule).length !== 2) throw new Error("Missing unique reviewed Hero CSS owner");
+    candidate = candidate.replace(oldRule, newRule);
+  }
+  return candidate;
+}

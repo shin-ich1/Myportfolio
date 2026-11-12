@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {execFileSync} from "node:child_process";
 import {withoutAuthorizedPreviewAppOwners, withoutAuthorizedPreviewCssOwners} from "./public-preview-owner-allowlist.mjs";
-import {normalizeRepoText, readReviewedPublicSource} from "./public-reviewed-baseline.mjs";
+import {normalizeRepoText, readReviewedPublicSource, reviewedHeroReservedCssCandidate} from "./public-reviewed-baseline.mjs";
 
 const read = relative => normalizeRepoText(readFileSync(new URL("../"+relative,import.meta.url),"utf8"));
 const app=read("app.js"), service=read("message-service.js");
@@ -20,6 +20,122 @@ const frozenLiveRegionHash = text => {
   for (let i=0;i<text.length;i++) h=Math.imul(h^text.charCodeAt(i),16777619)>>>0;
   return h.toString(16).padStart(8,"0");
 };
+// Only the two authorized source attributes may differ from the pinned reviewed
+// Public baseline in this performance branch. Keep all other Public, Message,
+// Admin and security source byte-identical after existing preview exclusions.
+
+function reviewedStartupOverlapCandidate(baseline) {
+  // Reconstruct precisely the approved Firestore scheduling reordering.
+  // Every other Public/Message/security owner remains baseline-identical.
+  const first = '  const [homeResult, profileResult, contactResult, servicesResult] = await Promise.allSettled([';
+  const second = '  const home = homeResult.status === "fulfilled" ? homeResult.value : {};';
+  const third = '  const registry = portfolioModuleRegistry.filter((module) => module.active);';
+  const fourth = '  const results = await collectionWork;';
+  const a = baseline.indexOf(first);
+  const b = baseline.indexOf(second, a);
+  const c = baseline.indexOf(third, b);
+  const d = baseline.indexOf(fourth, c);
+  assert.ok(a >= 0 && b > a && c > b && d > c, "Startup baseline boundaries must be unique and ordered");
+  const singleton = baseline.slice(a, b).replace(first, "  const singletonWork = Promise.allSettled([");
+  const independent = baseline.slice(c, d);
+  const normalized = baseline.slice(b, c);
+  const candidate = singleton
+    + "\n  // Published collection and capability reads are independent of the core\n"
+    + "  // singleton values. Launch them together, preserving query filters,\n"
+    + "  // fail-closed core validation, and result consumption order.\n"
+    + independent
+    + "  const [homeResult, profileResult, contactResult, servicesResult] = await singletonWork;\n"
+    + normalized;
+  return baseline.slice(0, a) + candidate + baseline.slice(d);
+}
+
+function reviewedHeroIntrinsicCandidate(baseline) {
+  // Review exact non-security deltas separately from the pinned LIVE source.
+  // A changed Admin, Message, Worker, or unrelated Public owner still fails.
+  const expectedChanges = [
+    ['import { storageAssetUrl } from "./storage-asset.js";',
+     'import { normalizeStorageAsset, storageAssetUrl } from "./storage-asset.js";'],
+    ['import { staticImageRendition } from "./static-image-renditions.js";',
+     'import { staticImageDimensions, staticImageRendition } from "./static-image-renditions.js";'],
+    ['    portrait: mediaUrl(raw.portrait || raw.image),',
+     '    portrait: mediaUrl(raw.portrait || raw.image),\n    portraitDimensions: portraitIntrinsicDimensions(raw.portrait || raw.image),'],
+    ['      image: home.portrait,\n      imageAlt: home.portraitAlt',
+     '      image: home.portrait,\n      imageDimensions: home.portraitDimensions,\n      imageAlt: home.portraitAlt'],
+    ['"${escapeHtml(mediaUrl(staticImageRendition(content.hero.image, "card"), { delivery: "card" }))}" data-public-static-fallback',
+     '"${escapeHtml(mediaUrl(staticImageRendition(content.hero.image, "card"), { delivery: "card" }))}"${portraitDimensionAttributes(content.hero.imageDimensions)} data-public-static-fallback']
+  ];
+  let expected = baseline;
+  for (const [before, after] of expectedChanges) {
+    assert.equal(expected.split(before).length, 2, "Unique approved Hero source boundary");
+    expected = expected.replace(before, after);
+  }
+  const helper = `// Preserve actual image proportions before the native Hero image finishes loading.
+  // Prepared static assets and managed uploads share one metadata-based size policy.
+  // Unknown legacy URL dimensions are left unspecified rather than guessed.
+  function portraitIntrinsicDimensions(value) {
+    const asset = normalizeStorageAsset(value);
+    const prepared = staticImageDimensions(value);
+    const width = Number(asset?.width || prepared?.width);
+    const height = Number(asset?.height || prepared?.height);
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+        width <= 0 || height <= 0 || width > 32768 || height > 32768) return null;
+    return { width, height };
+  }
+
+  function portraitDimensionAttributes(dimensions) {
+    const width = Number(dimensions?.width);
+    const height = Number(dimensions?.height);
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+        width <= 0 || height <= 0 || width > 32768 || height > 32768) return "";
+    // The existing Hero CSS uses auto sizing, so width/height HTML hints alone
+    // do not reserve its box before the image bytes arrive. Reserve the exact
+    // border-box width at the current responsive height cap (1px border/side),
+    // without changing its final appearance, native dimensions, or other media.
+    return \` width="\${width}" height="\${height}" style="--portrait-render-width:min(\${width + 2}px,calc(2px + (var(--portrait-max-height) - 2px) * \${width} / \${height}))"\`;
+  }
+
+  `.replace(/^  /gm, "");
+  const anchor = "function browserPdfViewerSource(";
+  assert.equal(expected.split(anchor).length, 2);
+  return expected.replace(anchor, helper + anchor);
+}
+
+function reviewedPortraitDeliveryCandidate(baseline) {
+  const replacements = [
+    ["src=\"${escapeHtml(staticImageRendition(content.hero.image, \"card\"))}\"", "src=\"${escapeHtml(mediaUrl(staticImageRendition(content.hero.image, \"card\"), { delivery: \"card\" }))}\""],
+    ["src=\"${escapeHtml(staticImageRendition(content.about.image, \"card\"))}\"", "src=\"${escapeHtml(mediaUrl(staticImageRendition(content.about.image, \"card\"), { delivery: \"card\" }))}\""]
+  ];
+  let expected = baseline;
+  for (const [original, optimized] of replacements) {
+    assert.equal(expected.split(original).length - 1, 1, "Reviewed baseline must contain one canonical portrait source");
+    assert.equal(app.split(optimized).length - 1, 1, "Optimized source must not duplicate a portrait owner");
+    expected = expected.replace(original, optimized);
+  }
+  return expected;
+}
+
+function reviewedNativeNetworkPriorityCandidate(baseline) {
+  // Permit only the exact new native fetchpriority policy at the existing media owner.
+  // No other Public, Message, Admin, layout or security source gets an exception.
+  const replacements = [
+    ["  const priorityAttribute = priorityMode ? ` fetchpriority=\"${priorityMode}\"` : \"\";",
+     "  // Native low priority keeps offscreen media from contending with the eager Hero.\n  // The existing visibility owner promotes already-visible cards without changing loading behavior.\n  const priorityAttribute = priorityMode ? ` fetchpriority=\"${priorityMode}\"` : (loadingMode === \"lazy\" ? ' fetchpriority=\"low\"' : \"\");"],
+    ["      // User-opened media deserves high priority, but not every visible card.\n      if (viewer) media.fetchPriority = \"high\";",
+     "      // A visible card returns to normal priority; only the user-opened modal becomes high.\n      if (viewer) media.fetchPriority = \"high\";\n      else if (media.fetchPriority === \"low\") media.fetchPriority = \"auto\";"],
+    ["data-public-media-poster src=\"${escapeHtml(posterUrl)}\" alt=\"\" aria-hidden=\"true\" loading=\"lazy\" decoding=\"async\"",
+     "data-public-media-poster src=\"${escapeHtml(posterUrl)}\" alt=\"\" aria-hidden=\"true\" loading=\"lazy\" decoding=\"async\" fetchpriority=\"low\""],
+    ["data-public-static-fallback=\"${escapeHtml(content.about.image)}\" loading=\"lazy\" decoding=\"async\"",
+     "data-public-static-fallback=\"${escapeHtml(content.about.image)}\" loading=\"lazy\" decoding=\"async\" fetchpriority=\"low\""]
+  ];
+  let expected = baseline;
+  for (const [before, after] of replacements) {
+    assert.equal(expected.split(before).length, 2, "Unique canonical priority owner boundary");
+    assert.equal(app.split(after).length, 2, "Candidate must contain exactly one priority owner");
+    expected = expected.replace(before, after);
+  }
+  return expected;
+}
+
 test("Public Message and unrelated app source match the reviewed main baseline outside preview owners",()=>{
   const liveBase=readReviewedPublicSource("app.js");
   const begin=app.indexOf("const PUBLIC_MESSAGE_TURNSTILE_SRC");
@@ -28,7 +144,7 @@ test("Public Message and unrelated app source match the reviewed main baseline o
   const baseEnd=liveBase.indexOf("\nfunction publicServicesValid(",baseBegin);
   assert.ok(begin>0 && end>begin && baseBegin>0 && baseEnd>baseBegin,"Canonical message boundaries must exist");
   assert.equal(app.slice(begin,end),liveBase.slice(baseBegin,baseEnd),"Message/slider logic must remain byte-identical");
-  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(liveBase),
+  assert.equal(withoutAuthorizedPreviewAppOwners(app),withoutAuthorizedPreviewAppOwners(reviewedNativeNetworkPriorityCandidate(reviewedHeroIntrinsicCandidate(reviewedPortraitDeliveryCandidate(reviewedStartupOverlapCandidate(liveBase))))),
     "Only explicit preview/media owners may change; protect all other Public, startup and security source");
   assert.equal((app.match(/const PUBLIC_MESSAGE_TURNSTILE_SRC/g)||[]).length,1);
 });
@@ -37,8 +153,8 @@ test("release preserves the actual LIVE footer and production media/startup owne
   assert.match(app,/site-footer--storage/);
   assert.match(app,/storage-privacy\.html/);
   assert.match(app,/LAN Portfolio Storage uses Google Drive access/);
-  assert.match(app,/import \{ storageAssetUrl \} from "\.\/storage-asset\.js"/);
-  assert.match(app,/import \{ staticImageRendition \} from "\.\/static-image-renditions\.js"/);
+  assert.match(app,/import \{ normalizeStorageAsset, storageAssetUrl \} from "\.\/storage-asset\.js"/);
+  assert.match(app,/import \{ staticImageDimensions, staticImageRendition \} from "\.\/static-image-renditions\.js"/);
   assert.match(app,/function withPublicStartupDeadline\(/);
   assert.match(app,/initPublicAdaptiveMode\(\)/);
 });
@@ -117,7 +233,7 @@ test("obsolete delayed-warmup constant is removed; one canonical message owner r
 test("Unrelated Public CSS matches the reviewed main baseline outside preview owners",()=>{
   const css=read("styles.css");
   const baseline=readReviewedPublicSource("styles.css");
-  assert.equal(withoutAuthorizedPreviewCssOwners(css),withoutAuthorizedPreviewCssOwners(baseline),
+  assert.equal(withoutAuthorizedPreviewCssOwners(css),withoutAuthorizedPreviewCssOwners(reviewedHeroReservedCssCandidate(baseline)),
     "No message puzzle, slider, footer, Admin, or unrelated responsive CSS may change");
   const marker=".public-message-puzzle-layer{";
   const start=css.indexOf(marker);

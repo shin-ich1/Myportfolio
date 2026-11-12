@@ -7,6 +7,9 @@
   <!-- Discover the existing Firebase modules before the app import graph completes. -->
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js" crossorigin>
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js" crossorigin>
+  <!-- Experiment only: discover required Public modules before the app graph parses. -->
+  <link rel="modulepreload" href="module-platform.js">
+  <link rel="modulepreload" href="asset-resolver.js">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#050b14" />

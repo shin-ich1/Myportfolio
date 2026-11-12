@@ -27,6 +27,97 @@ import {
 import { disablePortfolioPushForThread, enablePortfolioPush, rehydratePortfolioPush } from "./notification-service.js";
 import { bindMessageComposerKeyboard } from "./message-composer.js";
 
+
+// Preview-only startup timing diagnostics. Enable with ?lan-startup-profile=1.
+// No contents, visitor identifiers, tokens, or Firestore response bodies are recorded.
+const lanStartupProfileEnabled =
+  /^(?:localhost|127\.0\.0\.1|rolando-portfolio-3f1a3--[a-z0-9-]+\.web\.app)$/i.test(location.hostname) &&
+  new URLSearchParams(location.search).get("lan-startup-profile") === "1";
+const lanStartupProfileEvents = [];
+let lanStartupFirstRenderObserved = false;
+function lanStartupMark(stage, extra = {}) {
+  if (!lanStartupProfileEnabled) return;
+  const record = { stage, sinceNavigationMs: Number(performance.now().toFixed(1)), ...extra };
+  lanStartupProfileEvents.push(record);
+  console.info("[LAN startup timing]", record);
+}
+function lanStartupTime(label, operation) {
+  if (!lanStartupProfileEnabled) return operation();
+  const start = performance.now();
+  lanStartupMark(label + " start");
+  let result;
+  try { result = operation(); }
+  catch (error) {
+    lanStartupMark(label + " error", { durationMs: Number((performance.now() - start).toFixed(1)) });
+    throw error;
+  }
+  return Promise.resolve(result).then(
+    (value) => {
+      lanStartupMark(label + " complete", { durationMs: Number((performance.now() - start).toFixed(1)) });
+      return value;
+    },
+    (error) => {
+      lanStartupMark(label + " error", { durationMs: Number((performance.now() - start).toFixed(1)) });
+      throw error;
+    }
+  );
+}
+function lanStartupObserveFirstReveal() {
+  if (!lanStartupProfileEnabled || lanStartupFirstRenderObserved) return;
+  lanStartupFirstRenderObserved = true;
+  const loader = document.getElementById("siteLoader");
+  const hero = document.querySelector(".hero-img img");
+  let heroReady = !hero;
+  let loaderHidden = !loader;
+  let reported = false;
+  const reportComplete = () => {
+    if (!heroReady || !loaderHidden || reported) return;
+    reported = true;
+    lanStartupMark("COMPLETE HERO REVEAL");
+    console.table(lanStartupProfileEvents);
+  };
+  if (hero) {
+    const onHeroReady = () => {
+      if (heroReady) return;
+      heroReady = true;
+      const timing = performance.getEntriesByName(hero.currentSrc || hero.src, "resource").at(-1);
+      lanStartupMark("hero image ready", timing ? {
+        resourceStartMs: Number(timing.startTime.toFixed(1)),
+        resourceEndMs: Number(timing.responseEnd.toFixed(1))
+      } : {});
+      reportComplete();
+    };
+    if (hero.complete && hero.naturalWidth > 0) onHeroReady();
+    else {
+      hero.addEventListener("load", onHeroReady, { once: true });
+      hero.addEventListener("error", () => lanStartupMark("hero image error"), { once: true });
+    }
+    lanStartupMark("hero element created");
+  }
+  if (loader) {
+    const reportHidden = () => {
+      if (loaderHidden || !loader.classList.contains("is-hidden") ||
+          getComputedStyle(loader).visibility !== "hidden") return;
+      loaderHidden = true;
+      lanStartupMark("loader visually hidden");
+      reportComplete();
+    };
+    loader.addEventListener("transitionend", (event) => {
+      if (event.target === loader) reportHidden();
+    });
+    const observer = new MutationObserver(() => {
+      if (!loader.classList.contains("is-hidden")) return;
+      lanStartupMark("loader hide class applied");
+      requestAnimationFrame(reportHidden);
+      observer.disconnect();
+    });
+    observer.observe(loader, { attributes: true, attributeFilter: ["class"] });
+    reportHidden();
+  }
+  reportComplete();
+}
+lanStartupMark("app module started");
+
 const app = document.querySelector("#app");
 const icon = (name) => `<i data-lucide="${name}"></i>`;
 const cleanText = (value = "") => String(value ?? "").trim();
@@ -782,7 +873,7 @@ function withPublicStartupDeadline(request, deadline) {
 }
 
 async function loadPublicSingleton(documentId, deadline = 0) {
-  const snapshot = await withPublicStartupDeadline(firebase.getDoc(firebase.doc(firebase.db, "portfolio", documentId)), deadline);
+  const snapshot = await lanStartupTime(`getDoc portfolio/${documentId}`, () => withPublicStartupDeadline(firebase.getDoc(firebase.doc(firebase.db, "portfolio", documentId)), deadline));
   if (!snapshot.exists()) return {};
   const value = snapshot.data() || {};
   return isPublicRecord(value) ? value : {};
@@ -795,15 +886,15 @@ async function loadPublicCollection(name, deadline = 0) {
     firebase.where("status", "==", "published"),
     firebase.where("visible", "==", true)
   );
-  let snapshot = await withPublicStartupDeadline(firebase.getDocs(canonicalQuery), deadline);
+  let snapshot = await lanStartupTime(`getDocs ${name} published`, () => withPublicStartupDeadline(firebase.getDocs(canonicalQuery), deadline));
 
   // Transitional compatibility for legacy Education records.
   if (snapshot.empty && name === "education") {
-    snapshot = await withPublicStartupDeadline(firebase.getDocs(firebase.query(
+    snapshot = await lanStartupTime("getDocs education legacy", () => withPublicStartupDeadline(firebase.getDocs(firebase.query(
       reference,
       firebase.where("educationStatus", "==", "published"),
       firebase.where("educationVisible", "==", true)
-    )), deadline);
+    )), deadline));
   }
 
   return snapshot.docs.map((item) => ({ id: item.id, ...(item.data() || {}) }));
@@ -814,8 +905,8 @@ async function loadPublicCapabilities(deadline = 0) {
   publicToolsById = new Map();
   const capabilityCollection = firebase.collection(firebase.db, "skills");
   const snapshots = await Promise.allSettled([
-    withPublicStartupDeadline(firebase.getDocs(firebase.query(capabilityCollection, firebase.where("status", "==", "published"), firebase.where("visible", "==", true))), deadline),
-    withPublicStartupDeadline(firebase.getDocs(firebase.query(capabilityCollection, firebase.where("active", "==", true))), deadline)
+    lanStartupTime("getDocs skills published", () => withPublicStartupDeadline(firebase.getDocs(firebase.query(capabilityCollection, firebase.where("status", "==", "published"), firebase.where("visible", "==", true))), deadline)),
+    lanStartupTime("getDocs skills legacy", () => withPublicStartupDeadline(firebase.getDocs(firebase.query(capabilityCollection, firebase.where("active", "==", true))), deadline))
   ]);
   snapshots.forEach((result) => {
     if (result.status !== "fulfilled") return;
@@ -839,10 +930,11 @@ async function initFirebase() {
   if (!firebaseConfig?.apiKey || !firebaseConfig?.projectId) return false;
   const deadline = Date.now() + 15000;
   try {
-    const [appModule, firestoreModule] = await withPublicStartupDeadline(Promise.all([
+    const [appModule, firestoreModule] = await lanStartupTime("Firebase SDK imports", () => withPublicStartupDeadline(Promise.all([
       import("https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js"),
       import("https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js")
-    ]), deadline);
+    ]), deadline));
+    lanStartupMark("Firebase initializeApp start");
     const firebaseApp = appModule.initializeApp(firebaseConfig);
     firebase = {
       db: firestoreModule.getFirestore(firebaseApp),
@@ -855,7 +947,8 @@ async function initFirebase() {
       addDoc: firestoreModule.addDoc,
       serverTimestamp: firestoreModule.serverTimestamp
     };
-    await loadPublicPortfolioData(deadline);
+    lanStartupMark("Firebase getFirestore complete");
+    await lanStartupTime("full public data load", () => loadPublicPortfolioData(deadline));
     publicDataMode = "firestore";
     return true;
   } catch (error) {
@@ -865,6 +958,7 @@ async function initFirebase() {
 }
 
 async function loadPublicPortfolioData(deadline = 0) {
+  lanStartupMark("public data processing start");
   loadedPublicCollections.clear();
   sourceMaps.clear();
   dynamicPortfolioModuleRegistry = [];
@@ -914,8 +1008,10 @@ async function loadPublicPortfolioData(deadline = 0) {
     throw new Error("Public portfolio core content could not load before the startup deadline.");
   }
   applySingletonContent(home, profile, contact);
+  lanStartupMark("singletons applied");
 
   const results = await collectionWork;
+  lanStartupMark("all collections settled");
   const loaded = new Map();
   for (const result of results) {
     if (result.status === "fulfilled") {
@@ -963,6 +1059,7 @@ async function loadPublicPortfolioData(deadline = 0) {
     .sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));
   if (deadline && Date.now() >= deadline) throw new Error("Public portfolio data load exceeded the startup deadline.");
   const [capabilityResult] = await capabilityWork;
+  lanStartupMark("all capabilities settled");
   if (capabilityResult.status === "rejected") throw capabilityResult.reason;
   if (deadline && Date.now() >= deadline) throw new Error("Public portfolio capabilities exceeded the startup deadline.");
   publicExperiences = rawPublicExperiences.map(normalizeExperience)
@@ -974,6 +1071,7 @@ async function loadPublicPortfolioData(deadline = 0) {
       ? resolveLinkedProject(project)
       : normalizeStandaloneProject(project)
   )).filter(Boolean);
+  lanStartupMark("public data processing complete");
 }
 
 async function loadEmergencyFallback(reason) {
@@ -2473,6 +2571,8 @@ function renderPublicLayoutGrid(items = []) {
 }
 
 function render() {
+  const lanRenderStart = lanStartupProfileEnabled ? performance.now() : 0;
+  lanStartupMark("render start");
   const experiences = experienceItems();
   const photos = photoItems();
   const projects = projectItems();
@@ -2575,6 +2675,9 @@ function render() {
   bind();
   bindPublicMediaFrames(app);
   window.lucide?.createIcons();
+  lanStartupMark("render complete", lanStartupProfileEnabled
+    ? { durationMs: Number((performance.now() - lanRenderStart).toFixed(1)) } : {});
+  lanStartupObserveFirstReveal();
 }
 
 
@@ -4879,10 +4982,11 @@ function installPublicPortfolioSync() {
   document.documentElement.dataset.theme = document.documentElement.classList.contains("light") ? "light" : "dark";
   document.documentElement.dataset.cmsThemeResolved = document.documentElement.dataset.theme;
   installPublicPortfolioSync();
+  lanStartupMark("startup bootstrap entered");
 
   try {
     const ready = await initFirebase();
-    if (!ready) await loadEmergencyFallback("Firebase/Firestore initialization failed");
+    if (!ready) await lanStartupTime("emergency fallback", () => loadEmergencyFallback("Firebase/Firestore initialization failed"));
     render();
   } catch (error) {
     console.error("Public portfolio startup failed.", error);
@@ -4894,6 +4998,7 @@ function installPublicPortfolioSync() {
       app.innerHTML = `<main class="public-runtime-error"><h1>LΛN Portfolio</h1><p>The portfolio could not be loaded. Please try again shortly.</p></main>`;
     }
   } finally {
+    lanStartupMark("startup finally reached");
     requestAnimationFrame(() => document.querySelector("#siteLoader")?.classList.add("is-hidden"));
   }
 })();

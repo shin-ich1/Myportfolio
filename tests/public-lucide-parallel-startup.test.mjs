@@ -4,78 +4,100 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
-const script = html.match(/<script\b[^>]*src="https:\/\/unpkg\.com\/lucide@0\.468\.0\/dist\/umd\/lucide\.min\.js"[^>]*><\/script>/)?.[0] || "";
 
-function readinessOwner() {
-  const start = app.indexOf("function waitForPublicLucide() {");
-  const end = app.indexOf("\nconst publicLucideReady = waitForPublicLucide();", start);
-  assert.ok(start >= 0 && end > start, "Missing canonical Lucide readiness owner");
-  return app.slice(start, end);
+function loadOwner() {
+  const match = html.match(/<script>\s*(window\.lanPublicLucideReady\s*=\s*new Promise\([\s\S]*?)\s*<\/script>/);
+  assert.ok(match, "Missing single canonical early Lucide readiness owner");
+  return match[1];
 }
 
-function readinessHarness(initialLucide = null, missingScript = false) {
+function harness(terminalEvent = "load") {
   const listeners = new Map();
-  const node = {
+  let appendCount = 0;
+  let url = "";
+  const script = {
+    async: false,
     addEventListener(name, listener, options) {
-      assert.equal(options?.once, true, "Readiness callbacks must be one-shot");
-      assert.ok(!listeners.has(name), "No duplicate listeners");
+      assert.equal(options?.once, true, "Use one-shot load/error listeners");
+      assert.ok(!listeners.has(name), "No duplicated listeners");
       listeners.set(name, listener);
     }
   };
-  const window = { lucide: initialLucide };
   const document = {
-    querySelector(selector) {
-      assert.equal(selector, "script[data-public-lucide]");
-      return missingScript ? null : node;
+    createElement(tag) {
+      assert.equal(tag, "script");
+      return script;
+    },
+    head: {
+      appendChild(node) {
+        appendCount++;
+        assert.equal(node, script);
+        assert.equal(script.async, true, "Do not serialize independent script downloads");
+        assert.deepEqual([...listeners.keys()], ["load", "error"],
+          "Register both listeners before starting download, including cached/fast errors");
+        url = script.src;
+        if (terminalEvent === "synchronous-load") listeners.get("load")();
+        return node;
+      }
     }
   };
-  const wait = new Function("document", "window", readinessOwner() + "\nreturn waitForPublicLucide;")(document, window);
-  return { wait, window, listeners };
+  const window = {};
+  new Function("window", "document", loadOwner())(window, document);
+  return {
+    ready: window.lanPublicLucideReady,
+    listeners,
+    get appendCount() { return appendCount; },
+    get url() { return url; }
+  };
 }
 
-test("Public Lucide is non-parser-blocking without changing the pinned icon library", () => {
-  assert.ok(script, "Keep existing pinned Lucide URL");
-  assert.match(script, /\sasync(?:\s|>)/, "Lucide should not gate main application module execution");
-  assert.doesNotMatch(script, /\sdefer(?:\s|>)/, "Do not combine async and defer");
-  assert.match(script, /\sdata-public-lucide(?:\s|>)/, "Readiness owner must find the canonical script");
-  assert.equal((html.match(/lucide\.min\.js/g) || []).length, 1, "Do not load the icon library twice");
+test("One pinned Lucide library starts asynchronously before the Public module graph", () => {
+  const loader = loadOwner();
+  assert.match(loader, /document\.createElement\("script"\)/);
+  assert.match(loader, /script\.async = true/);
+  assert.match(loader, /https:\/\/unpkg\.com\/lucide@0\.468\.0\/dist\/umd\/lucide\.min\.js/);
+  assert.equal((html.match(/lucide\.min\.js/g) || []).length, 1);
+  assert.ok(html.indexOf("window.lanPublicLucideReady") < html.indexOf('src="app.js"'));
+  assert.doesNotMatch(html, /<script[^>]+lucide\.min\.js[^>]+\bdefer\b/,
+    "Remove the deferred Lucide execution barrier");
 });
 
-test("Lucide and Firebase start independently but full portfolio renders with icons ready", () => {
-  assert.match(app, /\nconst publicLucideReady = waitForPublicLucide\(\);/);
+test("Firebase and Lucide begin independently; the complete Public render waits for icons", () => {
   const boot = app.slice(app.lastIndexOf("\n(async () => {"));
-  assert.match(boot, /const ready = await initFirebase\(\);[\s\S]*?await publicLucideReady;\s*render\(\);/,
+  assert.match(boot, /const ready = await initFirebase\(\);[\s\S]*?await window\.lanPublicLucideReady;\s*render\(\);/,
     "Run Firestore without waiting for Lucide, then render the complete portfolio after both");
-  assert.match(boot, /await loadEmergencyFallback\(error\);\s*await publicLucideReady;\s*render\(\);/,
-    "Emergency rendering must preserve icon readiness too");
+  assert.match(boot, /await loadEmergencyFallback\(error\);\s*await window\.lanPublicLucideReady;\s*render\(\);/,
+    "Emergency render must preserve icon readiness too");
   assert.match(app, /bindPublicMediaFrames\(app\);\s*window\.lucide\?\.createIcons\(\);/,
-    "Keep existing renderer as the only owner of initial icon hydration");
+    "Retain existing canonical icon hydration");
   assert.match(app, /function renderPublicMessageStart\([\s\S]*?window\.lucide\?\.createIcons\(\);/,
-    "Messages must retain their existing icon handling");
+    "Message UI keeps its existing icon handling");
 });
 
-test("Readiness resolves immediately when Lucide was already downloaded", async () => {
-  const view = readinessHarness({ createIcons() {} });
-  await view.wait();
-  assert.equal(view.listeners.size, 0, "Already loaded script must not register late listeners");
-});
-
-test("Slow Lucide load does not block module setup and readiness settles on load or error", async () => {
-  for (const terminalEvent of ["load", "error"]) {
-    const view = readinessHarness();
-    let settled = false;
-    const ready = view.wait().then(() => { settled = true; });
+test("Slow Lucide request and CDN error both settle without indefinite loader", async () => {
+  for (const event of ["load", "error"]) {
+    const view = harness(event);
+    assert.equal(view.appendCount, 1);
+    assert.equal(view.url, "https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js");
+    let done = false;
+    const pending = view.ready.then(() => { done = true; });
     await Promise.resolve();
-    assert.equal(settled, false, "Wait only at final complete-portfolio render boundary");
-    assert.deepEqual([...view.listeners.keys()], ["load", "error"]);
-    view.listeners.get(terminalEvent)();
-    await ready;
-    assert.equal(settled, true, terminalEvent + " must settle the gate");
+    assert.equal(done, false);
+    view.listeners.get(event)();
+    await pending;
+    assert.equal(done, true);
   }
 });
 
-test("Missing Lucide element must not leave the loader stuck forever", async () => {
-  const view = readinessHarness(null, true);
-  await view.wait();
-  assert.equal(view.listeners.size, 0);
+test("Cached Lucide that completes during script insertion cannot lose its load event", async () => {
+  const view = harness("synchronous-load");
+  await view.ready;
+  assert.equal(view.appendCount, 1);
+  assert.equal(view.url, "https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js");
+});
+
+test("No additional messaging/puzzle/network owner is introduced by the icon loader", () => {
+  const loader = loadOwner();
+  assert.doesNotMatch(loader, /firebase|firestore|message|puzzle|window\.lucide\?\.createIcons/);
+  assert.doesNotMatch(loader, /onload=|onerror=|innerHTML|eval\(/);
 });

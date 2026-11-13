@@ -2122,8 +2122,8 @@ function ensurePhotoRecordSelection() {
     ),
     deletePrompt: (ids) => ({
       title: `Delete ${ids.length} selected sample${ids.length === 1 ? "" : "s"}?`,
-      message: `Move ${ids.length} selected sample${ids.length === 1 ? "" : "s"} to deleted samples?`,
-      confirmLabel: "Move to deleted"
+      message: `Permanently delete ${ids.length} selected sample${ids.length === 1 ? "" : "s"} and their unused uploaded files?`,
+      confirmLabel: "Delete permanently"
     }),
     onDelete: deleteSelectedPhotoProjects
   });
@@ -3314,7 +3314,7 @@ async function saveProject(event) {
         await removePhotoEditingProject(projectId);
       } catch (cleanupError) {
         console.error(
-          "Unable to soft-delete the incomplete project:",
+          "Unable to delete the incomplete project:",
           cleanupError
         );
       }
@@ -3546,7 +3546,7 @@ function askDeleteProject(project) {
 
   if (elements.deleteModalTitle) {
     elements.deleteModalTitle.textContent =
-      `Move “${project.title || "Untitled Sample"}” to deleted samples?`;
+      `Permanently delete “${project.title || "Untitled Sample"}”?`;
   }
 
   openModal(elements.deleteModal, elements.confirmDelete);
@@ -3563,7 +3563,7 @@ async function confirmDeleteProject() {
     return;
   }
 
-  setLoading(true, "Moving sample to deleted samples...");
+  setLoading(true, "Deleting sample permanently...");
 
   if (elements.confirmDelete) {
     elements.confirmDelete.disabled = true;
@@ -3574,10 +3574,10 @@ async function confirmDeleteProject() {
     state.selectedIds.delete(project.id);
     state.pendingDeleteId = "";
     closeModal(elements.deleteModal);
-    showToast("Sample moved to deleted samples.");
+    showToast("Sample deleted permanently.");
     await loadProjects();
   } catch (error) {
-    console.error("Unable to soft-delete sample:", error);
+    console.error("Unable to delete sample:", error);
     showToast(
       getErrorMessage(error, "The sample could not be deleted."),
       "error"
@@ -3633,11 +3633,11 @@ async function runBulkUpdate(
 async function deleteSelectedPhotoProjects(ids = []) {
   const cleanIds = [...new Set(ids.map((id) => String(id || "").trim()).filter(Boolean))];
   if (!cleanIds.length) return;
-  setPanelLoading(true, "Moving selected samples to deleted samples...");
+  setPanelLoading(true, "Deleting selected samples...");
   try {
-    await updateManyPhotoEditingProjects(cleanIds, { isDeleted: true });
+    for (const id of cleanIds) await removePhotoEditingProject(id);
     state.projects = state.projects.filter((project) => !cleanIds.includes(project.id));
-    showToast(`${cleanIds.length} sample${cleanIds.length === 1 ? "" : "s"} moved to deleted samples.`, "success");
+    showToast(`${cleanIds.length} sample${cleanIds.length === 1 ? "" : "s"} deleted permanently.`, "success");
     await loadProjects();
   } finally {
     setPanelLoading(false);

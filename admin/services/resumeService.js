@@ -1,7 +1,7 @@
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
 import { db } from "./firebase.js";
 import { normalizeAssetReference, isManagedAssetReference, persistentAssetUrl, resolveAssetUrl } from "../../asset-resolver.js";
-import { commitMediaAssets, cleanupDeletedRecordMedia, cleanupRemovedMediaAssets } from "./mediaAssetLifecycleService.js";
+import { commitMediaAssets, cleanupDeletedRecordMedia, cleanupRemovedMediaAssets, queueManagedMediaCleanup } from "./mediaAssetLifecycleService.js";
 
 const COLLECTION = "resumes";
 const resumesRef = collection(db, COLLECTION);
@@ -139,6 +139,8 @@ export async function deleteResume(id) {
   const reference = doc(db, COLLECTION, id);
   const previousSnapshot = await getDoc(reference);
   const previous = previousSnapshot.exists() ? normalizeResume(previousSnapshot.data() || {}) : null;
+  const media = previous?.uploadedAsset || null;
+  queueManagedMediaCleanup(media, "resume-deleted");
   await deleteDoc(reference);
-  if (previous) await cleanupDeletedRecordMedia(previous.uploadedAsset, { reason: "resume-deleted" });
+  if (previous) await cleanupDeletedRecordMedia(media, { reason: "resume-deleted" });
 }

@@ -463,3 +463,77 @@ test("Worker physically deletes only references cleared by its server-side scan"
   assert.equal(denied.status, 503);
   assert.equal(actions.length, 2, "Reference scan outage must not trigger provider calls");
 });
+
+
+test("Project deletion notices distinguish pending storage cleanup from confirmed completion", async () => {
+  const source = read("admin/js/projects.js");
+  const singleStart = source.indexOf("async function confirmDelete() {");
+  const singleEnd = source.indexOf("\nfunction setupDropZone(", singleStart);
+  assert.ok(singleStart >= 0 && singleEnd > singleStart, "Use the real single-delete handler");
+
+  async function runSingle(mediaCleanup) {
+    const notices = [];
+    const button = {
+      textContent: "Delete Permanently",
+      disabled: false,
+      setAttribute() {},
+      removeAttribute() {}
+    };
+    const context = {
+      pendingDeleteId: "project-one",
+      isDeleting: false,
+      $: id => id === "confirmDeleteButton" ? button : null,
+      deleteProject: async () => ({ id: "project-one", mediaCleanup }),
+      notify: (message, type = "success") => notices.push({ message, type }),
+      closeDelete() {},
+      closeForm() {},
+      refresh: async () => {},
+      console
+    };
+    const deleteOne = runInNewContext(
+      source.slice(singleStart, singleEnd) + "\nconfirmDelete", context
+    );
+    await deleteOne();
+    return notices;
+  }
+
+  const pendingSingle = await runSingle({ queued: true, pendingCount: 1 });
+  assert.equal(pendingSingle.length, 1);
+  assert.equal(pendingSingle[0].type, "warning", "Pending provider cleanup is not full deletion success");
+  assert.match(pendingSingle[0].message, /project.*delet/i);
+  assert.match(pendingSingle[0].message, /(?:storage|media).*(?:pending|queued)|(?:pending|queued).*(?:storage|media)/i);
+
+  const finishedSingle = await runSingle({ queued: false, pendingCount: 0 });
+  assert.equal(finishedSingle.length, 1);
+  assert.equal(finishedSingle[0].type, "success", "Confirmed cleanup keeps normal success feedback");
+
+  const bulkStart = source.indexOf("onDelete: async (ids) => {");
+  const bulkEnd = source.indexOf("\n    }\n  })?.sync();", bulkStart);
+  assert.ok(bulkStart >= 0 && bulkEnd > bulkStart, "Use the real bulk-delete handler");
+  const bulkFn = source.slice(
+    bulkStart + "onDelete: ".length, bulkEnd + "\n    }".length
+  );
+
+  async function runBulk(pendingIds) {
+    const notices = [];
+    const context = {
+      deleteProject: async id => ({ id, mediaCleanup: { queued: pendingIds.has(id) } }),
+      idInput: { value: "" },
+      closeForm() {},
+      refresh: async () => {},
+      notify: (message, type = "success") => notices.push({ message, type })
+    };
+    const bulkDelete = runInNewContext("(" + bulkFn + ")", context);
+    await bulkDelete(["project-one", "project-two"]);
+    return notices;
+  }
+
+  const pendingBulk = await runBulk(new Set(["project-two"]));
+  assert.equal(pendingBulk.length, 1);
+  assert.equal(pendingBulk[0].type, "warning", "Bulk deletion cannot report full success with queued assets");
+  assert.match(pendingBulk[0].message, /(?:storage|media).*(?:pending|queued)|(?:pending|queued).*(?:storage|media)/i);
+
+  const finishedBulk = await runBulk(new Set());
+  assert.equal(finishedBulk.length, 1);
+  assert.equal(finishedBulk[0].type, "success");
+});

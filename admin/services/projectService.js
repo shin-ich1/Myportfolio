@@ -1402,18 +1402,14 @@ export async function deleteProject(projectId, options = {}) {
   const previousData = existingSnapshot.exists() ? existingSnapshot.data() || {} : {};
   const strictMediaCleanup = options.strictMediaCleanup === true;
 
-  let mediaCleanup = { deleted: [], skipped: [], queued: false };
   if (strictMediaCleanup) {
-    mediaCleanup = await cleanupDeletedRecordMedia(projectOwnedMedia(previousData), { reason: "project-deleted", strict: true });
+    await cleanupDeletedRecordMedia(projectOwnedMedia(previousData), { reason: "project-deleted", strict: true });
   }
   await deleteDoc(reference);
   if (!strictMediaCleanup) {
-    mediaCleanup = await cleanupDeletedRecordMedia(projectOwnedMedia(previousData), { reason: "project-deleted" });
+    await cleanupDeletedRecordMedia(projectOwnedMedia(previousData), { reason: "project-deleted" });
   }
   announcePortfolioContentChanged("projects");
-  // Record deletion and provider deletion are distinct outcomes. The caller
-  // must never report confirmed storage removal when cleanup was only queued.
-  return { id: projectId, mediaCleanup };
 }
 
 export async function loadProjects() {

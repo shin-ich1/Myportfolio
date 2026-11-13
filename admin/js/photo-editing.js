@@ -3180,6 +3180,7 @@ function collectProjectData(mediaOverrides = {}) {
 
 async function uploadPendingImages(projectId) {
   const displayType = normalizeDisplayType(fields.displayType?.value);
+  const categoryRouting = { context: { categoryName: resolvedCategoryValue() } };
   const uploadedMedia = {
     before: state.media.before,
     after: state.media.after,
@@ -3205,7 +3206,8 @@ async function uploadPendingImages(projectId) {
             file,
             projectId,
             kind,
-            progress => updateUploadProgress(kind, progress)
+            progress => updateUploadProgress(kind, progress),
+            categoryRouting
           )
         );
         uploadedMedia[kind] = uploaded;
@@ -3230,7 +3232,8 @@ async function uploadPendingImages(projectId) {
             file,
             projectId,
             `gallery-${startingCount + index + 1}`,
-            overallProgress
+            overallProgress,
+            categoryRouting
           )
         );
         uploadedMedia.gallery.push(uploaded);

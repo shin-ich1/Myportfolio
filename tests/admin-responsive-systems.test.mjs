@@ -543,3 +543,345 @@ test("Project deletion notices distinguish pending storage cleanup from confirme
   assert.equal(finishedBulk.length, 1);
   assert.equal(finishedBulk[0].type, "success");
 });
+
+
+test("Google Drive upload folders follow content categories and avoid opaque record subfolders", () => {
+  // Test the actual Worker folder planner, independent of OAuth or live Drive files.
+  const worker = read("telemetry-worker/src/index.js").replace(/\r\n?/g, "\n");
+  const begin = worker.indexOf("function driveLogicalSegments(");
+  const end = worker.indexOf("\nasync function driveEnsureChildFolder(", begin);
+  assert.ok(begin >= 0 && end > begin, "Canonical Worker folder planner must exist");
+  const plan = runInNewContext(worker.slice(begin, end) + "\ndriveLogicalSegments", {});
+
+  const firstPhoto = plan({
+    ownerType: "photo-editing", ownerId: "opaque-photo-record-a", categoryName: "Product Ads"
+  });
+  assert.deepEqual(Array.from(firstPhoto, x => x.displayName), ["photo-editing", "Product Ads"]);
+  assert.ok(firstPhoto.every(x => !x.displayName.includes("opaque-photo-record")));
+  const sameCategoryDifferentRecord = plan({
+    ownerType: "photo-editing", ownerId: "opaque-photo-record-b", categoryName: "Product Ads"
+  });
+  assert.deepEqual(Array.from(sameCategoryDifferentRecord, x => x.logicalKey),
+    Array.from(firstPhoto, x => x.logicalKey),
+    "Records in the same category must share one category folder");
+
+  const projects = plan({
+    ownerType: "project", ownerId: "opaque-project-id", pageName: "Projects", recordTitle: "Project A"
+  });
+  assert.deepEqual(Array.from(projects, x => x.displayName), ["Projects"],
+    "Projects without an explicit category belong directly in Projects");
+
+  const noCategoryPhoto = plan({ ownerType: "photo-editing", ownerId: "opaque-photo-record-c" });
+  assert.deepEqual(Array.from(noCategoryPhoto, x => x.displayName), ["photo-editing"],
+    "Missing category must never create a synthetic Record folder");
+
+  const admin = read("admin/js/photo-editing.js").replace(/\r\n?/g, "\n");
+  const uploadStart = admin.indexOf("async function uploadPendingImages(");
+  const uploadEnd = admin.indexOf("\nasync function saveProject(", uploadStart);
+  assert.ok(uploadStart >= 0 && uploadEnd > uploadStart);
+  const uploadCode = admin.slice(uploadStart, uploadEnd);
+  assert.match(uploadCode, /const categoryRouting\s*=\s*\{\s*context:\s*\{\s*categoryName:\s*resolvedCategoryValue\(\)/,
+    "The Photo Editing upload caller must derive the selected CMS category once");
+  assert.equal([...uploadCode.matchAll(/categoryRouting\s*\n\s*\)/g)].length, 2,
+    "Comparison/single and gallery uploads must use the same category route");
+  const photoService = read("admin/services/photoEditingService.js");
+  assert.match(photoService, /context:\s*\{\s*\.\.\.\(routing\.context\s*\|\|\s*\{\}\)/,
+    "Photo Editing upload service must forward context to the shared uploader");
+  const provider = read("admin/services/storageProviders/googleDriveStorageProvider.js");
+  assert.match(provider, /categoryName:\s*text\(context\.categoryName\)/,
+    "Drive provider must forward the selected category, normalized, without local folder creation");
+  assert.match(worker, /const DRIVE_CONTEXT_SCHEMA[\s\S]*?categoryName:\s*REQUEST_SCHEMA_ANY/,
+    "Worker must explicitly validate the category field");
+});
+
+
+function createMockDriveFolderRuntime() {
+  const worker = read("telemetry-worker/src/index.js").replace(/\r\n?/g, "\n");
+  const start = worker.indexOf("async function driveEnsureRoot(");
+  const end = worker.indexOf("\nasync function handleDriveConnectStart(", start);
+  assert.ok(start >= 0 && end > start, "Use actual canonical Worker Drive folder functions");
+  const stored = new Map();
+  const folders = new Map();
+  const operations = [];
+  const transientFailures = new Set();
+  let nextId = 0;
+  const reply = (data, status = 200) => new Response(JSON.stringify(data), {
+    status, headers: { "Content-Type": "application/json" }
+  });
+  const driveApi = async (_profileId, _env, url, options = {}) => {
+    const endpoint = new URL(url);
+    const method = options.method || "GET";
+    const parts = endpoint.pathname.split("/");
+    const id = parts[parts.indexOf("files") + 1];
+    if (id && id !== "files") {
+      if (transientFailures.has(id)) return reply({ error: "temporarily unavailable" }, 503);
+      if (parts.includes("permissions")) {
+        const folder = folders.get(id);
+        return folder && !folder.trashed
+          ? reply({ permissions: folder.public ? [{ type: "anyone", role: "reader" }] : [] })
+          : reply({ error: "notFound" }, 404);
+      }
+      if (method === "PATCH") {
+        const folder = folders.get(id);
+        if (!folder || folder.trashed) return reply({ error: "notFound" }, 404);
+        const patch = JSON.parse(options.body);
+        Object.assign(folder, patch);
+        operations.push({ method, id, patch });
+        return reply(folder);
+      }
+      const folder = folders.get(id);
+      return folder ? reply(folder) : reply({ error: "notFound" }, 404);
+    }
+    if (method === "POST") {
+      const attrs = JSON.parse(options.body);
+      const folder = {
+        id: "created-" + (++nextId),
+        name: attrs.name, mimeType: attrs.mimeType,
+        parents: attrs.parents || [], appProperties: attrs.appProperties || {},
+        trashed: false, public: false
+      };
+      folders.set(folder.id, folder);
+      operations.push({ method, folder: { ...folder } });
+      return reply(folder);
+    }
+    const q = endpoint.searchParams.get("q") || "";
+    const match = (expression) => expression.exec(q)?.[1] || "";
+    const requestedName = match(/name = '([^']+)'/);
+    const parent = match(/'([^']+)' in parents/);
+    const logicalKey = match(/key='lanLogicalKey' and value='([^']+)'/);
+    const profile = match(/key='lanStorageProfile' and value='([^']+)'/);
+    const requireRoot = q.includes("key='lanStorageRoot'");
+    return reply({ files: [...folders.values()].filter(folder =>
+      !folder.trashed && folder.mimeType === "application/vnd.google-apps.folder" &&
+      (!requestedName || folder.name === requestedName) &&
+      (!parent || folder.parents.includes(parent)) &&
+      (!logicalKey || folder.appProperties.lanLogicalKey === logicalKey) &&
+      (!profile || folder.appProperties.lanStorageProfile === profile) &&
+      (!requireRoot || folder.appProperties.lanStorageRoot === "1")
+    ) });
+  };
+  const context = {
+    DRIVE_ROOT_NAME: "LAN Portfolio CMS",
+    DRIVE_FOLDER_MIME: "application/vnd.google-apps.folder",
+    DRIVE_PUBLIC_VERIFY_TTL_MS: 300000,
+    driveApi,
+    kvJsonGet: async (_, key) => stored.get(key) || null,
+    kvJsonPut: async (_, key, value) => { stored.set(key, value); },
+    storageKv: () => ({ delete: async key => { stored.delete(key); operations.push({ method: "KV_DELETE", key }); } }),
+    driveProfileKey: id => "drive-profile:" + id,
+    driveFolderKey: (id, parent, key) => "drive-folder:" + id + ":" + parent + ":" + key,
+    driveManagementUrl: id => "https://drive.google.com/drive/folders/" + id,
+    escapeDriveQuery: value => String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'"),
+    serviceError: (message, attrs) => Object.assign(new Error(message), attrs),
+    Date, URL, Response, encodeURIComponent
+  };
+  const actions = runInNewContext(worker.slice(start, end) +
+    "\n({ driveEnsureRoot, driveCheckPublicAccess, driveEnsureChildFolder, driveEnsureContextFolder })", context);
+  return { ...actions, stored, folders, operations, transientFailures, env: {} };
+}
+
+test("Google Drive root reconciliation replaces deleted and legacy roots without restoring test media", async () => {
+  const runtime = createMockDriveFolderRuntime();
+  runtime.stored.set("drive-profile:profile-A", {
+    profileId: "profile-A", rootFolderId: "old-deleted-id",
+    rootFolderName: "LΛN Portfolio CMS - Public Storage", publicReady: true,
+    publicVerifiedAt: Date.now()
+  });
+  const root = await runtime.driveEnsureRoot("profile-A", runtime.env);
+  assert.equal(root.rootFolderName, "LAN Portfolio CMS");
+  assert.notEqual(root.rootFolderId, "old-deleted-id");
+  assert.equal(runtime.folders.get(root.rootFolderId)?.name, "LAN Portfolio CMS");
+  assert.equal(runtime.folders.get(root.rootFolderId)?.appProperties?.lanStorageRoot, "1");
+  await runtime.driveEnsureRoot("profile-A", runtime.env);
+  assert.equal(runtime.operations.filter(x => x.method === "POST").length, 1,
+    "Repeated uploads must reuse the one managed root");
+  assert.equal(runtime.operations.filter(x => x.method === "DELETE").length, 0,
+    "Root recovery must never erase or restore unrelated media");
+});
+
+test("Google Drive reuses modules and recreates only trashed categories, without record folders", async () => {
+  const runtime = createMockDriveFolderRuntime();
+  runtime.folders.set("root", {
+    id: "root", name: "LAN Portfolio CMS",
+    mimeType: "application/vnd.google-apps.folder", trashed: false,
+    parents: [], appProperties: { lanStorageRoot: "1", lanStorageProfile: "p" }
+  });
+  runtime.stored.set("drive-profile:p", {
+    profileId: "p", rootFolderId: "root", rootFolderName: "LAN Portfolio CMS", publicReady: true
+  });
+  runtime.folders.set("module", {
+    id: "module", name: "photo-editing", parents: ["root"],
+    mimeType: "application/vnd.google-apps.folder", trashed: false,
+    appProperties: { lanLogicalKey: "page:photo-editing", lanStorageProfile: "p" }
+  });
+  runtime.folders.set("trashed-category", {
+    id: "trashed-category", name: "Product Ads", parents: ["module"],
+    mimeType: "application/vnd.google-apps.folder", trashed: true,
+    appProperties: { lanLogicalKey: "page:photo-editing/category:product-ads", lanStorageProfile: "p" }
+  });
+  runtime.stored.set("drive-folder:p:module:page:photo-editing/category:product-ads", {
+    folderId: "trashed-category", parentId: "module"
+  });
+  const context = { ownerType: "photo-editing", ownerId: "opaque-record-1", categoryName: "Product Ads" };
+  const id = await runtime.driveEnsureContextFolder("p", context, runtime.env);
+  assert.notEqual(id, "trashed-category");
+  assert.deepEqual(Array.from(runtime.folders.get(id).parents), ["module"]);
+  assert.equal(runtime.folders.get(id).name, "Product Ads");
+  const reused = await runtime.driveEnsureContextFolder("p", { ...context, ownerId: "opaque-record-2" }, runtime.env);
+  assert.equal(reused, id);
+  assert.equal(runtime.operations.filter(x => x.method === "POST").length, 1);
+  assert.ok(runtime.operations.some(x => x.method === "KV_DELETE" && x.key.includes("category:product-ads")));
+  const projectsFolder = await runtime.driveEnsureContextFolder("p", { ownerType: "project", pageName: "Projects", ownerId: "record-8" }, runtime.env);
+  assert.equal(runtime.folders.get(projectsFolder).name, "Projects");
+  assert.deepEqual(Array.from(runtime.folders.get(projectsFolder).parents), ["root"]);
+  assert.equal(runtime.operations.filter(x => x.method === "DELETE").length, 0);
+});
+
+test("Google Drive upload session gracefully retries category context against a legacy Worker", async () => {
+  const source = read("admin/services/storageProviders/googleDriveStorageProvider.js");
+  const providerSource = source.replace(/^import .*;\r?\n/gm, "")
+    .replace("export const googleDriveStorageProvider =", "const googleDriveStorageProvider =")
+    .replace("export default googleDriveStorageProvider;", "");
+  const requests = [];
+  const provider = runInNewContext(providerSource + "\ngoogleDriveStorageProvider", {
+    FormData, Error,
+    authorizedWorkerRequest: async (path, options) => {
+      const payload = JSON.parse(options.body);
+      requests.push({ path, payload });
+      if (requests.length === 1) {
+        const error = new Error("Unknown request field: body.context.categoryName");
+        error.code = "request-schema-unknown-field";
+        throw error;
+      }
+      return { pendingToken: "pending-token" };
+    },
+    authorizedWorkerFetch: async () => ({ ok: true, json: async () => ({
+      provider: "google-drive", assetId: "fresh-image", storageProfileId: "p"
+    }) }),
+    publicWorkerUrl: () => "",
+    normalizeStorageAsset: asset => asset,
+    fetch: async () => { throw new Error("unexpected fetch"); }
+  });
+  const file = new File(["safe"], "photo.png", { type: "image/png" });
+  const saved = await provider.upload(file, {
+    storageProfileId: "p", ownerType: "photo-editing", categoryName: "Product Ads"
+  });
+  assert.equal(saved.assetId, "fresh-image");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].payload.context.categoryName, "Product Ads");
+  assert.equal(Object.hasOwn(requests[1].payload.context, "categoryName"), false);
+});
+
+
+test("Google Drive recovers a trashed root without silently inheriting stale sharing approval", async () => {
+  const r = createMockDriveFolderRuntime();
+  r.folders.set("trashed-root", {
+    id: "trashed-root", name: "LAN Portfolio CMS",
+    mimeType: "application/vnd.google-apps.folder", trashed: true,
+    parents: [], appProperties: { lanStorageRoot: "1", lanStorageProfile: "p" }
+  });
+  r.stored.set("drive-profile:p", {
+    profileId: "p", rootFolderId: "trashed-root",
+    rootFolderName: "LAN Portfolio CMS", publicReady: true, publicVerifiedAt: Date.now()
+  });
+  const recovered = await r.driveEnsureRoot("p", r.env);
+  assert.notEqual(recovered.rootFolderId, "trashed-root");
+  assert.equal(recovered.publicReady, false,
+    "New root must require fresh permission verification, not reuse cached approval");
+  assert.equal(recovered.publicVerifiedAt, 0);
+  assert.equal(r.folders.get("trashed-root").trashed, true, "Old root remains untouched");
+  assert.equal(r.operations.filter(x => x.method === "POST").length, 1);
+});
+
+test("Google Drive restores missing module/category folders generically and preserves unrelated folders", async () => {
+  const r = createMockDriveFolderRuntime();
+  r.folders.set("root", {
+    id: "root", name: "LAN Portfolio CMS",
+    mimeType: "application/vnd.google-apps.folder", trashed: false,
+    parents: [], appProperties: { lanStorageRoot: "1", lanStorageProfile: "p" }
+  });
+  r.folders.set("unrelated", {
+    id: "unrelated", name: "Personal Files", parents: [],
+    mimeType: "application/vnd.google-apps.folder", trashed: false,
+    appProperties: {}
+  });
+  r.stored.set("drive-profile:p", { profileId: "p", rootFolderId: "root", publicReady: true });
+  const cms = { moduleId: "custom-future-module", pageName: "Future Module", categoryName: "Screenshots", ownerId: "different-records" };
+  const category = await r.driveEnsureContextFolder("p", cms, r.env);
+  assert.equal(r.folders.get(category).name, "Screenshots");
+  const moduleId = r.folders.get(category).parents[0];
+  assert.equal(r.folders.get(moduleId).name, "Future Module");
+  assert.deepEqual(Array.from(r.folders.get(moduleId).parents), ["root"]);
+  assert.equal(await r.driveEnsureContextFolder("p", { ...cms, ownerId: "second" }, r.env), category);
+  assert.equal(r.operations.filter(x => x.method === "POST").length, 2);
+  assert.equal(r.folders.get("unrelated").name, "Personal Files");
+  assert.equal(r.operations.filter(x => ["DELETE", "PATCH"].includes(x.method)).length, 0);
+});
+
+test("Google Drive cache validation fails closed on transient Drive errors instead of creating duplicates", async () => {
+  const r = createMockDriveFolderRuntime();
+  r.folders.set("root", {
+    id: "root", name: "LAN Portfolio CMS",
+    mimeType: "application/vnd.google-apps.folder", trashed: false, parents: [],
+    appProperties: { lanStorageRoot: "1", lanStorageProfile: "p" }
+  });
+  r.stored.set("drive-profile:p", { profileId: "p", rootFolderId: "root", publicReady: true });
+  r.transientFailures.add("root");
+  await assert.rejects(() => r.driveEnsureRoot("p", r.env), error => {
+    assert.equal(error.code, "google-drive-root-verify");
+    return true;
+  });
+  assert.equal(r.operations.filter(x => x.method === "POST").length, 0,
+    "Provider outages must not be mistaken for deleted folders");
+  r.transientFailures.clear();
+  const folder = await r.driveEnsureContextFolder("p", { ownerType: "project", pageName: "Projects" }, r.env);
+  const folderKey = "drive-folder:p:root:page:project";
+  r.stored.set(folderKey, { folderId: folder, parentId: "root" });
+  r.transientFailures.add(folder);
+  await assert.rejects(() =>
+    r.driveEnsureContextFolder("p", { ownerType: "project", pageName: "Projects" }, r.env),
+    error => error.code === "google-drive-folder-verify"
+  );
+  assert.equal(r.operations.filter(x => x.method === "POST").length, 1);
+});
+
+
+test("Google Drive physical deletion removes only resolved managed assets and purges their CDN cache", async () => {
+  const worker = read("telemetry-worker/src/index.js").replace(/\r\n?/g, "\n");
+  const begin = worker.indexOf("async function deleteDriveManagedReference(");
+  const end = worker.indexOf("\nfunction mediaReferenceProvider(", begin);
+  assert.ok(begin >= 0 && end > begin);
+  const deletedUrls = [];
+  const kvDeletes = [];
+  const cachePurges = [];
+  const cleanedFolders = [];
+  const remove = runInNewContext(worker.slice(begin, end) + "\ndeleteDriveManagedReference", {
+    resolveDriveManagedReference: async ref => ref.assetId === "owned" ? {
+      profileId: "p", fileId: "owned", folderId: "module-folder", name: "image.png"
+    } : null,
+    driveAccessToken: async () => "mock-token",
+    fetch: async (url, options) => {
+      deletedUrls.push({ url, method: options.method, auth: options.headers.Authorization });
+      return { ok: true, status: 204 };
+    },
+    storageKv: () => ({ delete: async key => { kvDeletes.push(key); } }),
+    driveAssetKey: (profile, id) => "drive-asset:" + profile + ":" + id,
+    purgeDrivePublicCache: async (...args) => { cachePurges.push(args); },
+    driveCleanupEmptyGeneratedFolders: async (...args) => { cleanedFolders.push(args); },
+    serviceError: (message, attrs) => Object.assign(new Error(message), attrs),
+    encodeURIComponent
+  });
+  const ignored = await remove({ storageProfileId: "p", assetId: "not-managed" }, {});
+  assert.equal(ignored.deleted, false);
+  assert.equal(deletedUrls.length, 0, "Unresolved asset must never trigger deletion");
+  const result = await remove({ storageProfileId: "p", assetId: "owned" }, {});
+  assert.equal(result.deleted, true);
+  assert.equal(deletedUrls.length, 1);
+  assert.equal(deletedUrls[0].method, "DELETE");
+  assert.match(deletedUrls[0].url, /\/drive\/v3\/files\/owned$/);
+  assert.deepEqual(kvDeletes, ["drive-asset:p:owned"]);
+  assert.deepEqual(Array.from(cachePurges[0]), ["p", "owned"]);
+  assert.equal(cleanedFolders[0][0], "p");
+  assert.equal(cleanedFolders[0][1], "module-folder");
+  assert.equal(cleanedFolders.length, 1);
+});

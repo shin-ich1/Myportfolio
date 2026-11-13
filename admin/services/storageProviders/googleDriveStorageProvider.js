@@ -76,26 +76,41 @@ export const googleDriveStorageProvider = Object.freeze({
     const profileId = text(context.storageProfileId || context.profile?.id);
     if (!profileId) throw new Error('Google Drive storage profile ID is required.');
     if (context.access === 'admin-only') throw new Error('Google Drive public storage cannot accept Admin-only files.');
-    const session = await authorizedWorkerRequest('/storage/google-drive/upload-session', {
-      method: 'POST',
-      body: JSON.stringify({
-        profileId,
-        name: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        bytes: Number(file.size) || 0,
-        access: context.access || 'public-preview',
-        context: {
-          ownerType: context.ownerType || '',
-          ownerId: context.ownerId || '',
-          moduleId: context.moduleId || '',
-          fieldId: context.fieldId || '',
-          pageName: context.pageName || '',
-          moduleName: context.moduleName || '',
-          recordTitle: context.recordTitle || '',
-          ownerTitle: context.ownerTitle || ''
-        }
-      })
-    });
+    const request = {
+      profileId,
+      name: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      bytes: Number(file.size) || 0,
+      access: context.access || 'public-preview',
+      context: {
+        ownerType: context.ownerType || '',
+        ownerId: context.ownerId || '',
+        moduleId: context.moduleId || '',
+        fieldId: context.fieldId || '',
+        pageName: context.pageName || '',
+        moduleName: context.moduleName || '',
+        ...(text(context.categoryName) ? { categoryName: text(context.categoryName) } : {}),
+        recordTitle: context.recordTitle || '',
+        ownerTitle: context.ownerTitle || ''
+      }
+    };
+    let session;
+    try {
+      session = await authorizedWorkerRequest('/storage/google-drive/upload-session', {
+        method: 'POST', body: JSON.stringify(request)
+      });
+    } catch (error) {
+      // During a mixed Hosting/Worker rollout, an older strict Worker does not
+      // recognize the optional category field. Retry ONLY that schema error;
+      // never bypass authentication, storage readiness or other validation.
+      const rejectedCategory = error?.code === 'request-schema-unknown-field' &&
+        String(error?.message || '').includes('body.context.categoryName');
+      if (!rejectedCategory || !Object.hasOwn(request.context, 'categoryName')) throw error;
+      const { categoryName: _unsupported, ...legacyContext } = request.context;
+      session = await authorizedWorkerRequest('/storage/google-drive/upload-session', {
+        method: 'POST', body: JSON.stringify({ ...request, context: legacyContext })
+      });
+    }
     onProgress(8);
     const finalized = await uploadThroughWorker(profileId, session.pendingToken, file, onProgress);
     return normalizeStorageAsset(finalized);

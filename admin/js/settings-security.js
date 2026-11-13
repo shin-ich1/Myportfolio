@@ -30,6 +30,9 @@ let activeStepUpRequest = null;
 let enrollmentWatchTimer = null;
 let enrollmentCompletionInFlight = false;
 let securityAccessStateRefreshInFlight = false;
+let securityOverviewRefreshInFlight = null;
+let securityBrandingInFlight = null;
+let securityBrandingLoaded = false;
 let recoveryRotationActivationPending = false;
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -131,13 +134,22 @@ function render() {
 }
 
 async function refresh() {
+  if (securityOverviewRefreshInFlight) return securityOverviewRefreshInFlight;
+  const pending = (async () => {
+    try {
+      overview = await getSecurityOverview();
+      render();
+    } catch (error) {
+      $('securityGatewayState').textContent = 'Unavailable';
+      $('securityGatewayState').className = 'health-pill danger';
+      console.error('Security overview failed:', error);
+    }
+  })();
+  securityOverviewRefreshInFlight = pending;
   try {
-    overview = await getSecurityOverview();
-    render();
-  } catch (error) {
-    $('securityGatewayState').textContent = 'Unavailable';
-    $('securityGatewayState').className = 'health-pill danger';
-    console.error('Security overview failed:', error);
+    await pending;
+  } finally {
+    if (securityOverviewRefreshInFlight === pending) securityOverviewRefreshInFlight = null;
   }
 }
 
@@ -147,9 +159,13 @@ function securityPanelIsLiveVisible() {
 }
 
 async function refreshSecurityAccessState() {
-  if (!overview || securityAccessStateRefreshInFlight || !securityPanelIsLiveVisible()) return;
+  if (securityAccessStateRefreshInFlight || !securityPanelIsLiveVisible()) return;
   securityAccessStateRefreshInFlight = true;
   try {
+    if (!overview) {
+      await Promise.all([refresh(), loadBranding()]);
+      return;
+    }
     const accessState = await getSecurityAccessState();
     overview = { ...overview, ...accessState };
     render();
@@ -707,16 +723,27 @@ $('refreshSecurityActivityButton')?.addEventListener('click', async () => {
 });
 
 async function loadBranding() {
+  if (securityBrandingLoaded) return;
+  if (securityBrandingInFlight) return securityBrandingInFlight;
+  const pending = (async () => {
+    try {
+      const result = await getSecurityEmailBranding();
+      const branding = result.branding || {};
+      $('securityEmailSenderName').value = branding.senderName || '';
+      $('securityEmailLogoUrl').value = branding.logoUrl || '';
+      $('securityEmailHeading').value = branding.heading || '';
+      $('securityEmailFooter').value = branding.footer || '';
+      $('securityEmailProviderState').textContent = result.provider === 'configured' ? 'Configured' : 'Not configured';
+      securityBrandingLoaded = true;
+    } catch (error) {
+      $('securityEmailBrandingStatus').textContent = error.message;
+    }
+  })();
+  securityBrandingInFlight = pending;
   try {
-    const result = await getSecurityEmailBranding();
-    const branding = result.branding || {};
-    $('securityEmailSenderName').value = branding.senderName || '';
-    $('securityEmailLogoUrl').value = branding.logoUrl || '';
-    $('securityEmailHeading').value = branding.heading || '';
-    $('securityEmailFooter').value = branding.footer || '';
-    $('securityEmailProviderState').textContent = result.provider === 'configured' ? 'Configured' : 'Not configured';
-  } catch (error) {
-    $('securityEmailBrandingStatus').textContent = error.message;
+    await pending;
+  } finally {
+    if (securityBrandingInFlight === pending) securityBrandingInFlight = null;
   }
 }
 
@@ -739,7 +766,10 @@ $('securityEmailBrandingForm')?.addEventListener('submit', async event => {
 
 const incomingEnrollmentId = new URLSearchParams(window.location.search).get('approveDeviceEnrollment');
 void (async () => {
-  await refresh();
-  if (incomingEnrollmentId) await initializeIncomingEnrollment(incomingEnrollmentId);
+  if (incomingEnrollmentId) {
+    await Promise.all([refresh(), loadBranding()]);
+    await initializeIncomingEnrollment(incomingEnrollmentId);
+  } else if (securityPanelIsLiveVisible()) {
+    await refreshSecurityAccessState();
+  }
 })();
-loadBranding();

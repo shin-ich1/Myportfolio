@@ -92,3 +92,130 @@ test("unsupported browser never creates a fake push subscription",async()=>{
     else globalThis.window=previous;
   }
 });
+
+test("Security & Access initializes on demand without duplicate overview reads", async () => {
+  const source = read("admin/js/settings-security.js");
+  const start = source.indexOf("async function refresh() {");
+  const end = source.indexOf("function stopEnrollmentApprovalWatch()", start);
+  assert.ok(start >= 0 && end > start, "Use the existing Security refresh and tab handlers");
+
+  let visible = false;
+  let resolveOverview;
+  const deferredOverview = new Promise(resolve => { resolveOverview = resolve; });
+  const listeners = new Map();
+  const calls = { overview: 0, access: 0, branding: 0, render: 0 };
+  const on = (name, callback) => listeners.set(name, [...(listeners.get(name) || []), callback]);
+  const context = {
+    overview: null,
+    securityOverviewRefreshInFlight: null,
+    securityAccessStateRefreshInFlight: false,
+    window: { addEventListener: on },
+    document: {
+      visibilityState: "visible",
+      querySelector: () => ({ classList: { contains: () => !visible } }),
+      addEventListener: on
+    },
+    $: () => ({ textContent: "", className: "" }),
+    getSecurityOverview: () => { calls.overview++; return deferredOverview; },
+    getSecurityAccessState: async () => {
+      calls.access++;
+      return { devices: [], sessions: [], capabilities: { securityManagement: false } };
+    },
+    loadBranding: async () => { calls.branding++; },
+    render: () => { calls.render++; },
+    console
+  };
+  runInNewContext(source.slice(start, end), context);
+
+  assert.equal(calls.overview, 0, "Control-only startup must not fetch the security overview");
+  visible = true;
+  const first = context.refreshSecurityAccessState();
+  const duplicate = context.refreshSecurityAccessState();
+  assert.equal(calls.overview, 1, "Concurrent Security activation must share one overview request");
+  assert.equal(calls.branding, 1, "First activation must also initialize branding");
+  resolveOverview({ devices: [], sessions: [], events: [], capabilities: {} });
+  await Promise.all([first, duplicate]);
+  assert.equal(calls.render, 1, "Complete overview must render on first activation");
+  assert.equal(calls.access, 0, "First activation must not immediately refetch the same lists");
+
+  const focus = listeners.get("focus")?.[0];
+  const visibility = listeners.get("visibilitychange")?.[0];
+  assert.equal(typeof focus, "function");
+  assert.equal(typeof visibility, "function");
+  focus();
+  visibility();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.access, 1, "Concurrent focus and visibility events must share one access-state request");
+
+  visible = false;
+  focus();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.access, 1, "Hidden Security panel must not refresh access-state lists");
+
+  const boot = source.slice(source.indexOf("const incomingEnrollmentId ="));
+  assert.match(boot, /if\s*\(incomingEnrollmentId\)\s*\{/,
+    "Incoming trusted-device enrollment must retain an explicit startup path");
+  assert.match(boot, /await Promise\.all\(\[refresh\(\), loadBranding\(\)\]\)/,
+    "Incoming enrollment must initialize overview and branding before approval handling");
+  assert.match(boot, /initializeIncomingEnrollment\(incomingEnrollmentId\)/);
+  assert.doesNotMatch(boot, /await refresh\(\);\s*if\s*\(incomingEnrollmentId\)/,
+    "Control-only startup must not eagerly load the overview");
+});
+
+test("Security startup skips hidden Control, but preserves active and enrollment routes", async () => {
+  const security = read("admin/js/settings-security.js");
+  const start = security.indexOf("const incomingEnrollmentId =");
+  assert.ok(start >= 0);
+  const boot = security.slice(start).replace(
+    "void (async () => {", "globalThis.securityBoot = (async () => {"
+  );
+  const run = async (search, visible) => {
+    const calls = [];
+    const context = {
+      URLSearchParams,
+      window: { location: { search } },
+      securityPanelIsLiveVisible: () => visible,
+      refresh: async () => { calls.push("overview"); },
+      loadBranding: async () => { calls.push("branding"); },
+      refreshSecurityAccessState: async () => { calls.push("access"); },
+      initializeIncomingEnrollment: async (id) => { calls.push("enroll:" + id); }
+    };
+    runInNewContext(boot, context);
+    await context.securityBoot;
+    return calls;
+  };
+  assert.deepEqual(await run("", false), [], "Hidden Control must not trigger security reads");
+  assert.deepEqual(await run("", true), ["access"], "Direct Security opening must initialize");
+  assert.deepEqual(await run("?approveDeviceEnrollment=challenge123", false),
+    ["overview", "branding", "enroll:challenge123"],
+    "Incoming trusted-device link must prepare Security before enrollment");
+});
+
+test("Security branding initialization shares one request and reuses loaded result", async () => {
+  const security = read("admin/js/settings-security.js");
+  const start = security.indexOf("async function loadBranding() {");
+  const end = security.indexOf("\n$('securityEmailBrandingForm')", start);
+  assert.ok(start >= 0 && end > start);
+  const fields = new Map();
+  let resolveBranding;
+  let fetches = 0;
+  const gate = new Promise(resolve => { resolveBranding = resolve; });
+  const context = {
+    securityBrandingInFlight: null,
+    securityBrandingLoaded: false,
+    getSecurityEmailBranding: () => { fetches++; return gate; },
+    $: id => {
+      if (!fields.has(id)) fields.set(id, { value: "", textContent: "" });
+      return fields.get(id);
+    }
+  };
+  runInNewContext(security.slice(start, end), context);
+  const first = context.loadBranding();
+  const duplicate = context.loadBranding();
+  assert.equal(fetches, 1, "Concurrent activation must not repeat branding requests");
+  resolveBranding({ branding: { heading: "Security ready" }, provider: "configured" });
+  await Promise.all([first, duplicate]);
+  await context.loadBranding();
+  assert.equal(fetches, 1, "Already-loaded branding must not be fetched again");
+  assert.equal(fields.get("securityEmailHeading").value, "Security ready");
+});

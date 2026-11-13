@@ -6,12 +6,13 @@
    - Cloud Firestore stores project metadata.
    - Cloudinary stores uploaded images.
    - Firebase Storage is not used.
-   - Project deletion uses soft delete.
+   - Project deletion is permanent; provider cleanup follows canonical media ownership.
    ========================================================= */
 
 import {
   addDoc,
   collection,
+  deleteDoc,
   deleteField,
   doc,
   getDoc,
@@ -29,7 +30,7 @@ import { db } from "./firebase.js";
 import { uploadImage } from "./storageUploadService.js";
 import { cleanSkillData } from "./skillService.js";
 import { announcePortfolioContentChanged } from "./portfolioSyncService.js";
-import { commitMediaAssets, cleanupRemovedMediaAssets } from "./mediaAssetLifecycleService.js";
+import { commitMediaAssets, cleanupDeletedRecordMedia, cleanupRemovedMediaAssets, queueManagedMediaCleanup } from "./mediaAssetLifecycleService.js";
 import { normalizeAssetReference, hasAssetReference, assetReferenceIdentity, persistentAssetUrl } from "../../asset-resolver.js";
 
 /* =========================================================
@@ -1614,45 +1615,30 @@ export async function updatePhotoEditingProject(
 }
 
 /* =========================================================
-   SOFT DELETE PROJECT
+   PERMANENT DELETE PROJECT
    ========================================================= */
 
-export async function removePhotoEditingProject(
-  projectId
-) {
+export async function removePhotoEditingProject(projectId) {
   try {
-    const id = requireProjectId(
-      projectId
-    );
-
-    const userId = currentUserId();
-
+    const id = requireProjectId(projectId);
     await assertPhotoEditingProjectIsNotLinked(id);
 
-    await updateDoc(
-      doc(db, COLLECTION_NAME, id),
-      {
-        isDeleted: true,
-        status: "draft",
-        visible: false,
+    const reference = doc(db, COLLECTION_NAME, id);
+    const snapshot = await getDoc(reference);
+    if (!snapshot.exists()) throw new Error("Photo editing project not found.");
+    const media = photoEditingOwnedMedia(snapshot.data() || {});
 
-        deletedAt: serverTimestamp(),
-        deletedBy: userId,
-
-        updatedAt: serverTimestamp(),
-        updatedBy: userId
-      }
-    );
+    // Persist deletion intent before the record disappears. The shared Worker
+    // checks every remaining CMS reference before either provider can delete.
+    queueManagedMediaCleanup(media, "photo-editing-deleted");
+    await deleteDoc(reference);
+    const mediaCleanup = await cleanupDeletedRecordMedia(media, { reason: "photo-editing-deleted" });
 
     announcePortfolioContentChanged("photo-editing");
-
-    return id;
+    return { id, mediaCleanup };
   } catch (error) {
     throw createServiceError(
-      getErrorMessage(
-        error,
-        "Unable to remove the photo editing project."
-      ),
+      getErrorMessage(error, "Unable to delete the photo editing project."),
       error
     );
   }

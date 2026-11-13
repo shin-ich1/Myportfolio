@@ -1632,10 +1632,10 @@ export async function removePhotoEditingProject(projectId) {
     // checks every remaining CMS reference before either provider can delete.
     queueManagedMediaCleanup(media, "photo-editing-deleted");
     await deleteDoc(reference);
-    await cleanupDeletedRecordMedia(media, { reason: "photo-editing-deleted" });
+    const mediaCleanup = await cleanupDeletedRecordMedia(media, { reason: "photo-editing-deleted" });
 
     announcePortfolioContentChanged("photo-editing");
-    return id;
+    return { id, mediaCleanup };
   } catch (error) {
     throw createServiceError(
       getErrorMessage(error, "Unable to delete the photo editing project."),

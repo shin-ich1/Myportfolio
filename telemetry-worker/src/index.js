@@ -342,7 +342,7 @@ async function cloudinaryAssetDownload(asset, env) {
 
 
 const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-const DRIVE_ROOT_NAME = "LΛN Portfolio CMS - Public Storage";
+const DRIVE_ROOT_NAME = "LAN Portfolio CMS";
 const DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
 const DRIVE_PUBLIC_VERIFY_TTL_MS = 5 * 60 * 1000;
 const DRIVE_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -520,7 +520,29 @@ async function driveAccountSummary(profileId, env) {
 
 async function driveEnsureRoot(profileId, env) {
   const existingProfile = await kvJsonGet(env, driveProfileKey(profileId));
-  if (existingProfile?.rootFolderId) return existingProfile;
+  // A KV profile is a pointer, not proof that its Drive folder still exists.
+  // Also retire the old "- Public Storage" root from NEW uploads without
+  // renaming, moving or deleting any existing files.
+  if (existingProfile?.rootFolderId) {
+    const verifyResponse = await driveApi(profileId, env,
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(existingProfile.rootFolderId)}?fields=${encodeURIComponent("id,name,mimeType,trashed,appProperties")}`);
+    const verified = await verifyResponse.json().catch(() => ({}));
+    if (!verifyResponse.ok && ![404, 410].includes(verifyResponse.status)) {
+      throw serviceError(`Google Drive root verification failed with HTTP ${verifyResponse.status}.`, {
+        status: 502, code: "google-drive-root-verify", source: "google-drive"
+      });
+    }
+    const properties = verified?.appProperties || {};
+    if (verifyResponse.ok && verified.id === existingProfile.rootFolderId &&
+        !verified.trashed && verified.mimeType === DRIVE_FOLDER_MIME &&
+        verified.name === DRIVE_ROOT_NAME &&
+        properties.lanStorageRoot === "1" && properties.lanStorageProfile === profileId) {
+      return existingProfile;
+    }
+  }
+  // Search using the canonical owner markers before creating: KV may have
+  // been cleared, the original folder may be trashed, or a previous upload
+  // may already have recovered the same root.
   const q = [
     `name = '${escapeDriveQuery(DRIVE_ROOT_NAME)}'`,
     `mimeType = '${DRIVE_FOLDER_MIME}'`,
@@ -528,12 +550,18 @@ async function driveEnsureRoot(profileId, env) {
     "appProperties has { key='lanStorageRoot' and value='1' }",
     `appProperties has { key='lanStorageProfile' and value='${escapeDriveQuery(profileId)}' }`
   ].join(" and ");
-  const listUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=${encodeURIComponent("files(id,name,webViewLink)")}&pageSize=10`;
+  const listUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=${encodeURIComponent("files(id,name,mimeType,trashed,webViewLink,appProperties)")}&pageSize=100`;
   const listResponse = await driveApi(profileId, env, listUrl);
   const listPayload = await listResponse.json().catch(() => ({}));
   if (!listResponse.ok) throw serviceError(`Google Drive root lookup failed with HTTP ${listResponse.status}.`, { status: 502, code: "google-drive-root-lookup", source: "google-drive" });
-  let folder = Array.isArray(listPayload.files) ? listPayload.files[0] : null;
-  if (!folder?.id) {
+  const found = (Array.isArray(listPayload.files) ? listPayload.files : [])
+    .filter(candidate => candidate?.id && !candidate.trashed &&
+      candidate.name === DRIVE_ROOT_NAME &&
+      candidate.appProperties?.lanStorageProfile === profileId &&
+      candidate.appProperties?.lanStorageRoot === "1")
+    .sort((left, right) => String(left.id).localeCompare(String(right.id)));
+  let folder = found[0] || null;
+  if (!folder) {
     const createResponse = await driveApi(profileId, env, "https://www.googleapis.com/drive/v3/files?fields=id%2Cname%2CwebViewLink", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -546,21 +574,22 @@ async function driveEnsureRoot(profileId, env) {
     folder = await createResponse.json().catch(() => ({}));
     if (!createResponse.ok || !folder?.id) throw serviceError(`Google Drive root creation failed with HTTP ${createResponse.status}.`, { status: 502, code: "google-drive-root-create", source: "google-drive" });
   }
+  const unchangedRoot = String(existingProfile?.rootFolderId || "") === String(folder.id);
   const profile = {
     profileId,
     provider: "google-drive",
     rootFolderId: String(folder.id),
     rootFolderName: String(folder.name || DRIVE_ROOT_NAME),
     managementUrl: String(folder.webViewLink || driveManagementUrl(folder.id)),
-    publicReady: false,
-    publicVerifiedAt: 0,
+    // Never carry a stale public-permission approval onto a newly created root.
+    publicReady: unchangedRoot && existingProfile?.publicReady === true,
+    publicVerifiedAt: unchangedRoot ? Number(existingProfile?.publicVerifiedAt || 0) : 0,
     connectedAt: existingProfile?.connectedAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
   await kvJsonPut(env, driveProfileKey(profileId), profile);
   return profile;
 }
-
 async function driveCheckPublicAccess(profileId, env, { force = false } = {}) {
   // Reconcile the canonical managed root before verification. Local KV can be
   // recreated independently of the Drive folder; driveEnsureRoot recovers the
@@ -609,9 +638,15 @@ async function driveEnsureChildFolder(profileId, parentId, logicalKey, displayNa
   const cached = await kvJsonGet(env, cacheKey);
   let folder = null;
   if (cached?.folderId) {
-    const verifyResponse = await driveApi(profileId, env, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(cached.folderId)}?fields=${encodeURIComponent("id,name,parents,trashed,appProperties")}`);
+    const verifyResponse = await driveApi(profileId, env, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(cached.folderId)}?fields=${encodeURIComponent("id,name,mimeType,parents,trashed,appProperties")}`);
     const verified = await verifyResponse.json().catch(() => ({}));
-    if (verifyResponse.ok && verified?.id && !verified.trashed && Array.isArray(verified.parents) && verified.parents.includes(parentId)) folder = verified;
+    if (!verifyResponse.ok && ![404, 410].includes(verifyResponse.status)) {
+      throw serviceError(`Google Drive folder verification failed with HTTP ${verifyResponse.status}.`, { status: 502, code: "google-drive-folder-verify", source: "google-drive" });
+    }
+    const owner = verified?.appProperties || {};
+    if (verifyResponse.ok && verified?.id && !verified.trashed && verified.mimeType === DRIVE_FOLDER_MIME &&
+        owner.lanLogicalKey === logicalKey && owner.lanStorageProfile === profileId &&
+        Array.isArray(verified.parents) && verified.parents.includes(parentId)) folder = verified;
     else await storageKv(env).delete(cacheKey);
   }
   if (!folder?.id) {
@@ -619,7 +654,8 @@ async function driveEnsureChildFolder(profileId, parentId, logicalKey, displayNa
       `'${escapeDriveQuery(parentId)}' in parents`,
       `mimeType = '${DRIVE_FOLDER_MIME}'`,
       "trashed = false",
-      `appProperties has { key='lanLogicalKey' and value='${escapeDriveQuery(logicalKey)}' }`
+      `appProperties has { key='lanLogicalKey' and value='${escapeDriveQuery(logicalKey)}' }`,
+      `appProperties has { key='lanStorageProfile' and value='${escapeDriveQuery(profileId)}' }`
     ].join(" and ");
     const listUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&fields=${encodeURIComponent("files(id,name,parents,appProperties)")}&pageSize=10`;
     const listResponse = await driveApi(profileId, env, listUrl);

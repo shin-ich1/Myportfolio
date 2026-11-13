@@ -12,6 +12,7 @@ import {
 
 import { db } from "./firebase.js";
 import { announcePortfolioContentChanged } from "./portfolioSyncService.js";
+import { queueManagedMediaCleanup, cleanupDeletedRecordMedia } from "./mediaAssetLifecycleService.js";
 import { resolveToolIconSource, toolIdentityMatchKey } from "../../tool-identity.js";
 
 const COLLECTION_NAME = "skills";
@@ -272,7 +273,12 @@ async function updateCapability(capabilityId, rawData) {
 
 async function deleteCapability(capabilityId) {
   if (!capabilityId) throw new Error("Capability ID is required.");
-  await deleteDoc(doc(db, COLLECTION_NAME, capabilityId));
+  const reference = doc(db, COLLECTION_NAME, capabilityId);
+  const snapshot = await getDoc(reference);
+  const media = snapshot.exists() ? snapshot.data() || {} : {};
+  queueManagedMediaCleanup(media, "capability-deleted");
+  await deleteDoc(reference);
+  await cleanupDeletedRecordMedia(media, { reason: "capability-deleted" });
   announcePortfolioContentChanged("capabilities");
 }
 
@@ -434,8 +440,11 @@ export async function deleteTool(toolId) {
     }
   }
 
+  const media = toolSnapshot.exists() ? toolSnapshot.data() || {} : {};
+  queueManagedMediaCleanup(media, "tool-deleted");
   batch.delete(toolReference);
   await batch.commit();
+  await cleanupDeletedRecordMedia(media, { reason: "tool-deleted" });
 }
 
 export async function loadSkills() {

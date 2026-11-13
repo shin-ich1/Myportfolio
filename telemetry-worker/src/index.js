@@ -1,4 +1,10 @@
 import { SecurityCoordinator } from "./security-coordinator.js";
+import {
+  MANAGED_MEDIA_RECORD_COLLECTIONS,
+  MANAGED_MEDIA_RECORD_SINGLETONS,
+  sameManagedMediaReference,
+  unreferencedManagedMediaReferences
+} from "../../media-asset-lifecycle.js";
 export { SecurityCoordinator };
 
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
@@ -1296,6 +1302,30 @@ async function cloudinaryDeleteAssetIds(assetIds, env) {
   return payload;
 }
 
+// The Worker—not the browser—owns the final reference safety decision.
+// Keep soft-deleted/restorable records in this inventory. A failed or incomplete
+// Firestore read MUST prevent provider deletion rather than be treated as empty.
+async function findUnreferencedDeletionTargets(requested, env) {
+  await firebaseAdminAccessToken(env);
+  const [collections, singletons] = await Promise.all([
+    Promise.all(MANAGED_MEDIA_RECORD_COLLECTIONS.map((name) => securityQueryAll(env, name))),
+    Promise.all(MANAGED_MEDIA_RECORD_SINGLETONS.map(([collectionName, id]) =>
+      firestoreAdminGetDocument(env, collectionName, id)
+    ))
+  ]);
+  const records = [
+    ...collections.flat(),
+    ...singletons.filter(Boolean).map(fromFirestoreDoc)
+  ];
+  const deletable = unreferencedManagedMediaReferences(requested, records);
+  return {
+    deletable,
+    protected: requested.filter((asset) =>
+      !deletable.some((candidate) => sameManagedMediaReference(asset, candidate))
+    )
+  };
+}
+
 async function handleMediaDelete(request, env) {
   const origin = allowedOrigin(request.headers.get("Origin") || "", env);
   if (!origin) return json({ error: "Origin is not allowed." }, 403);
@@ -1303,11 +1333,15 @@ async function handleMediaDelete(request, env) {
     const admin = await requireSecurityApprovedAdministrator(request, env);
     await enforceAdminServiceRateLimit(request, env, admin.uid, "cloudinary-delete");
     const body = await readStrictJsonBody(request, { assets: [ASSET_REFERENCE_SCHEMA] });
-    const references = Array.isArray(body?.assets) ? body.assets.slice(0, 50) : [];
-    if (!references.length) return json({ deleted: [], skipped: [], failed: [] }, 200, origin);
+    const requested = Array.isArray(body?.assets) ? body.assets.slice(0, 50) : [];
+    if (!requested.length) return json({ deleted: [], skipped: [], failed: [] }, 200, origin);
 
+    // No provider API is called until the authorized server has checked every
+    // CMS record/singleton for retained references to the same managed file.
+    const protection = await findUnreferencedDeletionTargets(requested, env);
+    const references = protection.deletable;
     const deleted = [];
-    const skipped = [];
+    const skipped = protection.protected.map((reference) => ({ reference, reason: "still-referenced" }));
     const failed = [];
     const cloudinaryReferences = [];
     const driveReferences = [];

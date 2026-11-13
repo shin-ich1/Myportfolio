@@ -45,6 +45,14 @@ export async function authorizedWorkerRequest(pathname, options = {}) {
     const error = new Error(payload?.error || `Storage bridge returned HTTP ${response.status}.`);
     error.code = String(payload?.code || `http-${response.status}`);
     error.source = String(payload?.source || 'worker');
+    // A partial provider failure can coexist with confirmed deletions.
+    // Preserve the authoritative Worker outcome so the lifecycle owner queues
+    // only unresolved assets and never retries already-deleted files.
+    error.result = {
+      deleted: Array.isArray(payload?.deleted) ? payload.deleted : [],
+      skipped: Array.isArray(payload?.skipped) ? payload.skipped : [],
+      failed: Array.isArray(payload?.failed) ? payload.failed : []
+    };
     throw error;
   }
   return payload ?? response;

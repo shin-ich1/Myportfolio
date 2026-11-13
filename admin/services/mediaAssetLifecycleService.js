@@ -27,7 +27,24 @@ function readList(key) {
 function writeList(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(Array.isArray(value) ? value : []));
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readDeletionQueue() {
+  // A damaged or unavailable recovery queue must never be silently treated as
+  // empty and overwritten when a destructive record transition is requested.
+  try {
+    const queue = JSON.parse(localStorage.getItem(DELETE_QUEUE_KEY) || "[]");
+    if (!Array.isArray(queue)) throw new Error("Invalid media cleanup queue.");
+    return queue;
+  } catch {
+    const error = new Error("Media cleanup recovery storage is unavailable. No record was deleted.");
+    error.code = "media-cleanup-queue-unavailable";
+    throw error;
+  }
 }
 
 function normalizeTemporaryEntry(item) {
@@ -56,14 +73,29 @@ function removeTemporaryReferences(entries = [], removals = []) {
   return entries.filter((entry) => !temporaryEntryMatches(entry, references));
 }
 
+// One deletion-reference contract for outbound requests and retry persistence.
+function deletionContractReference({
+  provider, storageProfileId, assetId, fileId, key, publicId,
+  resourceType, url, secureUrl, folderId, context
+} = {}) {
+  return {
+    provider, storageProfileId, assetId, fileId, key, publicId,
+    resourceType, url, secureUrl, folderId, context
+  };
+}
+
 async function requestDeletionBatch(assets = [], reason = "media-cleanup") {
   if (!assets.length) return { deleted: [], skipped: [] };
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
+    // Send only the Worker deletion contract. Normalized media records contain
+    // display/derivative metadata (uploadedAt, dimensions, URLs for previews)
+    // that its strict request validator must reject.
+    const references = assets.map(deletionContractReference);
     return await authorizedWorkerRequest("/media/delete", {
       method: "POST",
-      body: JSON.stringify({ assets, reason }),
+      body: JSON.stringify({ assets: references }),
       signal: controller.signal
     });
   } finally {
@@ -71,27 +103,88 @@ async function requestDeletionBatch(assets = [], reason = "media-cleanup") {
   }
 }
 
+// Only a provider-confirmed deletion or already-missing response is complete.
+// A 200 with "still-referenced", "unresolved", or other skipped results is
+// never evidence that a file was physically deleted.
+function completedDeletionReferences(result = {}) {
+  return [
+    ...(Array.isArray(result.deleted) ? result.deleted : []),
+    ...(Array.isArray(result.skipped) ? result.skipped : [])
+      .filter((item) => item?.reason === "already-missing")
+      .map((item) => item?.reference || item)
+  ];
+}
+
+function unresolvedDeletionReferences(assets = [], result = {}) {
+  const complete = completedDeletionReferences(result);
+  return uniqueManagedMediaReferences(assets)
+    .filter((asset) => !complete.some((entry) => sameManagedMediaReference(asset, entry)));
+}
+
 async function requestDeletion(references = [], reason = "media-cleanup") {
   const assets = uniqueManagedMediaReferences(references);
-  if (!assets.length) return { deleted: [], skipped: [] };
+  if (!assets.length) return { deleted: [], skipped: [], failed: [] };
   const deleted = [];
   const skipped = [];
   for (let index = 0; index < assets.length; index += 50) {
-    const result = await requestDeletionBatch(assets.slice(index, index + 50), reason);
-    if (Array.isArray(result?.deleted)) deleted.push(...result.deleted);
-    if (Array.isArray(result?.skipped)) skipped.push(...result.skipped);
+    try {
+      const result = await requestDeletionBatch(assets.slice(index, index + 50), reason);
+      if (Array.isArray(result?.deleted)) deleted.push(...result.deleted);
+      if (Array.isArray(result?.skipped)) skipped.push(...result.skipped);
+    } catch (error) {
+      // 502 may mean *partial* success. Preserve confirmed responses from the
+      // failed batch and every earlier batch before deciding what may be retried.
+      const partial = error?.result || {};
+      if (Array.isArray(partial.deleted)) deleted.push(...partial.deleted);
+      if (Array.isArray(partial.skipped)) skipped.push(...partial.skipped);
+      error.result = {
+        deleted, skipped,
+        failed: Array.isArray(partial.failed) ? partial.failed : []
+      };
+      throw error;
+    }
   }
-  return { deleted, skipped };
+  return { deleted, skipped, failed: [] };
 }
 
-function queueDeletion(references = [], reason = "media-cleanup") {
-  const current = [...readList(LEGACY_DELETE_QUEUE_KEY), ...readList(DELETE_QUEUE_KEY)];
-  const pending = uniqueManagedMediaReferences([
-    ...current.map((item) => item?.asset || item),
-    ...references
-  ]).map((asset) => ({ asset, reason, queuedAt: new Date().toISOString() }));
-  writeList(DELETE_QUEUE_KEY, pending);
-  return pending.length;
+function queueDeletion(references = [], reason = "media-cleanup", { explicitIntent = false } = {}) {
+  const assets = uniqueManagedMediaReferences(references);
+  if (!assets.length) return 0;
+  const current = readDeletionQueue();
+  const now = new Date().toISOString();
+  for (const asset of assets) {
+    const existing = current.find((item) =>
+      sameManagedMediaReference(item?.asset || item, asset)
+    );
+    if (existing) {
+      // A fresh, explicit record deletion may upgrade its own stale queue
+      // entry. Merely recovering old entries never upgrades them.
+      if (explicitIntent) existing.autoRetry = true;
+    } else {
+      current.push({ asset: deletionContractReference(asset), reason, queuedAt: now, autoRetry: true });
+    }
+  }
+  if (!writeList(DELETE_QUEUE_KEY, current)) {
+    const error = new Error("Media cleanup recovery storage is unavailable. No record was deleted.");
+    error.code = "media-cleanup-queue-unavailable";
+    throw error;
+  }
+  return current.length;
+}
+
+function forgetCompletedDeletions(result = {}) {
+  const complete = completedDeletionReferences(result);
+  if (!complete.length) return;
+  writeList(DELETE_QUEUE_KEY, readDeletionQueue().filter((item) =>
+    !complete.some((asset) => sameManagedMediaReference(item?.asset || item, asset))
+  ));
+}
+
+// Persist intent BEFORE a destructive Firestore record transition. Recovery
+// can then complete provider deletion after the owner record disappears, and
+// Worker-side reference checks protect any other retained CMS consumers.
+export function queueManagedMediaCleanup(value, reason = "record-deleted") {
+  return queueDeletion(collectManagedMediaReferences(value), reason, { explicitIntent: true });
 }
 
 export function registerTemporaryMediaAsset(value) {
@@ -133,21 +226,30 @@ async function deleteAndForget(references, { reason = "media-cleanup", temporary
   if (!targets.length) return { deleted: [], skipped: [], queued: false };
 
   writeList(TEMPORARY_ASSETS_KEY, removeTemporaryReferences(temporary, targets));
+  let result;
+  let failure = null;
   try {
-    const result = await requestDeletion(targets, reason);
-    const queue = readList(DELETE_QUEUE_KEY);
-    writeList(DELETE_QUEUE_KEY, queue.filter((item) =>
-      !targets.some((target) => sameManagedMediaReference(item?.asset || item, target))
-    ));
-    return { ...result, queued: false };
+    result = await requestDeletion(targets, reason);
   } catch (error) {
-    if (strict) {
-      error.queued = false;
-      throw error;
-    }
-    queueDeletion(targets, reason);
-    return { deleted: [], skipped: [], queued: true, error };
+    failure = error;
+    result = error?.result || { deleted: [], skipped: [], failed: [] };
   }
+  forgetCompletedDeletions(result);
+  const pending = unresolvedDeletionReferences(targets, result);
+  if (pending.length) queueDeletion(pending, reason);
+  const outcome = {
+    deleted: result.deleted || [], skipped: result.skipped || [],
+    failed: result.failed || [], queued: pending.length > 0,
+    pendingCount: pending.length
+  };
+  if (strict && (failure || pending.length)) {
+    const error = failure || new Error("Storage provider did not confirm deletion of all managed files.");
+    error.code ||= "media-delete-unconfirmed";
+    error.queued = pending.length > 0;
+    error.result = outcome;
+    throw error;
+  }
+  return failure ? { ...outcome, error: failure } : outcome;
 }
 
 export async function removeManagedMediaAssets(value, options = {}) {
@@ -192,21 +294,34 @@ export async function cleanupModuleOwnedMedia(value, options = {}) {
 }
 
 export async function recoverMediaAssetLifecycle() {
-  const temporary = readTemporaryEntries();
-  const currentSessionTemporary = temporary.filter((entry) => entry.sessionId === MEDIA_LIFECYCLE_SESSION_ID);
-  const abandonedTemporary = temporary
+  const abandonedTemporary = readTemporaryEntries()
     .filter((entry) => entry.sessionId !== MEDIA_LIFECYCLE_SESSION_ID)
     .map((entry) => entry.asset);
-  const queued = readList(DELETE_QUEUE_KEY).map((item) => item?.asset || item);
-  const targets = uniqueManagedMediaReferences([...abandonedTemporary, ...queued]);
-  if (!targets.length) return { deleted: [], skipped: [], queued: false };
-  writeList(TEMPORARY_ASSETS_KEY, currentSessionTemporary);
-  try {
-    const result = await requestDeletion(targets, "recover-abandoned-media");
-    writeList(DELETE_QUEUE_KEY, []);
-    return { ...result, queued: false };
-  } catch (error) {
-    queueDeletion(targets, "recover-abandoned-media");
-    return { deleted: [], skipped: [], queued: true, error };
+  const queued = readDeletionQueue();
+  const legacy = readList(LEGACY_DELETE_QUEUE_KEY);
+  // Historical unverified entries must never be
+  // silently migrated into automatic deletion. New, explicit deletion intents
+  // are retried through the same Worker-side reference guard as manual deletes.
+  const eligible = queued.filter((item) => item?.autoRetry === true)
+    .map((item) => item.asset).filter(Boolean);
+  let outcome = { deleted: [], skipped: [], queued: false };
+  if (eligible.length) {
+    outcome = await deleteAndForget(eligible, {
+      reason: "retry-queued-media", temporaryOnly: false
+    });
   }
+  const remaining = readDeletionQueue();
+  const held = [
+    ...abandonedTemporary, ...legacy.map((item) => item?.asset || item),
+    ...remaining.filter((item) => item?.autoRetry !== true).map((item) => item?.asset || item)
+  ];
+  const pending = uniqueManagedMediaReferences([
+    ...held, ...remaining.map((item) => item?.asset || item)
+  ]);
+  return {
+    ...outcome,
+    queued: pending.length > 0,
+    reviewRequired: held.length > 0,
+    pendingCount: pending.length
+  };
 }

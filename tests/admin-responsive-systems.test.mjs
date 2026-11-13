@@ -219,3 +219,149 @@ test("Security branding initialization shares one request and reuses loaded resu
   assert.equal(fetches, 1, "Already-loaded branding must not be fetched again");
   assert.equal(fields.get("securityEmailHeading").value, "Security ready");
 });
+
+test("media delete outbound payload matches the strict Worker asset schema", async () => {
+  const service = read("admin/services/mediaAssetLifecycleService.js");
+  const worker = read("telemetry-worker/src/index.js");
+  const schema = worker.match(/const ASSET_REFERENCE_SCHEMA = Object\.freeze\(\{([\s\S]*?)\}\);/);
+  assert.ok(schema, "Read the canonical Worker schema rather than weakening it");
+  const allowed = new Set([...schema[1].matchAll(/(\w+): REQUEST_SCHEMA_ANY/g)].map((match) => match[1]));
+  const begin = service.indexOf("async function requestDeletionBatch(");
+  const end = service.indexOf("\nasync function requestDeletion(", begin);
+  assert.ok(begin >= 0 && end > begin);
+
+  const requests = [];
+  const context = {
+    AbortController,
+    window: { setTimeout: () => 10, clearTimeout: () => {} },
+    REQUEST_TIMEOUT_MS: 15000,
+    authorizedWorkerRequest: async (path, options) => {
+      requests.push({ path, data: JSON.parse(options.body) });
+      return { deleted: [], skipped: [] };
+    }
+  };
+  runInNewContext(service.slice(begin, end), context);
+  const assets = [
+    { provider: "cloudinary", assetId: "asset-one", publicId: "lan-portfolio/a", resourceType: "image",
+      url: "https://res.cloudinary.com/example/image/upload/a", uploadedAt: "yesterday",
+      schemaVersion: 2, width: 1280, height: 720, cardUrl: "derived" },
+    { provider: "google-drive", storageProfileId: "profile", fileId: "managed-file",
+      assetId: "managed-file", context: { ownerId: "test-only" }, uploadedAt: "yesterday" }
+  ];
+  await context.requestDeletionBatch(assets, "explicit-media-remove");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].path, "/media/delete");
+  assert.equal(requests[0].data.reason, "explicit-media-remove");
+  assert.equal(requests[0].data.assets.length, 2);
+  for (const asset of requests[0].data.assets) {
+    assert.ok(Object.keys(asset).every(key => allowed.has(key)),
+      "Do not send display metadata rejected by the existing strict Worker schema");
+  }
+  assert.equal(requests[0].data.assets[0].assetId, "asset-one");
+  assert.equal(requests[0].data.assets[1].fileId, "managed-file");
+  assert.equal(requests[0].data.assets[1].storageProfileId, "profile");
+});
+
+test("Admin startup never silently deletes preexisting queued or abandoned media", async () => {
+  const service = read("admin/services/mediaAssetLifecycleService.js");
+  const begin = service.indexOf("export async function recoverMediaAssetLifecycle() {");
+  assert.ok(begin >= 0);
+  const writes = [];
+  let deletions = 0;
+  const abandoned = { provider: "cloudinary", assetId: "old-temporary-asset" };
+  const queued = { provider: "google-drive", assetId: "old-managed-file", storageProfileId: "profile" };
+  const context = {
+    MEDIA_LIFECYCLE_SESSION_ID: "current-session",
+    TEMPORARY_ASSETS_KEY: "temporary",
+    DELETE_QUEUE_KEY: "queue",
+    readTemporaryEntries: () => [{ asset: abandoned, sessionId: "previous-session" }],
+    readList: key => key === "queue" ? [{ asset: queued }] : [],
+    uniqueManagedMediaReferences: values => values,
+    writeList: (key, value) => { writes.push({ key, value }); },
+    requestDeletion: async () => { deletions++; return { deleted: [], skipped: [] }; },
+    queueDeletion: () => { writes.push({ key: "queue-retry" }); }
+  };
+  runInNewContext(service.slice(begin).replace("export async function", "async function"), context);
+  const state = await context.recoverMediaAssetLifecycle();
+  assert.equal(deletions, 0, "Auto-recovery cannot verify that old assets are unreferenced");
+  assert.equal(writes.length, 0, "Preserve pending records for later explicit verification");
+  assert.equal(state.queued, true, "Existing entries remain pending");
+  assert.equal(state.reviewRequired, true, "Require ownership review before deletion");
+});
+
+test("Explicit CMS media removal still sends real provider deletion requests", async () => {
+  const source = read("admin/services/mediaAssetLifecycleService.js");
+  const start = source.indexOf("async function requestDeletionBatch(");
+  const end = source.indexOf("\nexport async function recoverMediaAssetLifecycle()", start);
+  assert.ok(start >= 0 && end > start);
+  const calls = [];
+  const context = {
+    AbortController,
+    window: { setTimeout: () => 1, clearTimeout: () => {} },
+    REQUEST_TIMEOUT_MS: 15000,
+    TEMPORARY_ASSETS_KEY: "temporary",
+    DELETE_QUEUE_KEY: "queue",
+    readTemporaryEntries: () => [],
+    readList: () => [],
+    writeList: () => {},
+    removeTemporaryReferences: entries => entries,
+    sameManagedMediaReference: (first, second) => first?.assetId === second?.assetId,
+    collectManagedMediaReferences: assets => assets,
+    removedManagedMediaReferences: (before) => before,
+    uniqueManagedMediaReferences: assets => assets,
+    authorizedWorkerRequest: async (path, options) => {
+      const data = JSON.parse(options.body);
+      calls.push({ path, method: options.method, data });
+      return { deleted: data.assets, skipped: [] };
+    }
+  };
+  runInNewContext(source.slice(start, end).replaceAll("export async function", "async function")
+    .replaceAll("export function", "function"), context);
+  const cloudinary = { provider: "cloudinary", assetId: "cloudinary-file", publicId: "lan-portfolio/test", uploadedAt: "old" };
+  const drive = { provider: "google-drive", storageProfileId: "managed-profile", assetId: "drive-file", fileId: "drive-file" };
+  const manual = await context.removeManagedMediaAssets([cloudinary]);
+  const deletedRecord = await context.cleanupDeletedRecordMedia([drive], { reason: "record-deleted", strict: true });
+  assert.equal(calls.length, 2, "User-requested removal and record deletion must both invoke storage deletion");
+  assert.deepEqual(calls.map(c => c.path), ["/media/delete", "/media/delete"]);
+  assert.ok(calls.every(c => c.method === "POST"));
+  assert.equal(calls[0].data.assets[0].assetId, "cloudinary-file");
+  assert.equal(calls[1].data.assets[0].assetId, "drive-file");
+  assert.equal(calls[1].data.assets[0].storageProfileId, "managed-profile");
+  assert.equal(manual.queued, false);
+  assert.equal(manual.deleted.length, 1);
+  assert.equal(deletedRecord.queued, false);
+  assert.equal(deletedRecord.deleted.length, 1);
+});
+
+test("hard-deleting a Project reports failed storage cleanup rather than claiming provider deletion", async () => {
+  const source = read("admin/services/projectService.js");
+  const start = source.indexOf("export async function deleteProject(");
+  const end = source.indexOf("\nexport async function loadProjects()", start);
+  assert.ok(start >= 0 && end > start);
+  let recordDeleted = false;
+  const context = {
+    db: {},
+    PROJECT_COLLECTION: "projects",
+    doc: (_, collection, id) => ({ collection, id }),
+    getDoc: async () => ({ exists: () => true, data: () => ({ coverImage: { assetId: "test-cover" } }) }),
+    projectOwnedMedia: data => [data.coverImage],
+    cleanupDeletedRecordMedia: async () => ({ deleted: [], skipped: [], queued: true, error: new Error("Provider unavailable") }),
+    deleteDoc: async () => { recordDeleted = true; },
+    announcePortfolioContentChanged: () => {}
+  };
+  runInNewContext(source.slice(start, end).replace("export async function", "async function"), context);
+  const result = await context.deleteProject("project-1");
+  assert.equal(recordDeleted, true, "Keep existing hard-delete semantics");
+  assert.equal(result?.mediaCleanup?.queued, true, "Report pending storage deletion to caller");
+  assert.equal(result?.id, "project-1");
+  const ui = read("admin/js/projects.js");
+  assert.match(ui, /function projectMediaCleanupPending\(result\)/,
+    "A single Admin status owner must identify incomplete provider deletions");
+  assert.match(ui, /const cleanup = result\?\.mediaCleanup/,
+    "Project Admin must read the actual provider deletion outcome");
+  assert.match(ui, /projectMediaCleanupPending\(result\)/,
+    "Manual Project deletion must check provider completion before showing success");
+  assert.match(ui, /outcomes\.some\(projectMediaCleanupPending\)/,
+    "Bulk Project deletion must report incomplete provider cleanup too");
+  assert.match(ui, /storage cleanup pending|storage deletion pending|storage file deletion is pending/i);
+});

@@ -575,9 +575,18 @@ test("Google Drive upload folders follow content categories and avoid opaque rec
   assert.deepEqual(Array.from(noCategoryPhoto, x => x.displayName), ["photo-editing"],
     "Missing category must never create a synthetic Record folder");
 
-  const admin = read("admin/js/photo-editing.js");
-  assert.match(admin, /uploadPhotoEditingImage\([\s\S]*?resolvedCategoryValue\(/,
-    "The Photo Editing upload caller must pass its selected CMS category");
+  const admin = read("admin/js/photo-editing.js").replace(/\r\n?/g, "\n");
+  const uploadStart = admin.indexOf("async function uploadPendingImages(");
+  const uploadEnd = admin.indexOf("\nasync function saveProject(", uploadStart);
+  assert.ok(uploadStart >= 0 && uploadEnd > uploadStart);
+  const uploadCode = admin.slice(uploadStart, uploadEnd);
+  assert.match(uploadCode, /const categoryRouting\s*=\s*\{\s*context:\s*\{\s*categoryName:\s*resolvedCategoryValue\(\)/,
+    "The Photo Editing upload caller must derive the selected CMS category once");
+  assert.equal([...uploadCode.matchAll(/categoryRouting\s*\n\s*\)/g)].length, 2,
+    "Comparison/single and gallery uploads must use the same category route");
+  const photoService = read("admin/services/photoEditingService.js");
+  assert.match(photoService, /context:\s*\{\s*\.\.\.\(routing\.context\s*\|\|\s*\{\}\)/,
+    "Photo Editing upload service must forward context to the shared uploader");
   const provider = read("admin/services/storageProviders/googleDriveStorageProvider.js");
   assert.match(provider, /categoryName:\s*context\.categoryName/,
     "Drive provider must forward category to the server without local folder creation");

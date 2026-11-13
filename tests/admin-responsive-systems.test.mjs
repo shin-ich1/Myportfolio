@@ -467,6 +467,10 @@ test("Worker physically deletes only references cleared by its server-side scan"
 
 test("Project deletion notices distinguish pending storage cleanup from confirmed completion", async () => {
   const source = read("admin/js/projects.js");
+  const helperStart = source.indexOf("function notifyProjectDeletionOutcomes(");
+  const helperEnd = source.indexOf("\nfunction markAsChanged(", helperStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart, "Exercise the canonical Project notification owner");
+  const notificationHelper = source.slice(helperStart, helperEnd);
   const singleStart = source.indexOf("async function confirmDelete() {");
   const singleEnd = source.indexOf("\nfunction setupDropZone(", singleStart);
   assert.ok(singleStart >= 0 && singleEnd > singleStart, "Use the real single-delete handler");
@@ -491,7 +495,7 @@ test("Project deletion notices distinguish pending storage cleanup from confirme
       console
     };
     const deleteOne = runInNewContext(
-      source.slice(singleStart, singleEnd) + "\nconfirmDelete", context
+      notificationHelper + "\n" + source.slice(singleStart, singleEnd) + "\nconfirmDelete", context
     );
     await deleteOne();
     return notices;
@@ -523,7 +527,7 @@ test("Project deletion notices distinguish pending storage cleanup from confirme
       refresh: async () => {},
       notify: (message, type = "success") => notices.push({ message, type })
     };
-    const bulkDelete = runInNewContext("(" + bulkFn + ")", context);
+    const bulkDelete = runInNewContext(notificationHelper + "\n(" + bulkFn + ")", context);
     await bulkDelete(["project-one", "project-two"]);
     return notices;
   }

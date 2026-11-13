@@ -155,10 +155,8 @@ test("Security & Access initializes on demand without duplicate overview reads",
   const boot = source.slice(source.indexOf("const incomingEnrollmentId ="));
   assert.match(boot, /if\s*\(incomingEnrollmentId\)\s*\{/,
     "Incoming trusted-device enrollment must retain an explicit startup path");
-  assert.match(boot, /await refresh\(\)/,
-    "Incoming enrollment must have a complete overview before approval handling");
-  assert.match(boot, /await loadBranding\(\)/,
-    "Incoming enrollment must initialize security branding");
+  assert.match(boot, /await Promise\.all\(\[refresh\(\), loadBranding\(\)\]\)/,
+    "Incoming enrollment must initialize overview and branding before approval handling");
   assert.match(boot, /initializeIncomingEnrollment\(incomingEnrollmentId\)/);
   assert.doesNotMatch(boot, /await refresh\(\);\s*if\s*\(incomingEnrollmentId\)/,
     "Control-only startup must not eagerly load the overview");

@@ -6,7 +6,7 @@
    - Cloud Firestore stores project metadata.
    - Cloudinary stores uploaded images.
    - Firebase Storage is not used.
-   - Project deletion uses soft delete.
+   - Project deletion is permanent; provider cleanup follows canonical media ownership.
    ========================================================= */
 
 import {

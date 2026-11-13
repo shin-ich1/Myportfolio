@@ -29,7 +29,7 @@ import { normalizeAssetReference, hasAssetReference, assetReferenceIdentity } fr
    - Firebase Authentication protects the admin page.
    - Cloud Firestore stores project metadata.
    - Storage Hub stores uploaded images through the selected provider.
-   - Project deletion is a Firestore soft delete.
+   - Project deletion is permanent; provider cleanup follows canonical media ownership.
    - Provider-aware deletion is authorized server-side through the shared media lifecycle.
    ========================================================= */
 

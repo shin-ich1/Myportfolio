@@ -23,6 +23,7 @@
   import { db } from "./firebase.js";
   import { cleanSkillData } from "./skillService.js";
   import { announcePortfolioContentChanged } from "./portfolioSyncService.js";
+  import { queueManagedMediaCleanup, cleanupDeletedRecordMedia } from "./mediaAssetLifecycleService.js";
   
   import {
     cleanBoolean,
@@ -916,10 +917,11 @@
       }
 
       await assertExperienceIsNotLinked(cleanedId);
-  
-      await deleteDoc(
-        documentReference
-      );
+      const media = existingDocument.data() || {};
+      queueManagedMediaCleanup(media, "experience-deleted");
+
+      await deleteDoc(documentReference);
+      await cleanupDeletedRecordMedia(media, { reason: "experience-deleted" });
       announcePortfolioContentChanged("experience");
   
       return true;

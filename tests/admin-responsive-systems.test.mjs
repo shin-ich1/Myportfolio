@@ -885,3 +885,88 @@ test("Google Drive physical deletion removes only resolved managed assets and pu
   assert.equal(cleanedFolders[0][1], "module-folder");
   assert.equal(cleanedFolders.length, 1);
 });
+
+
+test("CMS Delete is permanent for every media-owning module and reuses the shared provider cleanup", () => {
+  const cases = [
+    ["Photo Editing", "admin/services/photoEditingService.js", "export async function removePhotoEditingProject("],
+    ["Projects", "admin/services/projectService.js", "export async function deleteProject("],
+    ["Certificates", "admin/services/certificateService.js", "export async function deleteCertificate("],
+    ["Resumes", "admin/services/resumeService.js", "export async function deleteResume("],
+    ["Experiences", "admin/services/experienceService.js", "export async function deleteExperience("],
+    ["Education", "admin/services/educationService.js", "async deleteEducation("],
+    ["Skills", "admin/services/skillService.js", "async function deleteCapability("],
+    ["Tools", "admin/services/skillService.js", "export async function deleteTool("],
+    ["Custom module entries", "admin/services/portfolioSectionService.js", "export async function deleteEntry("],
+    ["Custom modules", "admin/services/portfolioSectionService.js", "export async function deleteSectionPermanently("]
+  ];
+  for (const [name, path, marker] of cases) {
+    const file = read(path);
+    const start = file.indexOf(marker);
+    assert.ok(start >= 0, name + " must keep its canonical deletion owner");
+    const rest = file.slice(start);
+    const nextExport = rest.indexOf("\nexport ", marker.length);
+    const fn = nextExport >= 0 ? rest.slice(0, nextExport) : rest;
+    assert.match(fn, /queueManagedMediaCleanup\(/, name + " must persist provider cleanup intent BEFORE deleting the record");
+    assert.match(fn, /cleanupDeletedRecordMedia\(|cleanupModuleOwnedMedia\(/,
+      name + " must use shared provider-independent cleanup AFTER deleting the record");
+    assert.ok(fn.indexOf("queueManagedMediaCleanup(") < fn.search(/(?:await deleteDoc\(|await batch\.commit\(|await deleteEntryDocumentsInChunks\()/),
+      name + " must queue before destructive Firestore work");
+  }
+  const photos = read("admin/services/photoEditingService.js");
+  const source = photos.slice(photos.indexOf("export async function removePhotoEditingProject("),
+    photos.indexOf("export async function restorePhotoEditingProject("));
+  assert.match(source, /await deleteDoc\(/, "Photo Editing Delete must remove the Firestore record");
+  assert.doesNotMatch(source, /isDeleted:\s*true/, "Delete must not quietly move a sample to Trash");
+});
+
+test("Photo Editing single, bulk and confirmation Delete perform the same permanent action", () => {
+  const controller = read("admin/js/photo-editing.js");
+  const bulk = controller.slice(controller.indexOf("async function deleteSelectedPhotoProjects("),
+    controller.indexOf("function initializeUploadControl("));
+  assert.match(bulk, /removePhotoEditingProject\(/, "Bulk Delete must invoke the same canonical record deletion owner");
+  assert.doesNotMatch(bulk, /updateManyPhotoEditingProjects\(\s*cleanIds\s*,\s*\{\s*isDeleted:\s*true/,
+    "Bulk Delete must not keep a hidden/restorable Firestore record");
+  const confirm = controller.slice(controller.indexOf("function askDeleteProject("),
+    controller.indexOf("async function deleteSelectedPhotoProjects("));
+  assert.doesNotMatch(confirm, /[Mm]ove.*(?:deleted samples|trash)|[Ss]oft.delete/,
+    "Single Delete confirmation must describe the destructive action accurately");
+  const html = read("admin/pages/photo-editing.html");
+  assert.doesNotMatch(html, /Move (?:Sample|sample) to Trash|Move sample to trash|can be restored later|Move to Trash/);
+});
+
+test("Photo Editing permanent deletion fails closed before Firestore delete and cleans after it", async () => {
+  const source = read("admin/services/photoEditingService.js");
+  const start = source.indexOf("export async function removePhotoEditingProject(");
+  const end = source.indexOf("export async function restorePhotoEditingProject(", start);
+  assert.ok(start >= 0 && end > start);
+  const events = [];
+  const asset = { provider: "google-drive", storageProfileId: "drive-test", assetId: "disposable" };
+  let queueFailure = false;
+  const ctx = {
+    db: {}, COLLECTION_NAME: "photoEditingProjects",
+    requireProjectId: id => id,
+    currentUserId: () => "admin",
+    assertPhotoEditingProjectIsNotLinked: async () => { events.push("linked-guard"); },
+    doc: (_, collection, id) => ({ collection, id }),
+    getDoc: async () => ({ exists: () => true, data: () => ({ image: asset }) }),
+    photoEditingOwnedMedia: value => value,
+    queueManagedMediaCleanup: () => {
+      events.push("queue");
+      if (queueFailure) throw new Error("Recovery queue unavailable");
+    },
+    deleteDoc: async () => { events.push("delete-record"); },
+    cleanupDeletedRecordMedia: async () => { events.push("cleanup-provider"); return { deleted: [asset], skipped: [] }; },
+    announcePortfolioContentChanged: () => { events.push("announce"); },
+    createServiceError: message => new Error(message),
+    getErrorMessage: error => error.message
+  };
+  runInNewContext(source.slice(start, end).replace("export async function", "async function"), ctx);
+  await ctx.removePhotoEditingProject("disposable-record");
+  assert.deepEqual(events, ["linked-guard", "queue", "delete-record", "cleanup-provider", "announce"]);
+  events.length = 0;
+  queueFailure = true;
+  await assert.rejects(ctx.removePhotoEditingProject("disposable-record"), /Recovery queue unavailable/);
+  assert.deepEqual(events, ["linked-guard", "queue"],
+    "Failed recovery intent must block record deletion and physical provider deletion");
+});

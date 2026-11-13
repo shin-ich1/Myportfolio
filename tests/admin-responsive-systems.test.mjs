@@ -588,8 +588,8 @@ test("Google Drive upload folders follow content categories and avoid opaque rec
   assert.match(photoService, /context:\s*\{\s*\.\.\.\(routing\.context\s*\|\|\s*\{\}\)/,
     "Photo Editing upload service must forward context to the shared uploader");
   const provider = read("admin/services/storageProviders/googleDriveStorageProvider.js");
-  assert.match(provider, /categoryName:\s*context\.categoryName/,
-    "Drive provider must forward category to the server without local folder creation");
+  assert.match(provider, /categoryName:\s*text\(context\.categoryName\)/,
+    "Drive provider must forward the selected category, normalized, without local folder creation");
   assert.match(worker, /const DRIVE_CONTEXT_SCHEMA[\s\S]*?categoryName:\s*REQUEST_SCHEMA_ANY/,
     "Worker must explicitly validate the category field");
 });
@@ -603,6 +603,7 @@ function createMockDriveFolderRuntime() {
   const stored = new Map();
   const folders = new Map();
   const operations = [];
+  const transientFailures = new Set();
   let nextId = 0;
   const reply = (data, status = 200) => new Response(JSON.stringify(data), {
     status, headers: { "Content-Type": "application/json" }
@@ -613,6 +614,7 @@ function createMockDriveFolderRuntime() {
     const parts = endpoint.pathname.split("/");
     const id = parts[parts.indexOf("files") + 1];
     if (id && id !== "files") {
+      if (transientFailures.has(id)) return reply({ error: "temporarily unavailable" }, 503);
       if (parts.includes("permissions")) {
         const folder = folders.get(id);
         return folder && !folder.trashed
@@ -675,7 +677,7 @@ function createMockDriveFolderRuntime() {
   };
   const actions = runInNewContext(worker.slice(start, end) +
     "\n({ driveEnsureRoot, driveCheckPublicAccess, driveEnsureChildFolder, driveEnsureContextFolder })", context);
-  return { ...actions, stored, folders, operations, env: {} };
+  return { ...actions, stored, folders, operations, transientFailures, env: {} };
 }
 
 test("Google Drive root reconciliation replaces deleted and legacy roots without restoring test media", async () => {
@@ -768,4 +770,77 @@ test("Google Drive upload session gracefully retries category context against a 
   assert.equal(requests.length, 2);
   assert.equal(requests[0].payload.context.categoryName, "Product Ads");
   assert.equal(Object.hasOwn(requests[1].payload.context, "categoryName"), false);
+});
+
+
+test("Google Drive recovers a trashed root without silently inheriting stale sharing approval", async () => {
+  const r = createMockDriveFolderRuntime();
+  r.folders.set("trashed-root", {
+    id: "trashed-root", name: "LAN Portfolio CMS",
+    mimeType: "application/vnd.google-apps.folder", trashed: true,
+    parents: [], appProperties: { lanStorageRoot: "1", lanStorageProfile: "p" }
+  });
+  r.stored.set("drive-profile:p", {
+    profileId: "p", rootFolderId: "trashed-root",
+    rootFolderName: "LAN Portfolio CMS", publicReady: true, publicVerifiedAt: Date.now()
+  });
+  const recovered = await r.driveEnsureRoot("p", r.env);
+  assert.notEqual(recovered.rootFolderId, "trashed-root");
+  assert.equal(recovered.publicReady, false,
+    "New root must require fresh permission verification, not reuse cached approval");
+  assert.equal(recovered.publicVerifiedAt, 0);
+  assert.equal(r.folders.get("trashed-root").trashed, true, "Old root remains untouched");
+  assert.equal(r.operations.filter(x => x.method === "POST").length, 1);
+});
+
+test("Google Drive restores missing module/category folders generically and preserves unrelated folders", async () => {
+  const r = createMockDriveFolderRuntime();
+  r.folders.set("root", {
+    id: "root", name: "LAN Portfolio CMS",
+    mimeType: "application/vnd.google-apps.folder", trashed: false,
+    parents: [], appProperties: { lanStorageRoot: "1", lanStorageProfile: "p" }
+  });
+  r.folders.set("unrelated", {
+    id: "unrelated", name: "Personal Files", parents: [],
+    mimeType: "application/vnd.google-apps.folder", trashed: false,
+    appProperties: {}
+  });
+  r.stored.set("drive-profile:p", { profileId: "p", rootFolderId: "root", publicReady: true });
+  const cms = { moduleId: "custom-future-module", pageName: "Future Module", categoryName: "Screenshots", ownerId: "different-records" };
+  const category = await r.driveEnsureContextFolder("p", cms, r.env);
+  assert.equal(r.folders.get(category).name, "Screenshots");
+  const moduleId = r.folders.get(category).parents[0];
+  assert.equal(r.folders.get(moduleId).name, "Future Module");
+  assert.deepEqual(Array.from(r.folders.get(moduleId).parents), ["root"]);
+  assert.equal(await r.driveEnsureContextFolder("p", { ...cms, ownerId: "second" }, r.env), category);
+  assert.equal(r.operations.filter(x => x.method === "POST").length, 2);
+  assert.equal(r.folders.get("unrelated").name, "Personal Files");
+  assert.equal(r.operations.filter(x => ["DELETE", "PATCH"].includes(x.method)).length, 0);
+});
+
+test("Google Drive cache validation fails closed on transient Drive errors instead of creating duplicates", async () => {
+  const r = createMockDriveFolderRuntime();
+  r.folders.set("root", {
+    id: "root", name: "LAN Portfolio CMS",
+    mimeType: "application/vnd.google-apps.folder", trashed: false, parents: [],
+    appProperties: { lanStorageRoot: "1", lanStorageProfile: "p" }
+  });
+  r.stored.set("drive-profile:p", { profileId: "p", rootFolderId: "root", publicReady: true });
+  r.transientFailures.add("root");
+  await assert.rejects(() => r.driveEnsureRoot("p", r.env), error => {
+    assert.equal(error.code, "google-drive-root-verify");
+    return true;
+  });
+  assert.equal(r.operations.filter(x => x.method === "POST").length, 0,
+    "Provider outages must not be mistaken for deleted folders");
+  r.transientFailures.clear();
+  const folder = await r.driveEnsureContextFolder("p", { ownerType: "project", pageName: "Projects" }, r.env);
+  const folderKey = "drive-folder:p:root:page:project";
+  r.stored.set(folderKey, { folderId: folder, parentId: "root" });
+  r.transientFailures.add(folder);
+  await assert.rejects(() =>
+    r.driveEnsureContextFolder("p", { ownerType: "project", pageName: "Projects" }, r.env),
+    error => error.code === "google-drive-folder-verify"
+  );
+  assert.equal(r.operations.filter(x => x.method === "POST").length, 1);
 });

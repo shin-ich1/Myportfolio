@@ -543,3 +543,44 @@ test("Project deletion notices distinguish pending storage cleanup from confirme
   assert.equal(finishedBulk.length, 1);
   assert.equal(finishedBulk[0].type, "success");
 });
+
+
+test("Google Drive upload folders follow content categories and avoid opaque record subfolders", () => {
+  // Test the actual Worker folder planner, independent of OAuth or live Drive files.
+  const worker = read("telemetry-worker/src/index.js").replace(/\r\n?/g, "\n");
+  const begin = worker.indexOf("function driveLogicalSegments(");
+  const end = worker.indexOf("\nasync function driveEnsureChildFolder(", begin);
+  assert.ok(begin >= 0 && end > begin, "Canonical Worker folder planner must exist");
+  const plan = runInNewContext(worker.slice(begin, end) + "\ndriveLogicalSegments", {});
+
+  const firstPhoto = plan({
+    ownerType: "photo-editing", ownerId: "opaque-photo-record-a", categoryName: "Product Ads"
+  });
+  assert.deepEqual(Array.from(firstPhoto, x => x.displayName), ["photo-editing", "Product Ads"]);
+  assert.ok(firstPhoto.every(x => !x.displayName.includes("opaque-photo-record")));
+  const sameCategoryDifferentRecord = plan({
+    ownerType: "photo-editing", ownerId: "opaque-photo-record-b", categoryName: "Product Ads"
+  });
+  assert.deepEqual(Array.from(sameCategoryDifferentRecord, x => x.logicalKey),
+    Array.from(firstPhoto, x => x.logicalKey),
+    "Records in the same category must share one category folder");
+
+  const projects = plan({
+    ownerType: "project", ownerId: "opaque-project-id", pageName: "Projects", recordTitle: "Project A"
+  });
+  assert.deepEqual(Array.from(projects, x => x.displayName), ["Projects"],
+    "Projects without an explicit category belong directly in Projects");
+
+  const noCategoryPhoto = plan({ ownerType: "photo-editing", ownerId: "opaque-photo-record-c" });
+  assert.deepEqual(Array.from(noCategoryPhoto, x => x.displayName), ["photo-editing"],
+    "Missing category must never create a synthetic Record folder");
+
+  const admin = read("admin/js/photo-editing.js");
+  assert.match(admin, /uploadPhotoEditingImage\([\s\S]*?resolvedCategoryValue\(/,
+    "The Photo Editing upload caller must pass its selected CMS category");
+  const provider = read("admin/services/storageProviders/googleDriveStorageProvider.js");
+  assert.match(provider, /categoryName:\s*context\.categoryName/,
+    "Drive provider must forward category to the server without local folder creation");
+  assert.match(worker, /const DRIVE_CONTEXT_SCHEMA[\s\S]*?categoryName:\s*REQUEST_SCHEMA_ANY/,
+    "Worker must explicitly validate the category field");
+});

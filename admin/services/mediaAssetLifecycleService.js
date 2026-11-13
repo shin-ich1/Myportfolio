@@ -61,19 +61,9 @@ async function requestDeletionBatch(assets = [], reason = "media-cleanup") {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    // Send only the Worker deletion contract. Normalized media records contain
-    // display/derivative metadata (uploadedAt, dimensions, URLs for previews)
-    // that its strict request validator must reject.
-    const references = assets.map(({
-      provider, storageProfileId, assetId, fileId, key, publicId,
-      resourceType, url, secureUrl, folderId, context
-    }) => ({
-      provider, storageProfileId, assetId, fileId, key, publicId,
-      resourceType, url, secureUrl, folderId, context
-    }));
     return await authorizedWorkerRequest("/media/delete", {
       method: "POST",
-      body: JSON.stringify({ assets: references, reason }),
+      body: JSON.stringify({ assets, reason }),
       signal: controller.signal
     });
   } finally {
@@ -202,18 +192,21 @@ export async function cleanupModuleOwnedMedia(value, options = {}) {
 }
 
 export async function recoverMediaAssetLifecycle() {
-  const abandonedTemporary = readTemporaryEntries()
+  const temporary = readTemporaryEntries();
+  const currentSessionTemporary = temporary.filter((entry) => entry.sessionId === MEDIA_LIFECYCLE_SESSION_ID);
+  const abandonedTemporary = temporary
     .filter((entry) => entry.sessionId !== MEDIA_LIFECYCLE_SESSION_ID)
     .map((entry) => entry.asset);
   const queued = readList(DELETE_QUEUE_KEY).map((item) => item?.asset || item);
-  const pending = uniqueManagedMediaReferences([...abandonedTemporary, ...queued]);
-
-  // Old browser-side queues are not proof that an asset is no longer used
-  // by published CMS records. Do not turn a previously rejected request into
-  // an automatic destructive retry on every Admin startup. Keep both lists
-  // intact until ownership/reference status can be verified independently.
-  return {
-    deleted: [], skipped: [], queued: pending.length > 0,
-    reviewRequired: pending.length > 0, pendingCount: pending.length
-  };
+  const targets = uniqueManagedMediaReferences([...abandonedTemporary, ...queued]);
+  if (!targets.length) return { deleted: [], skipped: [], queued: false };
+  writeList(TEMPORARY_ASSETS_KEY, currentSessionTemporary);
+  try {
+    const result = await requestDeletion(targets, "recover-abandoned-media");
+    writeList(DELETE_QUEUE_KEY, []);
+    return { ...result, queued: false };
+  } catch (error) {
+    queueDeletion(targets, "recover-abandoned-media");
+    return { deleted: [], skipped: [], queued: true, error };
+  }
 }

@@ -219,3 +219,72 @@ test("Security branding initialization shares one request and reuses loaded resu
   assert.equal(fetches, 1, "Already-loaded branding must not be fetched again");
   assert.equal(fields.get("securityEmailHeading").value, "Security ready");
 });
+
+test("media delete outbound payload matches the strict Worker asset schema", async () => {
+  const service = read("admin/services/mediaAssetLifecycleService.js");
+  const worker = read("telemetry-worker/src/index.js");
+  const schema = worker.match(/const ASSET_REFERENCE_SCHEMA = Object\.freeze\(\{([\s\S]*?)\}\);/);
+  assert.ok(schema, "Read the canonical Worker schema rather than weakening it");
+  const allowed = new Set([...schema[1].matchAll(/(\w+): REQUEST_SCHEMA_ANY/g)].map((match) => match[1]));
+  const begin = service.indexOf("async function requestDeletionBatch(");
+  const end = service.indexOf("\nasync function requestDeletion(", begin);
+  assert.ok(begin >= 0 && end > begin);
+
+  const requests = [];
+  const context = {
+    AbortController,
+    window: { setTimeout: () => 10, clearTimeout: () => {} },
+    REQUEST_TIMEOUT_MS: 15000,
+    authorizedWorkerRequest: async (path, options) => {
+      requests.push({ path, data: JSON.parse(options.body) });
+      return { deleted: [], skipped: [] };
+    }
+  };
+  runInNewContext(service.slice(begin, end), context);
+  const assets = [
+    { provider: "cloudinary", assetId: "asset-one", publicId: "lan-portfolio/a", resourceType: "image",
+      url: "https://res.cloudinary.com/example/image/upload/a", uploadedAt: "yesterday",
+      schemaVersion: 2, width: 1280, height: 720, cardUrl: "derived" },
+    { provider: "google-drive", storageProfileId: "profile", fileId: "managed-file",
+      assetId: "managed-file", context: { ownerId: "test-only" }, uploadedAt: "yesterday" }
+  ];
+  await context.requestDeletionBatch(assets, "explicit-media-remove");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].path, "/media/delete");
+  assert.equal(requests[0].data.reason, "explicit-media-remove");
+  assert.equal(requests[0].data.assets.length, 2);
+  for (const asset of requests[0].data.assets) {
+    assert.ok(Object.keys(asset).every(key => allowed.has(key)),
+      "Do not send display metadata rejected by the existing strict Worker schema");
+  }
+  assert.equal(requests[0].data.assets[0].assetId, "asset-one");
+  assert.equal(requests[0].data.assets[1].fileId, "managed-file");
+  assert.equal(requests[0].data.assets[1].storageProfileId, "profile");
+});
+
+test("Admin startup never silently deletes preexisting queued or abandoned media", async () => {
+  const service = read("admin/services/mediaAssetLifecycleService.js");
+  const begin = service.indexOf("export async function recoverMediaAssetLifecycle() {");
+  assert.ok(begin >= 0);
+  const writes = [];
+  let deletions = 0;
+  const abandoned = { provider: "cloudinary", assetId: "old-temporary-asset" };
+  const queued = { provider: "google-drive", assetId: "old-managed-file", storageProfileId: "profile" };
+  const context = {
+    MEDIA_LIFECYCLE_SESSION_ID: "current-session",
+    TEMPORARY_ASSETS_KEY: "temporary",
+    DELETE_QUEUE_KEY: "queue",
+    readTemporaryEntries: () => [{ asset: abandoned, sessionId: "previous-session" }],
+    readList: key => key === "queue" ? [{ asset: queued }] : [],
+    uniqueManagedMediaReferences: values => values,
+    writeList: (key, value) => { writes.push({ key, value }); },
+    requestDeletion: async () => { deletions++; return { deleted: [], skipped: [] }; },
+    queueDeletion: () => { writes.push({ key: "queue-retry" }); }
+  };
+  runInNewContext(service.slice(begin), context);
+  const state = await context.recoverMediaAssetLifecycle();
+  assert.equal(deletions, 0, "Auto-recovery cannot verify that old assets are unreferenced");
+  assert.equal(writes.length, 0, "Preserve pending records for later explicit verification");
+  assert.equal(state.queued, true, "Existing entries remain pending");
+  assert.equal(state.reviewRequired, true, "Require ownership review before deletion");
+});

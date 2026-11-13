@@ -3459,15 +3459,10 @@ function render() {
     capabilities: { publishing: true, featured: true, visibility: false, deletion: true },
     onBulkPatch: (ids, changes) => runBulkProjectUpdate(ids, changes, { successMessage: `${ids.length} project${ids.length === 1 ? "" : "s"} updated.` }),
     onDelete: async (ids) => {
-      const outcomes = [];
-      for (const id of ids) outcomes.push(await deleteProject(id));
+      for (const id of ids) await deleteProject(id);
       if (ids.includes(idInput?.value || "")) closeForm();
       await refresh();
-      const pendingStorage = outcomes.some(projectMediaCleanupPending);
-      notify(pendingStorage
-        ? `${ids.length} project${ids.length === 1 ? "" : "s"} removed; storage cleanup pending verification.`
-        : `${ids.length} project${ids.length === 1 ? "" : "s"} deleted.`,
-      pendingStorage ? "warning" : "success");
+      notify(`${ids.length} project${ids.length === 1 ? "" : "s"} deleted.`, "success");
     }
   })?.sync();
 }
@@ -3535,16 +3530,6 @@ async function runBulkProjectUpdate(ids = [], changes = {}, { successMessage = "
   }
 }
 
-function projectMediaCleanupPending(result) {
-  const cleanup = result?.mediaCleanup;
-  if (!cleanup) return false;
-  if (cleanup.queued === true) return true;
-  // A Worker 'skipped' item is not proof of deletion unless already absent.
-  return Array.isArray(cleanup.skipped) && cleanup.skipped.some(
-    item => String(item?.reason || "") !== "already-missing"
-  );
-}
-
 async function refresh() {
   projectsLoading = true;
   setStatus("loading");
@@ -3600,12 +3585,8 @@ async function confirmDelete() {
   }
 
   try {
-    const result = await deleteProject(pendingDeleteId);
-    if (projectMediaCleanupPending(result)) {
-      notify("Project record deleted; storage cleanup pending verification.", "warning");
-    } else {
-      notify("Project deleted successfully.");
-    }
+    await deleteProject(pendingDeleteId);
+    notify("Project deleted successfully.");
     isDeleting = false;
     if (button) { button.disabled = false; button.removeAttribute("aria-busy"); button.textContent = originalText; }
     closeDelete();

@@ -364,7 +364,7 @@ test("partial Cloudinary and Drive cleanup retries only unconfirmed files after 
   assert.deepEqual(calls, [["done", "shared", "retry"], ["shared", "retry"]]);
 });
 
-test("hard deletion is ordered after reference-intent queueing; soft deletion remains restorable", () => {
+test("hard deletion queues cleanup before record removal across Projects, Modules and Photo Editing", () => {
   const projects = read("admin/services/projectService.js");
   const modules = read("admin/services/portfolioSectionService.js");
   const photos = read("admin/services/photoEditingService.js");
@@ -375,9 +375,10 @@ test("hard deletion is ordered after reference-intent queueing; soft deletion re
   const moduleDelete = section(modules, "export async function deleteSectionPermanently(", "export async function deleteSection(");
   assert.ok(moduleDelete.indexOf("queueManagedMediaCleanup(") < moduleDelete.indexOf("await deleteEntryDocumentsInChunks("));
   assert.ok(moduleDelete.indexOf("await deleteDoc(") < moduleDelete.indexOf("await cleanupModuleOwnedMedia("));
-  const photoSoftDelete = section(photos, "export async function removePhotoEditingProject(", "export async function restorePhotoEditingProject(");
-  assert.match(photoSoftDelete, /isDeleted: true/);
-  assert.doesNotMatch(photoSoftDelete, /cleanup.*Media|queueManagedMediaCleanup/);
+  const photoDelete = section(photos, "export async function removePhotoEditingProject(", "export async function restorePhotoEditingProject(");
+  assert.ok(photoDelete.indexOf("queueManagedMediaCleanup(") < photoDelete.indexOf("await deleteDoc("));
+  assert.ok(photoDelete.indexOf("await deleteDoc(") < photoDelete.indexOf("await cleanupDeletedRecordMedia("));
+  assert.doesNotMatch(photoDelete, /isDeleted:\s*true/, "New deletions must not create restorable tombstones");
 });
 
 test("unavailable media recovery storage blocks hard delete instead of losing cleanup intent", async () => {

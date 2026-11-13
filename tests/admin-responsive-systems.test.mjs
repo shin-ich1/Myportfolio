@@ -281,7 +281,7 @@ test("Admin startup never silently deletes preexisting queued or abandoned media
     requestDeletion: async () => { deletions++; return { deleted: [], skipped: [] }; },
     queueDeletion: () => { writes.push({ key: "queue-retry" }); }
   };
-  runInNewContext(service.slice(begin), context);
+  runInNewContext(service.slice(begin).replace("export async function", "async function"), context);
   const state = await context.recoverMediaAssetLifecycle();
   assert.equal(deletions, 0, "Auto-recovery cannot verify that old assets are unreferenced");
   assert.equal(writes.length, 0, "Preserve pending records for later explicit verification");

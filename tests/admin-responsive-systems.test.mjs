@@ -332,3 +332,30 @@ test("Explicit CMS media removal still sends real provider deletion requests", a
   assert.equal(deletedRecord.queued, false);
   assert.equal(deletedRecord.deleted.length, 1);
 });
+
+test("hard-deleting a Project reports failed storage cleanup rather than claiming provider deletion", async () => {
+  const source = read("admin/services/projectService.js");
+  const start = source.indexOf("export async function deleteProject(");
+  const end = source.indexOf("\nexport async function loadProjects()", start);
+  assert.ok(start >= 0 && end > start);
+  let recordDeleted = false;
+  const context = {
+    db: {},
+    PROJECT_COLLECTION: "projects",
+    doc: (_, collection, id) => ({ collection, id }),
+    getDoc: async () => ({ exists: () => true, data: () => ({ coverImage: { assetId: "test-cover" } }) }),
+    projectOwnedMedia: data => [data.coverImage],
+    cleanupDeletedRecordMedia: async () => ({ deleted: [], skipped: [], queued: true, error: new Error("Provider unavailable") }),
+    deleteDoc: async () => { recordDeleted = true; },
+    announcePortfolioContentChanged: () => {}
+  };
+  runInNewContext(source.slice(start, end).replace("export async function", "async function"), context);
+  const result = await context.deleteProject("project-1");
+  assert.equal(recordDeleted, true, "Keep existing hard-delete semantics");
+  assert.equal(result?.mediaCleanup?.queued, true, "Report pending storage deletion to caller");
+  assert.equal(result?.id, "project-1");
+  const ui = read("admin/js/projects.js");
+  assert.match(ui, /result\?\.mediaCleanup\?\.queued|result\.mediaCleanup\?\.queued/,
+    "Project Admin must distinguish Firestore record removal from pending storage deletion");
+  assert.match(ui, /storage cleanup pending|storage deletion pending|storage file deletion is pending/i);
+});

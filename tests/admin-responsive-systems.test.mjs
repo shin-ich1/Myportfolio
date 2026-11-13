@@ -466,7 +466,9 @@ test("Worker physically deletes only references cleared by its server-side scan"
 
 
 test("Project deletion notices distinguish pending storage cleanup from confirmed completion", async () => {
-  const source = read("admin/js/projects.js");
+  // Git for Windows may check out CRLF; normalize only the test fixture so the
+  // actual Admin handlers are extracted identically on Windows and Linux.
+  const source = read("admin/js/projects.js").replace(/\r\n?/g, "\n");
   const helperStart = source.indexOf("function notifyProjectDeletionOutcomes(");
   const helperEnd = source.indexOf("\nfunction markAsChanged(", helperStart);
   assert.ok(helperStart >= 0 && helperEnd > helperStart, "Exercise the canonical Project notification owner");

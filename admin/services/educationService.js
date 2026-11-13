@@ -9,6 +9,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
 
 import { db } from "./firebase.js";
+import { queueManagedMediaCleanup, cleanupDeletedRecordMedia } from "./mediaAssetLifecycleService.js";
 
 const COLLECTION_NAME = "education";
 const LEGACY_STORAGE_KEY = "lanPortfolioEducation";
@@ -357,7 +358,10 @@ export class EducationService {
     const reference = doc(db, COLLECTION_NAME, educationId);
     const existing = await getDoc(reference);
     if (!existing.exists()) throw new Error("Education record was not found.");
+    const media = existing.data() || {};
+    queueManagedMediaCleanup(media, "education-deleted");
     await deleteDoc(reference);
+    await cleanupDeletedRecordMedia(media, { reason: "education-deleted" });
     return true;
   }
 

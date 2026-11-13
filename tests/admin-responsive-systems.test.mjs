@@ -844,3 +844,44 @@ test("Google Drive cache validation fails closed on transient Drive errors inste
   );
   assert.equal(r.operations.filter(x => x.method === "POST").length, 1);
 });
+
+
+test("Google Drive physical deletion removes only resolved managed assets and purges their CDN cache", async () => {
+  const worker = read("telemetry-worker/src/index.js").replace(/\r\n?/g, "\n");
+  const begin = worker.indexOf("async function deleteDriveManagedReference(");
+  const end = worker.indexOf("\nfunction mediaReferenceProvider(", begin);
+  assert.ok(begin >= 0 && end > begin);
+  const deletedUrls = [];
+  const kvDeletes = [];
+  const cachePurges = [];
+  const cleanedFolders = [];
+  const remove = runInNewContext(worker.slice(begin, end) + "\ndeleteDriveManagedReference", {
+    resolveDriveManagedReference: async ref => ref.assetId === "owned" ? {
+      profileId: "p", fileId: "owned", folderId: "module-folder", name: "image.png"
+    } : null,
+    driveAccessToken: async () => "mock-token",
+    fetch: async (url, options) => {
+      deletedUrls.push({ url, method: options.method, auth: options.headers.Authorization });
+      return { ok: true, status: 204 };
+    },
+    storageKv: () => ({ delete: async key => { kvDeletes.push(key); } }),
+    driveAssetKey: (profile, id) => "drive-asset:" + profile + ":" + id,
+    purgeDrivePublicCache: async (...args) => { cachePurges.push(args); },
+    driveCleanupEmptyGeneratedFolders: async (...args) => { cleanedFolders.push(args); },
+    serviceError: (message, attrs) => Object.assign(new Error(message), attrs),
+    encodeURIComponent
+  });
+  const ignored = await remove({ storageProfileId: "p", assetId: "not-managed" }, {});
+  assert.equal(ignored.deleted, false);
+  assert.equal(deletedUrls.length, 0, "Unresolved asset must never trigger deletion");
+  const result = await remove({ storageProfileId: "p", assetId: "owned" }, {});
+  assert.equal(result.deleted, true);
+  assert.equal(deletedUrls.length, 1);
+  assert.equal(deletedUrls[0].method, "DELETE");
+  assert.match(deletedUrls[0].url, /\/drive\/v3\/files\/owned$/);
+  assert.deepEqual(kvDeletes, ["drive-asset:p:owned"]);
+  assert.deepEqual(Array.from(cachePurges[0]), ["p", "owned"]);
+  assert.equal(cleanedFolders[0][0], "p");
+  assert.equal(cleanedFolders[0][1], "module-folder");
+  assert.equal(cleanedFolders.length, 1);
+});

@@ -3570,11 +3570,14 @@ async function confirmDeleteProject() {
   }
 
   try {
-    await removePhotoEditingProject(project.id);
+    const outcome = await removePhotoEditingProject(project.id);
     state.selectedIds.delete(project.id);
     state.pendingDeleteId = "";
     closeModal(elements.deleteModal);
-    showToast("Sample deleted permanently.");
+    const pending = Boolean(outcome?.mediaCleanup?.queued || outcome?.mediaCleanup?.error);
+    showToast(pending
+      ? "Sample deleted from CMS. Storage cleanup is pending."
+      : "Sample and unused uploaded files deleted.", pending ? "warning" : "success");
     await loadProjects();
   } catch (error) {
     console.error("Unable to delete sample:", error);
@@ -3635,9 +3638,16 @@ async function deleteSelectedPhotoProjects(ids = []) {
   if (!cleanIds.length) return;
   setPanelLoading(true, "Deleting selected samples...");
   try {
-    for (const id of cleanIds) await removePhotoEditingProject(id);
+    let storagePending = 0;
+    for (const id of cleanIds) {
+      const outcome = await removePhotoEditingProject(id);
+      if (outcome?.mediaCleanup?.queued || outcome?.mediaCleanup?.error) storagePending++;
+    }
     state.projects = state.projects.filter((project) => !cleanIds.includes(project.id));
-    showToast(`${cleanIds.length} sample${cleanIds.length === 1 ? "" : "s"} deleted permanently.`, "success");
+    showToast(storagePending
+      ? `${cleanIds.length} sample${cleanIds.length === 1 ? "" : "s"} deleted from CMS. Storage cleanup pending for ${storagePending}.`
+      : `${cleanIds.length} sample${cleanIds.length === 1 ? "" : "s"} and unused uploads deleted.`,
+      storagePending ? "warning" : "success");
     await loadProjects();
   } finally {
     setPanelLoading(false);

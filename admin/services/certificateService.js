@@ -10,7 +10,7 @@ import {
   updateDoc
 } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
 import { db } from "./firebase.js";
-import { commitMediaAssets, cleanupDeletedRecordMedia, cleanupRemovedMediaAssets } from "./mediaAssetLifecycleService.js";
+import { commitMediaAssets, cleanupDeletedRecordMedia, cleanupRemovedMediaAssets, queueManagedMediaCleanup } from "./mediaAssetLifecycleService.js";
 import { normalizeHours } from "../../hours-value.js";
 import { normalizeAssetReference, isManagedAssetReference } from "../../asset-resolver.js";
 
@@ -117,6 +117,8 @@ export async function deleteCertificate(id) {
   const reference = doc(db, COLLECTION_NAME, id);
   const previousSnapshot = await getDoc(reference);
   const previous = previousSnapshot.exists() ? normalizeCertificate(previousSnapshot.data() || {}) : null;
+  const media = previous?.imageAsset || previous?.imageUrl || null;
+  queueManagedMediaCleanup(media, "certificate-deleted");
   await deleteDoc(reference);
-  if (previous) await cleanupDeletedRecordMedia(previous.imageAsset || previous.imageUrl, { reason: "certificate-deleted" });
+  if (previous) await cleanupDeletedRecordMedia(media, { reason: "certificate-deleted" });
 }

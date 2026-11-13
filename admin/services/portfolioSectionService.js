@@ -30,7 +30,8 @@ import { reconcileModuleMaturityMeta } from "../../module-maturity.js";
 import {
   commitMediaAssets,
   cleanupDeletedRecordMedia,
-  cleanupModuleOwnedMedia
+  cleanupModuleOwnedMedia,
+  queueManagedMediaCleanup
 } from "./mediaAssetLifecycleService.js";
 import {
   collectManagedMediaReferences,
@@ -642,10 +643,15 @@ export async function deleteSectionPermanently(sectionIdOrKey = "") {
   const entriesSnapshot = await getDocs(query(collection(db, ENTRY_COLLECTION), where("sectionKey", "==", source.section.key)));
   const ownedMedia = entriesSnapshot.docs.map((item) => sectionEntryOwnedMedia(source.section, item.data() || {}));
   const deletableMedia = await unreferencedEntryMedia(ownedMedia, entriesSnapshot.docs.map((item) => item.id));
-  await cleanupModuleOwnedMedia(deletableMedia, { reason: "custom-module-deleted", strict: true });
+  // Record removal must precede provider deletion. Server-side reference
+  // validation must never be bypassed just because the owner is being deleted.
+  queueManagedMediaCleanup(deletableMedia, "custom-module-deleted");
   await deleteEntryDocumentsInChunks(entriesSnapshot.docs);
   await deleteDoc(doc(db, SECTION_COLLECTION, source.section.id));
-  return { deleted:true, ...impact };
+  const mediaCleanup = await cleanupModuleOwnedMedia(deletableMedia, {
+    reason: "custom-module-deleted", strict: false
+  });
+  return { deleted:true, mediaCleanup, ...impact };
 }
 
 export async function deleteSection(id) {
@@ -753,18 +759,17 @@ export async function deleteEntry(id) {
   if (!existing.exists()) return;
   const previousData = existing.data() || {};
   const resolvedSection = await getSection(previousData.sectionKey).catch(() => null);
+  const isBorrower = Boolean(safe(previousData.duplicateRootEntryId));
+  const deletableMedia = resolvedSection ? await unreferencedEntryMedia(
+    sectionEntryOwnedMedia(resolvedSection, previousData),
+    [id],
+    { ignoreBorrowersOf: isBorrower ? '' : id }
+  ) : [];
+  const reason = isBorrower ? "custom-module-duplicate-deleted" : "custom-module-entry-owner-deleted";
+  queueManagedMediaCleanup(deletableMedia, reason);
   await deleteDoc(reference);
   if (resolvedSection) {
-    const isBorrower = Boolean(safe(previousData.duplicateRootEntryId));
-    const deletableMedia = await unreferencedEntryMedia(
-      sectionEntryOwnedMedia(resolvedSection, previousData),
-      [id],
-      { ignoreBorrowersOf: isBorrower ? '' : id }
-    );
-    await cleanupDeletedRecordMedia(
-      deletableMedia,
-      { reason: isBorrower ? "custom-module-duplicate-deleted" : "custom-module-entry-owner-deleted" }
-    );
+    await cleanupDeletedRecordMedia(deletableMedia, { reason });
   }
 }
 

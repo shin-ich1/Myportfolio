@@ -378,6 +378,23 @@ function notify(message, type = "success") {
   window.LANNotice?.({ title: "Projects", message, tone });
 }
 
+function notifyProjectDeletionOutcomes(results = []) {
+  const count = results.length;
+  if (!count) return;
+  const pendingCount = results.filter((result) => {
+    const cleanup = result?.mediaCleanup;
+    return !cleanup || cleanup.queued === true || Boolean(cleanup.error) ||
+      Number(cleanup.pendingCount) > 0;
+  }).length;
+  if (pendingCount) {
+    const recordLabel = count === 1 ? "Project" : `${count} projects`;
+    const pendingLabel = count === 1 ? "" : ` for ${pendingCount} project${pendingCount === 1 ? "" : "s"}`;
+    notify(`${recordLabel} deleted. Media storage cleanup pending${pendingLabel}.`, "warning");
+    return;
+  }
+  notify(count === 1 ? "Project deleted successfully." : `${count} projects deleted.`, "success");
+}
+
 function markAsChanged() {
   hasUnsavedChanges = true;
   setStatus("editing");
@@ -3459,10 +3476,11 @@ function render() {
     capabilities: { publishing: true, featured: true, visibility: false, deletion: true },
     onBulkPatch: (ids, changes) => runBulkProjectUpdate(ids, changes, { successMessage: `${ids.length} project${ids.length === 1 ? "" : "s"} updated.` }),
     onDelete: async (ids) => {
-      for (const id of ids) await deleteProject(id);
+      const results = [];
+      for (const id of ids) results.push(await deleteProject(id));
       if (ids.includes(idInput?.value || "")) closeForm();
       await refresh();
-      notify(`${ids.length} project${ids.length === 1 ? "" : "s"} deleted.`, "success");
+      notifyProjectDeletionOutcomes(results);
     }
   })?.sync();
 }
@@ -3585,8 +3603,8 @@ async function confirmDelete() {
   }
 
   try {
-    await deleteProject(pendingDeleteId);
-    notify("Project deleted successfully.");
+    const result = await deleteProject(pendingDeleteId);
+    notifyProjectDeletionOutcomes([result]);
     isDeleting = false;
     if (button) { button.disabled = false; button.removeAttribute("aria-busy"); button.textContent = originalText; }
     closeDelete();

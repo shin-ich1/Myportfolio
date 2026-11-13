@@ -8,7 +8,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js';
 import { db } from './firebase.js';
 import { normalizeStorageSettings } from './storageProviderRegistry.js';
-import { collectManagedMediaReferences, uniqueManagedMediaReferences } from '../../media-asset-lifecycle.js';
+import { collectManagedMediaReferences, uniqueManagedMediaReferences, MANAGED_MEDIA_RECORD_COLLECTIONS, MANAGED_MEDIA_RECORD_SINGLETONS } from '../../media-asset-lifecycle.js';
 
 const STORAGE_DOC = doc(db, 'settings', 'storage');
 const text = (value = '') => String(value ?? '').trim();
@@ -100,20 +100,15 @@ export async function disconnectStorageProfile(profileId, { referenceCount = 0 }
 }
 
 
-const STORAGE_SCAN_COLLECTIONS = Object.freeze([
-  'projects', 'photoEditingProjects', 'experiences', 'education', 'skills', 'certificates', 'resumes', 'portfolioSectionEntries'
-]);
-const STORAGE_SCAN_SINGLETONS = Object.freeze([
-  ['portfolio', 'home'], ['portfolio', 'profile'], ['portfolio', 'contact'], ['portfolio', 'services']
-]);
+
 
 export async function scanStorageUsageByProfile(profileIds = []) {
   const requestedIds = [...new Set((profileIds || []).map(text).filter(Boolean))];
   const usageByProfile = new Map(requestedIds.map((id) => [id, { assetCount: 0, bytes: 0, references: [] }]));
 
   const [collectionSnapshots, singletonSnapshots] = await Promise.all([
-    Promise.all(STORAGE_SCAN_COLLECTIONS.map((name) => getDocs(collection(db, name)))),
-    Promise.all(STORAGE_SCAN_SINGLETONS.map(([collectionName, documentName]) => getDoc(doc(db, collectionName, documentName))))
+    Promise.all(MANAGED_MEDIA_RECORD_COLLECTIONS.map((name) => getDocs(collection(db, name)))),
+    Promise.all(MANAGED_MEDIA_RECORD_SINGLETONS.map(([collectionName, documentName]) => getDoc(doc(db, collectionName, documentName))))
   ]);
 
   const values = [];

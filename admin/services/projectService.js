@@ -23,7 +23,8 @@ import { announcePortfolioContentChanged } from "./portfolioSyncService.js";
 import {
   commitMediaAssets,
   cleanupDeletedRecordMedia,
-  cleanupRemovedMediaAssets
+  cleanupRemovedMediaAssets,
+  queueManagedMediaCleanup
 } from "./mediaAssetLifecycleService.js";
 import { normalizePublicTagMode, normalizePublicTagRefs } from "../../projectCapabilities.js";
 import { projectLinkDescriptorFromModule } from "../../module-platform.js";
@@ -1402,14 +1403,19 @@ export async function deleteProject(projectId, options = {}) {
   const previousData = existingSnapshot.exists() ? existingSnapshot.data() || {} : {};
   const strictMediaCleanup = options.strictMediaCleanup === true;
 
-  if (strictMediaCleanup) {
-    await cleanupDeletedRecordMedia(projectOwnedMedia(previousData), { reason: "project-deleted", strict: true });
-  }
+  const media = projectOwnedMedia(previousData);
+  // Persist deletion intent before removing the record. The Worker must
+  // inspect retained owners, so provider deletion can only follow deleteDoc.
+  queueManagedMediaCleanup(media, "project-deleted");
   await deleteDoc(reference);
-  if (!strictMediaCleanup) {
-    await cleanupDeletedRecordMedia(projectOwnedMedia(previousData), { reason: "project-deleted" });
-  }
+  const mediaCleanup = await cleanupDeletedRecordMedia(media, {
+    reason: "project-deleted",
+    strict: strictMediaCleanup
+  });
   announcePortfolioContentChanged("projects");
+  // Record deletion and provider deletion are distinct outcomes. The caller
+  // must never report confirmed storage removal when cleanup was only queued.
+  return { id: projectId, mediaCleanup };
 }
 
 export async function loadProjects() {

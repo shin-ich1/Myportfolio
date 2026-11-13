@@ -433,8 +433,13 @@ export async function deleteModulePermanently(sectionKey, options = {}) {
     });
 
     phase = 'linked-projects';
+    const linkedProjectCleanup = [];
     for (const project of impact.linkedProjects) {
-      await deleteProject(project.id, { strictMediaCleanup:true });
+      // Linked Projects may share a provider file with the module entries that
+      // are deleted in the NEXT phase. Keep the server-side guard intact;
+      // non-strict cleanup queues that still-referenced file until source
+      // records have also been removed.
+      linkedProjectCleanup.push(await deleteProject(project.id));
     }
     await writeDeletionProgress(impact.moduleId || impact.moduleKey, section, deletionProgress, {
       state:'in-progress',
@@ -456,6 +461,8 @@ export async function deleteModulePermanently(sectionKey, options = {}) {
 
     const cascadeResult = {
       ...result,
+      mediaCleanupPending: Boolean(result?.mediaCleanup?.queued) ||
+        linkedProjectCleanup.some((item) => item?.mediaCleanup?.queued === true),
       linkedProjectCount: impact.linkedProjects.length,
       linkedProjects: impact.linkedProjects,
       mediaAssetCount: impact.mediaAssetCount,

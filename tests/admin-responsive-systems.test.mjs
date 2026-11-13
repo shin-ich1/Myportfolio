@@ -219,3 +219,327 @@ test("Security branding initialization shares one request and reuses loaded resu
   assert.equal(fetches, 1, "Already-loaded branding must not be fetched again");
   assert.equal(fields.get("securityEmailHeading").value, "Security ready");
 });
+
+test("media deletion sends the exact Worker request contract, with no unapproved reason field", async () => {
+  const service = read("admin/services/mediaAssetLifecycleService.js");
+  const begin = service.indexOf("function deletionContractReference(");
+  const end = service.indexOf("\nasync function requestDeletion(", begin);
+  assert.ok(begin >= 0 && end > begin);
+  const requests = [];
+  runInNewContext(service.slice(begin, end), {
+    AbortController,
+    REQUEST_TIMEOUT_MS: 15000,
+    window: { setTimeout: () => 1, clearTimeout: () => {} },
+    authorizedWorkerRequest: async (path, options) => {
+      requests.push({ path, body: JSON.parse(options.body) });
+      return { deleted: [], skipped: [] };
+    }
+  });
+  // Run the extracted actual deletion-batch implementation, not a substitute serializer.
+  const actual = runInNewContext(service.slice(begin, end) + "\nrequestDeletionBatch", {
+    AbortController,
+    REQUEST_TIMEOUT_MS: 15000,
+    window: { setTimeout: () => 1, clearTimeout: () => {} },
+    authorizedWorkerRequest: async (path, options) => {
+      requests.push({ path, body: JSON.parse(options.body) });
+      return { deleted: [], skipped: [] };
+    }
+  });
+  await actual([{ provider: "cloudinary", assetId: "file" }], "media-cleanup");
+  assert.equal(requests.length, 1);
+  assert.deepEqual(Object.keys(requests[0].body), ["assets"], "Worker accepts only body.assets");
+});
+
+test("Worker validates persisted references server-side before physical media deletion", () => {
+  const worker = read("telemetry-worker/src/index.js");
+  const start = worker.indexOf("async function handleMediaDelete(");
+  const end = worker.indexOf("\nconst PRIVATE_MESSAGE_THREAD_RE", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = worker.slice(start, end);
+  assert.match(handler, /await (?:findUnreferencedDeletionTargets|filterUnreferencedMediaDeletionTargets)\(/,
+    "Provider deletion must require a server-owned cross-record reference scan");
+  assert.ok(handler.indexOf("findUnreferencedDeletionTargets(") < handler.indexOf("cloudinaryDeleteAssetIds("),
+    "Guard must run before Cloudinary API deletion");
+  assert.ok(handler.indexOf("findUnreferencedDeletionTargets(") < handler.indexOf("deleteDriveManagedReference("),
+    "Guard must run before Google Drive API deletion");
+});
+
+test("media cleanup keeps provider-skipped and partially failed assets pending, not silently lost", () => {
+  const service = read("admin/services/mediaAssetLifecycleService.js");
+  assert.match(service, /already-missing/, "Confirmed absence must not remain pending");
+  assert.match(service, /autoRetry/, "New failed deletions need automatic safe retry metadata");
+  assert.match(service, /recoverMediaAssetLifecycle\(\)[\s\S]*await deleteAndForget\(eligible/,
+    "Recovery must reuse the canonical guarded deletion and queue reconciliation path");
+  const bridge = read("admin/services/storageBridgeService.js");
+  assert.match(bridge, /error\.(?:deleted|result)\s*=/,
+    "Partial Worker 502 outcomes must not be discarded by the bridge");
+});
+
+test("server-side media inventory protects restorable Photo Editing files and fails closed on Firestore errors", async () => {
+  const { sameManagedMediaReference, unreferencedManagedMediaReferences,
+    MANAGED_MEDIA_RECORD_COLLECTIONS, MANAGED_MEDIA_RECORD_SINGLETONS } =
+    await import("../media-asset-lifecycle.js");
+  const worker = read("telemetry-worker/src/index.js");
+  const start = worker.indexOf("async function findUnreferencedDeletionTargets(");
+  const end = worker.indexOf("\nasync function handleMediaDelete(", start);
+  assert.ok(start >= 0 && end > start);
+  const retained = {
+    isDeleted: true, status: "draft",
+    beforeImage: { provider: "cloudinary", storageProfileId: "cloudinary-default",
+      assetId: "used-by-restorable-record", publicId: "lan-portfolio/photo-editing/a", resourceType: "image" }
+  };
+  const requested = [
+    retained.beforeImage,
+    { provider: "google-drive", storageProfileId: "drive-main", assetId: "orphan-file", fileId: "orphan-file" }
+  ];
+  let verified = false;
+  const ctx = {
+    MANAGED_MEDIA_RECORD_COLLECTIONS, MANAGED_MEDIA_RECORD_SINGLETONS,
+    sameManagedMediaReference, unreferencedManagedMediaReferences,
+    firebaseAdminAccessToken: async () => { verified = true; },
+    securityQueryAll: async (_, collection) => collection === "photoEditingProjects" ? [retained] : [],
+    firestoreAdminGetDocument: async () => null,
+    fromFirestoreDoc: value => value
+  };
+  const guard = runInNewContext(worker.slice(start, end) + "\nfindUnreferencedDeletionTargets", ctx);
+  const result = await guard(requested, {});
+  assert.equal(verified, true);
+  assert.deepEqual(Array.from(result.protected, x => x.assetId), ["used-by-restorable-record"]);
+  assert.deepEqual(Array.from(result.deletable, x => x.assetId), ["orphan-file"]);
+  ctx.securityQueryAll = async () => { throw new Error("Firestore unavailable"); };
+  await assert.rejects(guard(requested, {}), /Firestore unavailable/,
+    "An incomplete reference scan must never authorize provider deletion");
+});
+
+test("partial Cloudinary and Drive cleanup retries only unconfirmed files after provider validation", async () => {
+  const service = read("admin/services/mediaAssetLifecycleService.js");
+  const begin = service.indexOf("function deletionContractReference(");
+  const end = service.indexOf("\nexport async function recoverMediaAssetLifecycle()", begin);
+  assert.ok(begin >= 0 && end > begin);
+  const store = new Map();
+  const key = { TEMPORARY_ASSETS_KEY: "temporary", DELETE_QUEUE_KEY: "queue",
+    LEGACY_DELETE_QUEUE_KEY: "legacy", MEDIA_LIFECYCLE_SESSION_ID: "current" };
+  const cloudinary = id => ({ provider: "cloudinary", storageProfileId: "cloudinary-default", assetId: id });
+  const drive = id => ({ provider: "google-drive", storageProfileId: "drive-main", assetId: id });
+  const assets = [cloudinary("done"), cloudinary("shared"), drive("retry")];
+  const calls = [];
+  const ctx = {
+    ...key, REQUEST_TIMEOUT_MS: 15000, AbortController,
+    window: { setTimeout: () => 1, clearTimeout: () => {} },
+    readList: name => JSON.parse(store.get(name) || "[]"),
+    readDeletionQueue: () => JSON.parse(store.get("queue") || "[]"),
+    writeList: (name, value) => { store.set(name, JSON.stringify(value)); return true; },
+    readTemporaryEntries: () => [],
+    removeTemporaryReferences: records => records,
+    collectManagedMediaReferences: items => items,
+    removedManagedMediaReferences: items => items,
+    uniqueManagedMediaReferences: items => items,
+    sameManagedMediaReference: (a, b) => a?.provider === b?.provider && a?.assetId === b?.assetId,
+    authorizedWorkerRequest: async (_, options) => {
+      calls.push(JSON.parse(options.body).assets.map(x => x.assetId));
+      if (calls.length === 1) {
+        const error = new Error("Partial provider response");
+        error.result = { deleted: [cloudinary("done")],
+          skipped: [{ reference: cloudinary("shared"), reason: "still-referenced" }],
+          failed: [{ reference: drive("retry"), error: "Provider unavailable" }] };
+        throw error;
+      }
+      return { deleted: [cloudinary("shared"), drive("retry")], skipped: [], failed: [] };
+    }
+  };
+  const source = service.slice(begin, end).replaceAll("export async function", "async function")
+    .replaceAll("export function", "function") +
+    "\n" + service.slice(end).replace("export async function", "async function");
+  runInNewContext(source, ctx);
+  const result = await ctx.removeManagedMediaAssets(assets);
+  assert.equal(result.deleted.length, 1, "Retain provider-confirmed partial success");
+  assert.equal(result.queued, true);
+  assert.equal(result.pendingCount, 2);
+  const queue = JSON.parse(store.get("queue") || "[]");
+  assert.deepEqual(queue.map(item => item.asset.assetId), ["shared", "retry"]);
+  assert.ok(queue.every(item => item.autoRetry === true));
+  const retry = await ctx.recoverMediaAssetLifecycle();
+  assert.equal(retry.queued, false);
+  assert.equal(JSON.parse(store.get("queue") || "[]").length, 0);
+  assert.deepEqual(calls, [["done", "shared", "retry"], ["shared", "retry"]]);
+});
+
+test("hard deletion is ordered after reference-intent queueing; soft deletion remains restorable", () => {
+  const projects = read("admin/services/projectService.js");
+  const modules = read("admin/services/portfolioSectionService.js");
+  const photos = read("admin/services/photoEditingService.js");
+  const section = (code, marker, end) => code.slice(code.indexOf(marker), code.indexOf(end, code.indexOf(marker)));
+  const projectDelete = section(projects, "export async function deleteProject(", "export async function loadProjects(");
+  assert.ok(projectDelete.indexOf("queueManagedMediaCleanup(") < projectDelete.indexOf("await deleteDoc("));
+  assert.ok(projectDelete.indexOf("await deleteDoc(") < projectDelete.indexOf("await cleanupDeletedRecordMedia("));
+  const moduleDelete = section(modules, "export async function deleteSectionPermanently(", "export async function deleteSection(");
+  assert.ok(moduleDelete.indexOf("queueManagedMediaCleanup(") < moduleDelete.indexOf("await deleteEntryDocumentsInChunks("));
+  assert.ok(moduleDelete.indexOf("await deleteDoc(") < moduleDelete.indexOf("await cleanupModuleOwnedMedia("));
+  const photoSoftDelete = section(photos, "export async function removePhotoEditingProject(", "export async function restorePhotoEditingProject(");
+  assert.match(photoSoftDelete, /isDeleted: true/);
+  assert.doesNotMatch(photoSoftDelete, /cleanup.*Media|queueManagedMediaCleanup/);
+});
+
+test("unavailable media recovery storage blocks hard delete instead of losing cleanup intent", async () => {
+  const service = read("admin/services/mediaAssetLifecycleService.js");
+  const start = service.indexOf("function readDeletionQueue() {");
+  const end = service.indexOf("\nfunction normalizeTemporaryEntry(", start);
+  assert.ok(start >= 0 && end > start);
+  const load = runInNewContext(service.slice(start, end) + "\nreadDeletionQueue", {
+    DELETE_QUEUE_KEY: "media-queue",
+    localStorage: { getItem: () => { throw new Error("Storage disabled"); } }
+  });
+  assert.throws(() => load(), /Media cleanup recovery storage is unavailable/);
+  const projects = read("admin/services/projectService.js");
+  const first = projects.indexOf("export async function deleteProject(");
+  const last = projects.indexOf("\nexport async function loadProjects()", first);
+  let deleted = false;
+  const ctx = {
+    PROJECT_COLLECTION: "projects", db: {},
+    doc: () => ({}),
+    getDoc: async () => ({ exists: () => true, data: () => ({ coverImage: { assetId: "A" } }) }),
+    projectOwnedMedia: doc => doc,
+    queueManagedMediaCleanup: () => { throw new Error("Media cleanup recovery storage is unavailable"); },
+    deleteDoc: async () => { deleted = true; },
+    cleanupDeletedRecordMedia: async () => ({ deleted: [], skipped: [], queued: false }),
+    announcePortfolioContentChanged: () => {}
+  };
+  runInNewContext(projects.slice(first, last).replace("export async function", "async function"), ctx);
+  await assert.rejects(ctx.deleteProject("project-1"), /Media cleanup recovery storage is unavailable/);
+  assert.equal(deleted, false, "Never hard-delete a record when its recovery intent cannot be persisted");
+  const modules = read("admin/services/moduleLifecycleService.js");
+  assert.doesNotMatch(modules, /deleteProject\(project\.id,\s*\{\s*strictMediaCleanup:\s*true/,
+    "Linked modules cannot physically delete shared media before their owner entries are gone");
+});
+
+test("Worker physically deletes only references cleared by its server-side scan", async () => {
+  const source = read("telemetry-worker/src/index.js");
+  const start = source.indexOf("async function handleMediaDelete(");
+  const end = source.indexOf("\nconst PRIVATE_MESSAGE_THREAD_RE", start);
+  assert.ok(start >= 0 && end > start);
+  const cloud = { provider: "cloudinary", assetId: "cloud-same", publicId: "lan-portfolio/photo-editing/image", resourceType: "image" };
+  const drive = { provider: "google-drive", storageProfileId: "drive-main", assetId: "file-unused" };
+  const requests = [cloud, drive];
+  const actions = [];
+  let protectedMode = true;
+  let rejection = false;
+  const ctx = {
+    allowedOrigin: () => "https://portfolio.web.app",
+    requireSecurityApprovedAdministrator: async () => ({ uid: "admin" }),
+    enforceAdminServiceRateLimit: async () => {},
+    readStrictJsonBody: async () => ({ assets: requests }),
+    ASSET_REFERENCE_SCHEMA: {},
+    findUnreferencedDeletionTargets: async submitted => {
+      if (rejection) throw Object.assign(new Error("Cannot verify references"), { status: 503, code: "reference-scan-failed" });
+      return protectedMode ? { deletable: [], protected: submitted } : { deletable: submitted, protected: [] };
+    },
+    mediaReferenceProvider: ref => ref.provider,
+    resolveAssetReference: async ref => ({ ...ref, secureUrl: "https://res.cloudinary.com/test/image/upload/demo" }),
+    assetBelongsToManagedFolder: () => true,
+    cloudinaryDeleteAssetIds: async ids => {
+      actions.push({ provider: "cloudinary", ids });
+      return { deleted: Object.fromEntries(ids.map(id => [id, "deleted"])) };
+    },
+    deleteDriveManagedReference: async ref => {
+      actions.push({ provider: "google-drive", id: ref.assetId });
+      return { deleted: true, asset: ref };
+    },
+    json: (data, status) => ({ data, status }),
+    serviceError: (...args) => { throw new Error(String(args[0])); }
+  };
+  const handler = runInNewContext(source.slice(start, end) + "\nhandleMediaDelete", ctx);
+  const request = { headers: { get: () => "https://portfolio.web.app" } };
+  const blocked = await handler(request, {});
+  assert.equal(blocked.status, 200);
+  assert.deepEqual(Array.from(blocked.data.skipped, item => item.reason), ["still-referenced", "still-referenced"]);
+  assert.equal(actions.length, 0, "No provider calls while other CMS records still reference media");
+  protectedMode = false;
+  const safe = await handler(request, {});
+  assert.equal(safe.status, 200);
+  assert.equal(safe.data.deleted.length, 2);
+  assert.deepEqual(actions.map(item => item.provider), ["cloudinary", "google-drive"]);
+  rejection = true;
+  const denied = await handler(request, {});
+  assert.equal(denied.status, 503);
+  assert.equal(actions.length, 2, "Reference scan outage must not trigger provider calls");
+});
+
+
+test("Project deletion notices distinguish pending storage cleanup from confirmed completion", async () => {
+  // Git for Windows may check out CRLF; normalize only the test fixture so the
+  // actual Admin handlers are extracted identically on Windows and Linux.
+  const source = read("admin/js/projects.js").replace(/\r\n?/g, "\n");
+  const helperStart = source.indexOf("function notifyProjectDeletionOutcomes(");
+  const helperEnd = source.indexOf("\nfunction markAsChanged(", helperStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart, "Exercise the canonical Project notification owner");
+  const notificationHelper = source.slice(helperStart, helperEnd);
+  const singleStart = source.indexOf("async function confirmDelete() {");
+  const singleEnd = source.indexOf("\nfunction setupDropZone(", singleStart);
+  assert.ok(singleStart >= 0 && singleEnd > singleStart, "Use the real single-delete handler");
+
+  async function runSingle(mediaCleanup) {
+    const notices = [];
+    const button = {
+      textContent: "Delete Permanently",
+      disabled: false,
+      setAttribute() {},
+      removeAttribute() {}
+    };
+    const context = {
+      pendingDeleteId: "project-one",
+      isDeleting: false,
+      $: id => id === "confirmDeleteButton" ? button : null,
+      deleteProject: async () => ({ id: "project-one", mediaCleanup }),
+      notify: (message, type = "success") => notices.push({ message, type }),
+      closeDelete() {},
+      closeForm() {},
+      refresh: async () => {},
+      console
+    };
+    const deleteOne = runInNewContext(
+      notificationHelper + "\n" + source.slice(singleStart, singleEnd) + "\nconfirmDelete", context
+    );
+    await deleteOne();
+    return notices;
+  }
+
+  const pendingSingle = await runSingle({ queued: true, pendingCount: 1 });
+  assert.equal(pendingSingle.length, 1);
+  assert.equal(pendingSingle[0].type, "warning", "Pending provider cleanup is not full deletion success");
+  assert.match(pendingSingle[0].message, /project.*delet/i);
+  assert.match(pendingSingle[0].message, /(?:storage|media).*(?:pending|queued)|(?:pending|queued).*(?:storage|media)/i);
+
+  const finishedSingle = await runSingle({ queued: false, pendingCount: 0 });
+  assert.equal(finishedSingle.length, 1);
+  assert.equal(finishedSingle[0].type, "success", "Confirmed cleanup keeps normal success feedback");
+
+  const bulkStart = source.indexOf("onDelete: async (ids) => {");
+  const bulkEnd = source.indexOf("\n    }\n  })?.sync();", bulkStart);
+  assert.ok(bulkStart >= 0 && bulkEnd > bulkStart, "Use the real bulk-delete handler");
+  const bulkFn = source.slice(
+    bulkStart + "onDelete: ".length, bulkEnd + "\n    }".length
+  );
+
+  async function runBulk(pendingIds) {
+    const notices = [];
+    const context = {
+      deleteProject: async id => ({ id, mediaCleanup: { queued: pendingIds.has(id) } }),
+      idInput: { value: "" },
+      closeForm() {},
+      refresh: async () => {},
+      notify: (message, type = "success") => notices.push({ message, type })
+    };
+    const bulkDelete = runInNewContext(notificationHelper + "\n(" + bulkFn + ")", context);
+    await bulkDelete(["project-one", "project-two"]);
+    return notices;
+  }
+
+  const pendingBulk = await runBulk(new Set(["project-two"]));
+  assert.equal(pendingBulk.length, 1);
+  assert.equal(pendingBulk[0].type, "warning", "Bulk deletion cannot report full success with queued assets");
+  assert.match(pendingBulk[0].message, /(?:storage|media).*(?:pending|queued)|(?:pending|queued).*(?:storage|media)/i);
+
+  const finishedBulk = await runBulk(new Set());
+  assert.equal(finishedBulk.length, 1);
+  assert.equal(finishedBulk[0].type, "success");
+});

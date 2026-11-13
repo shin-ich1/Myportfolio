@@ -5,6 +5,18 @@ import {
 } from './storage-asset.js';
 
 const text = (value = '') => String(value ?? '').trim();
+
+// One cross-provider Firestore inventory shared by Admin storage telemetry and
+// server-side deletion guards. Soft-deleted documents count as references
+// because the owning CMS record may still be restored.
+export const MANAGED_MEDIA_RECORD_COLLECTIONS = Object.freeze([
+  'projects', 'photoEditingProjects', 'experiences', 'education',
+  'skills', 'certificates', 'resumes', 'portfolioSections', 'portfolioSectionEntries'
+]);
+export const MANAGED_MEDIA_RECORD_SINGLETONS = Object.freeze([
+  ['portfolio', 'home'], ['portfolio', 'profile'],
+  ['portfolio', 'contact'], ['portfolio', 'services']
+]);
 export { isManagedCloudinaryUrl };
 
 function normalizeReference(value) {

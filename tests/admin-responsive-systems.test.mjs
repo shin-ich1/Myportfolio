@@ -355,7 +355,13 @@ test("hard-deleting a Project reports failed storage cleanup rather than claimin
   assert.equal(result?.mediaCleanup?.queued, true, "Report pending storage deletion to caller");
   assert.equal(result?.id, "project-1");
   const ui = read("admin/js/projects.js");
-  assert.match(ui, /result\?\.mediaCleanup\?\.queued|result\.mediaCleanup\?\.queued/,
-    "Project Admin must distinguish Firestore record removal from pending storage deletion");
+  assert.match(ui, /function projectMediaCleanupPending\(result\)/,
+    "A single Admin status owner must identify incomplete provider deletions");
+  assert.match(ui, /const cleanup = result\?\.mediaCleanup/,
+    "Project Admin must read the actual provider deletion outcome");
+  assert.match(ui, /projectMediaCleanupPending\(result\)/,
+    "Manual Project deletion must check provider completion before showing success");
+  assert.match(ui, /outcomes\.some\(projectMediaCleanupPending\)/,
+    "Bulk Project deletion must report incomplete provider cleanup too");
   assert.match(ui, /storage cleanup pending|storage deletion pending|storage file deletion is pending/i);
 });

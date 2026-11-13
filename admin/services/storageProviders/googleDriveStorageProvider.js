@@ -91,6 +91,7 @@ export const googleDriveStorageProvider = Object.freeze({
           fieldId: context.fieldId || '',
           pageName: context.pageName || '',
           moduleName: context.moduleName || '',
+          categoryName: context.categoryName || '',
           recordTitle: context.recordTitle || '',
           ownerTitle: context.ownerTitle || ''
         }

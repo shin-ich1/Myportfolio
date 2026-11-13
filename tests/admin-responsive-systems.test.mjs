@@ -944,11 +944,15 @@ test("Photo Editing permanent deletion fails closed before Firestore delete and 
   const events = [];
   const asset = { provider: "google-drive", storageProfileId: "drive-test", assetId: "disposable" };
   let queueFailure = false;
+  let linked = false;
   const ctx = {
     db: {}, COLLECTION_NAME: "photoEditingProjects",
     requireProjectId: id => id,
     currentUserId: () => "admin",
-    assertPhotoEditingProjectIsNotLinked: async () => { events.push("linked-guard"); },
+    assertPhotoEditingProjectIsNotLinked: async () => {
+      events.push("linked-guard");
+      if (linked) throw new Error("Linked sample cannot be deleted");
+    },
     doc: (_, collection, id) => ({ collection, id }),
     getDoc: async () => ({ exists: () => true, data: () => ({ image: asset }) }),
     photoEditingOwnedMedia: value => value,
@@ -970,4 +974,10 @@ test("Photo Editing permanent deletion fails closed before Firestore delete and 
   await assert.rejects(ctx.removePhotoEditingProject("disposable-record"), /Recovery queue unavailable/);
   assert.deepEqual(events, ["linked-guard", "queue"],
     "Failed recovery intent must block record deletion and physical provider deletion");
+  events.length = 0;
+  queueFailure = false;
+  linked = true;
+  await assert.rejects(ctx.removePhotoEditingProject("linked-record"), /Linked sample cannot be deleted/);
+  assert.deepEqual(events, ["linked-guard"],
+    "Linked CMS records must not be removed or have provider cleanup queued");
 });

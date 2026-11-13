@@ -67,7 +67,7 @@ const ASSET_REFERENCE_SCHEMA = Object.freeze({
   name: REQUEST_SCHEMA_ANY, mimeType: REQUEST_SCHEMA_ANY, originalFilename: REQUEST_SCHEMA_ANY, bytes: REQUEST_SCHEMA_ANY, access: REQUEST_SCHEMA_ANY, folderId: REQUEST_SCHEMA_ANY,
   webViewLink: REQUEST_SCHEMA_ANY, createdAt: REQUEST_SCHEMA_ANY, context: REQUEST_SCHEMA_ANY
 });
-const DRIVE_CONTEXT_SCHEMA = Object.freeze({ moduleId: REQUEST_SCHEMA_ANY, ownerType: REQUEST_SCHEMA_ANY, ownerId: REQUEST_SCHEMA_ANY, fieldId: REQUEST_SCHEMA_ANY, pageName: REQUEST_SCHEMA_ANY, moduleName: REQUEST_SCHEMA_ANY, recordTitle: REQUEST_SCHEMA_ANY, ownerTitle: REQUEST_SCHEMA_ANY });
+const DRIVE_CONTEXT_SCHEMA = Object.freeze({ moduleId: REQUEST_SCHEMA_ANY, ownerType: REQUEST_SCHEMA_ANY, ownerId: REQUEST_SCHEMA_ANY, fieldId: REQUEST_SCHEMA_ANY, pageName: REQUEST_SCHEMA_ANY, moduleName: REQUEST_SCHEMA_ANY, categoryName: REQUEST_SCHEMA_ANY, recordTitle: REQUEST_SCHEMA_ANY, ownerTitle: REQUEST_SCHEMA_ANY });
 const PUBLIC_KEY_JWK_SCHEMA = Object.freeze({ kty: REQUEST_SCHEMA_ANY, crv: REQUEST_SCHEMA_ANY, x: REQUEST_SCHEMA_ANY, y: REQUEST_SCHEMA_ANY, key_ops: [REQUEST_SCHEMA_ANY], ext: REQUEST_SCHEMA_ANY });
 const PUSH_SUBSCRIPTION_SCHEMA = Object.freeze({ endpoint: REQUEST_SCHEMA_ANY, expirationTime: REQUEST_SCHEMA_ANY, keys: { p256dh: REQUEST_SCHEMA_ANY, auth: REQUEST_SCHEMA_ANY } });
 const SECURITY_BRANDING_SCHEMA = Object.freeze({ senderName: REQUEST_SCHEMA_ANY, logoUrl: REQUEST_SCHEMA_ANY, heading: REQUEST_SCHEMA_ANY, footer: REQUEST_SCHEMA_ANY });
@@ -589,11 +589,19 @@ function driveLogicalSegments(context = {}) {
   const key = (value, fallback) => String(value || fallback).trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || fallback;
   const label = (value, fallback) => String(value || fallback).trim().replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").slice(0, 120) || fallback;
   const pageKey = context.moduleId ? `module:${key(context.moduleId, "module")}` : `page:${key(context.ownerType, "content")}`;
-  const recordKey = `${pageKey}/record:${key(context.ownerId, "record")}`;
-  return [
-    { logicalKey: pageKey, displayName: label(context.pageName || context.moduleName || context.ownerType, "Content") },
-    { logicalKey: recordKey, displayName: label(context.recordTitle || context.ownerTitle || context.ownerId, "Record") }
+  // Organize by the CMS page and a real category when one exists. Individual
+  // record IDs belong in metadata; they are not meaningful Drive folders.
+  const segments = [
+    { logicalKey: pageKey, displayName: label(context.pageName || context.moduleName || context.ownerType, "Content") }
   ];
+  const categoryName = String(context.categoryName || "").trim();
+  if (categoryName) {
+    segments.push({
+      logicalKey: `${pageKey}/category:${key(categoryName.toLowerCase(), "category")}`,
+      displayName: label(categoryName, "Category")
+    });
+  }
+  return segments;
 }
 
 async function driveEnsureChildFolder(profileId, parentId, logicalKey, displayName, env) {

@@ -288,3 +288,47 @@ test("Admin startup never silently deletes preexisting queued or abandoned media
   assert.equal(state.queued, true, "Existing entries remain pending");
   assert.equal(state.reviewRequired, true, "Require ownership review before deletion");
 });
+
+test("Explicit CMS media removal still sends real provider deletion requests", async () => {
+  const source = read("admin/services/mediaAssetLifecycleService.js");
+  const start = source.indexOf("async function requestDeletionBatch(");
+  const end = source.indexOf("\nexport async function recoverMediaAssetLifecycle()", start);
+  assert.ok(start >= 0 && end > start);
+  const calls = [];
+  const context = {
+    AbortController,
+    window: { setTimeout: () => 1, clearTimeout: () => {} },
+    REQUEST_TIMEOUT_MS: 15000,
+    TEMPORARY_ASSETS_KEY: "temporary",
+    DELETE_QUEUE_KEY: "queue",
+    readTemporaryEntries: () => [],
+    readList: () => [],
+    writeList: () => {},
+    removeTemporaryReferences: entries => entries,
+    sameManagedMediaReference: (first, second) => first?.assetId === second?.assetId,
+    collectManagedMediaReferences: assets => assets,
+    removedManagedMediaReferences: (before) => before,
+    uniqueManagedMediaReferences: assets => assets,
+    authorizedWorkerRequest: async (path, options) => {
+      const data = JSON.parse(options.body);
+      calls.push({ path, method: options.method, data });
+      return { deleted: data.assets, skipped: [] };
+    }
+  };
+  runInNewContext(source.slice(start, end).replaceAll("export async function", "async function")
+    .replaceAll("export function", "function"), context);
+  const cloudinary = { provider: "cloudinary", assetId: "cloudinary-file", publicId: "lan-portfolio/test", uploadedAt: "old" };
+  const drive = { provider: "google-drive", storageProfileId: "managed-profile", assetId: "drive-file", fileId: "drive-file" };
+  const manual = await context.removeManagedMediaAssets([cloudinary]);
+  const deletedRecord = await context.cleanupDeletedRecordMedia([drive], { reason: "record-deleted", strict: true });
+  assert.equal(calls.length, 2, "User-requested removal and record deletion must both invoke storage deletion");
+  assert.deepEqual(calls.map(c => c.path), ["/media/delete", "/media/delete"]);
+  assert.ok(calls.every(c => c.method === "POST"));
+  assert.equal(calls[0].data.assets[0].assetId, "cloudinary-file");
+  assert.equal(calls[1].data.assets[0].assetId, "drive-file");
+  assert.equal(calls[1].data.assets[0].storageProfileId, "managed-profile");
+  assert.equal(manual.queued, false);
+  assert.equal(manual.deleted.length, 1);
+  assert.equal(deletedRecord.queued, false);
+  assert.equal(deletedRecord.deleted.length, 1);
+});

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {execFileSync} from "node:child_process";
+import {runInNewContext} from "node:vm";
 import {withoutAuthorizedPreviewAppOwners, withoutAuthorizedPreviewCssOwners} from "./public-preview-owner-allowlist.mjs";
 import {normalizeRepoText, readReviewedPublicSource, reviewedHeroReservedCssCandidate} from "./public-reviewed-baseline.mjs";
 
@@ -252,4 +253,34 @@ test("published LIVE storage/privacy policy remains exact original release artif
   const policy=read("storage-privacy.html");
   assert.match(policy,/LAN Portfolio Storage/);
   assert.match(app,/href="storage-privacy\.html"/,"LIVE footer must still link to the real policy page");
+});
+
+test("canonical Web Push sends high-priority notifications while retaining secured payload and VAPID headers",async()=>{
+  const begin=worker.indexOf("async function sendWebPush(");
+  const end=worker.indexOf("\nasync function listKvRecords(",begin);
+  assert.ok(begin>=0&&end>begin,"The canonical Web Push sender must exist once");
+  assert.equal(worker.split("async function sendWebPush(").length,2,"Do not introduce competing push senders");
+  const calls=[];
+  const sendWebPush=runInNewContext(`(${worker.slice(begin,end)})`,{
+    validPushSubscription:()=>true,
+    ensureVapidKeyPair:async()=>({publicKey:"test-public-key"}),
+    encryptPushPayload:async()=>new Uint8Array([1,2,3]),
+    vapidAuthorization:async()=>"vapid test-token",
+    fetch:async(endpoint,options)=>{
+      calls.push({endpoint,options});
+      return {ok:true,status:201};
+    }
+  },{timeout:1000});
+  const sent=await sendWebPush(
+    {endpoint:"https://push.example.test/endpoint"},
+    {title:"New private message"},
+    {}
+  );
+  assert.equal(sent.ok,true);
+  assert.equal(calls.length,1);
+  const headers=calls[0].options.headers;
+  assert.equal(headers.Urgency,"high","Every Web Push should request prompt cross-platform delivery");
+  assert.equal(headers.TTL,"86400","Keep the existing one-day retry window");
+  assert.equal(headers["Content-Encoding"],"aes128gcm","Keep payload encryption");
+  assert.equal(headers.Authorization,"vapid test-token","Keep VAPID authentication");
 });
